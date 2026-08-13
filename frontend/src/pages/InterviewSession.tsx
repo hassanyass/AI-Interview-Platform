@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { ArrowLeft, Play, Settings, Clock, BrainCircuit } from 'lucide-react'
+import { ArrowLeft, Play, Settings, Clock, BrainCircuit, Mic } from 'lucide-react'
 import { API_BASE_URL } from '../lib/api'
+import { LiveKitRoom, RoomAudioRenderer, DisconnectButton } from '@livekit/components-react'
+import '@livekit/components-styles'
 
 export default function InterviewSession() {
   const { id } = useParams()
@@ -10,6 +12,10 @@ export default function InterviewSession() {
   const [session, setSession] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  
+  const [livekitToken, setLivekitToken] = useState('')
+  const [livekitUrl, setLivekitUrl] = useState('')
+  const [connecting, setConnecting] = useState(false)
 
   useEffect(() => {
     async function fetchSession() {
@@ -34,6 +40,32 @@ export default function InterviewSession() {
     fetchSession()
   }, [id])
 
+  async function joinRoom() {
+    try {
+      setConnecting(true)
+      const token = await getAccessToken()
+      const res = await fetch(`${API_BASE_URL}/api/v1/livekit/token`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ session_id: id })
+      })
+      
+      if (!res.ok) {
+        throw new Error("Failed to generate LiveKit token")
+      }
+      
+      const data = await res.json()
+      setLivekitUrl(data.url)
+      setLivekitToken(data.token)
+    } catch (err: any) {
+      setError(err.message)
+      setConnecting(false)
+    }
+  }
+
   if (loading) return <div className="flex justify-center p-20">Loading session...</div>
 
   if (error) return (
@@ -45,6 +77,41 @@ export default function InterviewSession() {
       </div>
     </div>
   )
+
+  if (livekitToken && livekitUrl) {
+    return (
+      <div className="h-screen w-screen flex flex-col bg-gray-900 text-white">
+        <LiveKitRoom
+          video={false}
+          audio={true}
+          token={livekitToken}
+          serverUrl={livekitUrl}
+          data-lk-theme="default"
+          className="flex-1 flex flex-col p-6"
+          onDisconnected={() => {
+            setLivekitToken('')
+            setConnecting(false)
+          }}
+        >
+          <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+            <h2 className="text-2xl font-bold text-gray-200">Interview in Progress</h2>
+            
+            {/* Visual indicator of audio activity */}
+            <div className="bg-gray-800 p-8 rounded-full shadow-lg border border-gray-700">
+               <Mic size={48} className="text-blue-400 mb-4 mx-auto" />
+               <div className="h-24 w-64 flex items-center justify-center">
+                 <p className="text-gray-500 text-sm">Voice Active</p>
+               </div>
+            </div>
+            
+            <p className="text-gray-400">Speak naturally. The AI Agent will respond.</p>
+            <RoomAudioRenderer />
+            <DisconnectButton className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold" />
+          </div>
+        </LiveKitRoom>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto py-10 px-4">
@@ -66,12 +133,12 @@ export default function InterviewSession() {
         </div>
         
         <button 
-          disabled
-          className="bg-gray-300 text-gray-600 px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 cursor-not-allowed"
-          title="Interview execution is part of Phase 3"
+          onClick={joinRoom}
+          disabled={connecting}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-colors disabled:opacity-50"
         >
           <Play size={20} fill="currentColor" />
-          <span>Start Interview (Phase 3)</span>
+          <span>{connecting ? "Connecting..." : "Connect to Interview Room"}</span>
         </button>
       </div>
 

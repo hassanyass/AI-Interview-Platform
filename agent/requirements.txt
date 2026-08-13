@@ -1,3 +1,8 @@
 livekit-agents
 livekit-api
 python-dotenv
+groq
+pydantic
+livekit-plugins-groq
+livekit-plugins-openai
+livekit-plugins-silero

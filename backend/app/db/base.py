@@ -2,4 +2,7 @@
 # imported by Alembic
 from app.db.session import Base
 from app.models.profile import CandidateProfile, Resume
-from app.models.interview import InterviewSession, InterviewConfiguration
+from app.models.interview import (
+    InterviewSession, InterviewConfiguration,
+    InterviewMessage, InterviewEvent, InterviewCheckpoint
+)

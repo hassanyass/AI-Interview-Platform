@@ -106,3 +106,89 @@ async def get_interview(
         raise HTTPException(status_code=403, detail="Not authorized to access this interview session")
         
     return session
+
+
+@router.get("/{session_id}/transcript")
+async def get_transcript(
+    session_id: UUID,
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency
+):
+    """Returns the ordered transcript for a given interview session."""
+    from app.models.interview import InterviewMessage
+    
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid User ID format")
+    
+    # Verify ownership
+    result = await db.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    session = result.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.candidate_profile_id != user_uuid:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    msg_result = await db.execute(
+        select(InterviewMessage)
+        .where(InterviewMessage.session_id == session_id)
+        .order_by(InterviewMessage.sequence_number)
+    )
+    messages = msg_result.scalars().all()
+    
+    return [
+        {
+            "sequence_number": m.sequence_number,
+            "speaker": m.speaker,
+            "text": m.text,
+            "phase": m.phase,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
+        for m in messages
+    ]
+
+
+@router.get("/{session_id}/events")
+async def get_events(
+    session_id: UUID,
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency
+):
+    """Returns the ordered events for a given interview session."""
+    from app.models.interview import InterviewEvent
+    
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid User ID format")
+    
+    result = await db.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    session = result.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.candidate_profile_id != user_uuid:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    event_result = await db.execute(
+        select(InterviewEvent)
+        .where(InterviewEvent.session_id == session_id)
+        .order_by(InterviewEvent.sequence_number)
+    )
+    events = event_result.scalars().all()
+    
+    return [
+        {
+            "event_type": e.event_type,
+            "phase": e.phase,
+            "sequence_number": e.sequence_number,
+            "metadata": e.metadata_,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in events
+    ]
+

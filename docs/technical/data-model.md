@@ -13,9 +13,12 @@ Durable data stored in Supabase. The agent flushes relevant runtime data here at
 - **CandidateProfile**: Extracted skills/experience.
 - **Resume**: PDF storage reference and text.
 - **InterviewConfiguration**: 
-  - `swe_level`: (Junior/Mid/Senior)
+  - `role`: string
+  - `level`: (`junior`, `mid`, `senior`)
   - `language`: (`en` or `ar`)
-  - `target_job_description`: text
+  - `job_description`: text
+  - `duration`: int (minutes)
+  - `thinking_time`: int (seconds)
 - **InterviewSession**: Links Profile, Config, and final Results.
 - **InterviewQuestion**: Technical questions and rubrics.
 - **CandidateResponse**: Durable checkpoints of transcript segments.

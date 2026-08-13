@@ -1,12 +1,13 @@
 # API Boundaries
 
 ## Standard REST APIs (FastAPI)
-- `POST /auth/...` (Handled mostly by Supabase frontend SDK, but custom hooks if needed)
-- `GET /profile`, `PUT /profile`
-- `POST /resumes/upload`
-- `POST /sessions` (Create configuration)
-- `POST /sessions/{id}/start` (Returns LiveKit JWT token)
-- `GET /sessions/{id}/results`
+- `POST /auth/...` (Handled mostly by Supabase frontend SDK)
+- `GET /api/v1/profiles/me`, `POST /api/v1/profiles/`, `PATCH /api/v1/profiles/me`
+- `GET /api/v1/resumes/`, `POST /api/v1/resumes/`
+- `GET /api/v1/interviews/`, `POST /api/v1/interviews/` (Create configuration)
+- `GET /api/v1/interviews/{id}`
+- `POST /api/v1/interviews/{id}/start` (Returns LiveKit JWT token - Phase 3)
+- `GET /api/v1/interviews/{id}/results` (Phase 6)
 
 ## Realtime Path (LiveKit WebRTC & Data Channels)
 The following interactions **bypass REST** and occur over LiveKit:

@@ -6,7 +6,7 @@ import logging
 
 from app.core.config import settings
 from app.db.session import engine, get_db
-from app.api.endpoints import profiles, resumes, interviews
+from app.api.endpoints import profiles, resumes, interviews, livekit, internal
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +25,8 @@ app.add_middleware(
 app.include_router(profiles.router, prefix="/api/v1/profiles", tags=["profiles"])
 app.include_router(resumes.router, prefix="/api/v1/resumes", tags=["resumes"])
 app.include_router(interviews.router, prefix="/api/v1/interviews", tags=["interviews"])
+app.include_router(livekit.router, prefix="/api/v1/livekit", tags=["livekit"])
+app.include_router(internal.router, prefix="/api/v1/internal/interviews", tags=["internal"])
 
 @app.on_event("startup")
 async def startup_event():

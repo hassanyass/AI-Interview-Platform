@@ -23,7 +23,10 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "openai"
     TTS_PROVIDER: str = "livekit"
     
-    BACKEND_CORS_ORIGINS: str = '["http://localhost:5173"]'
+    # Internal agent-to-backend API authentication
+    AGENT_API_SECRET: str = ""
+    
+    BACKEND_CORS_ORIGINS: str = '["http://localhost:5173", "http://127.0.0.1:5173"]'
 
     @property
     def cors_origins(self) -> List[str]:
