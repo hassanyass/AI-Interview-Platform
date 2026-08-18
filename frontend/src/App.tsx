@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Profile from './pages/Profile'
 import NewInterview from './pages/NewInterview'
 import InterviewSession from './pages/InterviewSession'
+import FinalResult from './features/results/FinalResult'
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -20,7 +21,7 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <div className="min-h-screen bg-gray-50 text-gray-900">
+        <div className="min-h-screen bg-background text-foreground">
           <Routes>
             {/* Public Route */}
             <Route path="/login" element={<AuthPage />} />
@@ -31,6 +32,7 @@ function App() {
             <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
             <Route path="/interviews/new" element={<ProtectedRoute><NewInterview /></ProtectedRoute>} />
             <Route path="/interviews/:id" element={<ProtectedRoute><InterviewSession /></ProtectedRoute>} />
+            <Route path="/interviews/:id/result" element={<ProtectedRoute><FinalResult /></ProtectedRoute>} />
             
             {/* Catch all */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

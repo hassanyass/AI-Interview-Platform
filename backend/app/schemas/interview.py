@@ -22,6 +22,12 @@ class InterviewConfigurationCreate(BaseModel):
         if v not in ['en', 'ar']:
             raise ValueError("Language must be 'en' or 'ar'")
         return v
+
+    @validator('job_description')
+    def validate_job_description(cls, v):
+        if v is not None and len(v) > 12000:
+            raise ValueError("Job description must be 12,000 characters or fewer")
+        return v.strip() if v else v
         
     @validator('duration')
     def validate_duration(cls, v):
@@ -54,5 +60,13 @@ class InterviewSessionResponse(BaseModel):
     completed_at: Optional[datetime] = None
     
     configuration: Optional[InterviewConfigurationResponse] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class InterviewResultResponse(BaseModel):
+    session_id: UUID
+    status: str
+    completed_at: Optional[datetime] = None
+    final_result: Optional[dict] = None
     
     model_config = ConfigDict(from_attributes=True)

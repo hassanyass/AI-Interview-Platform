@@ -40,6 +40,7 @@ class ActionEnum(str, enum.Enum):
 
 class CandidateControlAction(str, enum.Enum):
     SKIP_QUESTION = "SKIP_QUESTION"
+    CHANGE_QUESTION = "CHANGE_QUESTION"
     SKIP_SECTION = "SKIP_SECTION"
     MOVE_TO_TECHNICAL = "MOVE_TO_TECHNICAL"
     END_INTERVIEW = "END_INTERVIEW"
@@ -77,11 +78,20 @@ class Question(BaseModel):
     follow_up_topics: List[str]
     time_budget_minutes: int
     coding_required: bool
+    examples: List[Dict[str, Any]] = Field(default_factory=list)
+    constraints: List[str] = Field(default_factory=list)
+    starter_code: Dict[str, str] = Field(default_factory=dict)
+    test_cases: List[Dict[str, Any]] = Field(default_factory=list)
+    supported_languages: List[str] = Field(default_factory=list)
+    title_ar: Optional[str] = None
+    problem_statement_ar: Optional[str] = None
+    hints_ar: List[str] = Field(default_factory=list)
 
 
 class QuestionOutcome(str, enum.Enum):
     COMPLETED = "COMPLETED"
     SKIPPED = "SKIPPED"
+    CHANGED = "CHANGED"
     PARTIALLY_COMPLETED = "PARTIALLY_COMPLETED"
     TIME_EXPIRED = "TIME_EXPIRED"
 

@@ -26,6 +26,9 @@ class InterviewSession(Base):
     active_agent_id = Column(String, nullable=True)
     agent_lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     
+    # Final aggregated result (populated when status reaches COMPLETED)
+    final_result = Column(JSONB, nullable=True)
+    
     profile = relationship("CandidateProfile", back_populates="interviews")
     configuration = relationship("InterviewConfiguration", back_populates="session", uselist=False, cascade="all, delete-orphan")
     messages = relationship("InterviewMessage", back_populates="session", cascade="all, delete-orphan", order_by="InterviewMessage.sequence_number")
@@ -119,9 +122,10 @@ class InterviewCheckpoint(Base):
     last_message_sequence = Column(Integer, nullable=False, default=0)
     last_event_sequence = Column(Integer, nullable=False, default=0)
     
-    # Minimal structured data for restoring question state
     current_question_snapshot = Column(JSONB, nullable=True)
     section_progress = Column(JSONB, nullable=True)
+    question_records = Column(JSONB, nullable=True)
+    evaluation_signals = Column(JSONB, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     

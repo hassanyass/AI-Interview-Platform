@@ -73,6 +73,7 @@ async def upload_resume(
         profile.programming_languages = extracted_profile.programming_languages
         profile.frameworks = extracted_profile.frameworks
         profile.projects = extracted_profile.projects
+        profile.professional_title = extracted_profile.professional_title
         profile.recommended_level = extracted_profile.recommended_level
         
         await db.commit()

@@ -65,7 +65,15 @@ export default function Profile() {
             email: user?.email || '' 
           })
         })
-        if (!createRes.ok) throw new Error("Failed to create base profile")
+        if (!createRes.ok) {
+          let detail = "Failed to create base profile"
+          try {
+            const body = await createRes.json()
+            if (body?.detail) detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail)
+          } catch { /* Keep the fallback message when the response is not JSON. */ }
+          throw new Error(detail)
+        }
+        setProfile(await createRes.clone().json())
       }
 
       const formData = new FormData()
@@ -78,7 +86,12 @@ export default function Profile() {
       })
 
       if (!uploadRes.ok) {
-        throw new Error('Failed to upload and process resume')
+        let detail = 'Failed to upload and process resume'
+        try {
+          const body = await uploadRes.json()
+          if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+        } catch { /* Keep the fallback message when the response is not JSON. */ }
+        throw new Error(detail)
       }
 
       setSuccess('Resume uploaded and processed successfully!')

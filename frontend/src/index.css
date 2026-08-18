@@ -1,3 +1,71 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@config "../tailwind.config.js";
+
+@layer base {
+  :root {
+    /* Background: Warm near-white */
+    --background: 0 0% 98%; 
+    /* Foreground: Deep charcoal */
+    --foreground: 0 0% 7%;
+
+    /* Muted: Neutral gray for surfaces */
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 40%;
+
+    /* Borders: Subtle neutral */
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 221 39% 45%;
+
+    /* Primary: Restrained professional accent (slate/blue) */
+    --primary: 221 39% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary: Quiet structural distinct */
+    --secondary: 0 0% 90%;
+    --secondary-foreground: 0 0% 20%;
+
+    /* Accent: Hover states */
+    --accent: 0 0% 92%;
+    --accent-foreground: 0 0% 10%;
+
+    /* Semantics */
+    --success: 150 40% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 35 80% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Radius: Restrained defaults */
+    --radius: 0.25rem;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

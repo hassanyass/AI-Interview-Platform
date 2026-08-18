@@ -18,6 +18,14 @@ QUESTION_BANK: List[Question] = [
         follow_up_topics=["What if the array is already sorted?", "How do you handle duplicates?"],
         time_budget_minutes=10,
         coding_required=True
+        ,title_ar="نسخة من مسألة مجموع رقمين"
+        ,problem_statement_ar="عندك مصفوفة من الأعداد الصحيحة ورقم مستهدف. أرجع كل الأزواج المختلفة التي مجموعها يساوي الرقم المستهدف. اشرح طريقة الحل والتعقيد الزمني قبل كتابة الكود."
+        ,hints_ar=[
+            "فكّر في طريقة تخزّن الأرقام التي مرّيت عليها وتبحث فيها بسرعة.",
+            "لو كان الرقم الحالي هو ن، وش الرقم المكمل له حتى نوصل للهدف؟",
+            "استخدم مجموعة أو قاموساً للأرقام التي شاهدتها، وابحث عن المكمل أثناء المرور.",
+            "مرّ على المصفوفة، احسب المكمل = الهدف ناقص الرقم. إذا كان موجوداً أضف الزوج، وإلا خزّن الرقم.",
+        ]
     ),
     Question(
         id="q2",
@@ -35,6 +43,14 @@ QUESTION_BANK: List[Question] = [
         follow_up_topics=["Is your solution thread-safe?", "How would you handle concurrent access?"],
         time_budget_minutes=15,
         coding_required=True
+        ,title_ar="تصميم ذاكرة تخزين مؤقت LRU"
+        ,problem_statement_ar="صمّم ونفّذ بنية بيانات لذاكرة تخزين مؤقتة من نوع LRU. ناقش كيف تحافظ على عمليات القراءة والحذف والإضافة بزمن ثابت."
+        ,hints_ar=[
+            "نحتاج بحثاً وحذفاً بزمن ثابت. وش البنى المناسبة لهذا؟",
+            "القاموس يعطي بحثاً سريعاً، لكن كيف نحافظ على ترتيب الاستخدام؟",
+            "فكّر في دمج قاموس مع قائمة مرتبطة مزدوجة.",
+            "خلّ القاموس يشير إلى عقد القائمة، وانقل العقدة إلى المقدمة عند استخدامها.",
+        ]
     ),
     Question(
         id="q3",
@@ -52,6 +68,14 @@ QUESTION_BANK: List[Question] = [
         follow_up_topics=["How do you handle Redis failure?", "What about clock synchronization across servers?"],
         time_budget_minutes=20,
         coding_required=False
+        ,title_ar="تصميم محدد لمعدل الطلبات"
+        ,problem_statement_ar="صمّم محدداً موزعاً لمعدل استدعاءات واجهة برمجة التطبيقات، وناقش كيف تتعامل مع عدة خوادم وتزامن الطلبات."
+        ,hints_ar=[
+            "وش الخوارزميات المشهورة لتحديد المعدل؟",
+            "كيف تحافظ على الحالة نفسها بين عدة خوادم؟",
+            "فكّر في مخزن مركزي مثل Redis للعدادات.",
+            "استخدم Redis مع عملية ذرية لتحديث العداد وقراءة النتيجة.",
+        ]
     )
 ]
 

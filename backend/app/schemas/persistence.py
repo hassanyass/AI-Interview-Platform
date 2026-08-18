@@ -68,6 +68,8 @@ class CheckpointCreate(BaseModel):
     last_event_sequence: int = 0
     current_question_snapshot: Optional[dict] = None
     section_progress: Optional[dict] = None
+    question_records: Optional[List[dict]] = None
+    evaluation_signals: Optional[List[dict]] = None
 
 
 class CheckpointResponse(BaseModel):
@@ -87,6 +89,8 @@ class CheckpointResponse(BaseModel):
     last_event_sequence: int
     current_question_snapshot: Optional[dict] = None
     section_progress: Optional[dict] = None
+    question_records: Optional[List[dict]] = None
+    evaluation_signals: Optional[List[dict]] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -96,6 +100,7 @@ class CheckpointResponse(BaseModel):
 
 class StatusUpdate(BaseModel):
     status: str  # CREATED, IN_PROGRESS, DISCONNECTED, COMPLETED, TERMINATED
+    final_result: Optional[dict] = None
 
 
 # ─── Session Load Response (for agent bootstrap) ──────────────────────────────

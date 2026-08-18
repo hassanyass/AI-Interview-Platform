@@ -141,6 +141,7 @@ async def load_session_for_agent(
             "programming_languages": profile.programming_languages,
             "frameworks": profile.frameworks,
             "projects": profile.projects,
+            "professional_title": profile.professional_title,
             "recommended_level": profile.recommended_level,
             "confirmed_level": profile.confirmed_level,
         }
@@ -254,7 +255,10 @@ async def update_session_status(
     if target == "IN_PROGRESS" and not session.started_at:
         session.started_at = datetime.now(timezone.utc)
     elif target in ("COMPLETED", "TERMINATED"):
-        session.completed_at = datetime.now(timezone.utc)
+        if not session.completed_at:
+            session.completed_at = datetime.now(timezone.utc)
+        if target == "COMPLETED" and body.final_result is not None:
+            session.final_result = body.final_result
         # Release agent lease
         session.active_agent_id = None
         session.agent_lease_expires_at = None
@@ -397,6 +401,7 @@ async def create_checkpoint(
         last_event_sequence=body.last_event_sequence,
         current_question_snapshot=body.current_question_snapshot,
         section_progress=body.section_progress,
+        question_records=body.question_records,
     )
     db.add(checkpoint)
     await db.commit()

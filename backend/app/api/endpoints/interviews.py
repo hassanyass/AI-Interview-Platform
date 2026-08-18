@@ -5,7 +5,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import db_dependency, current_user_dependency
 from app.models.profile import CandidateProfile
 from app.models.interview import InterviewSession, InterviewConfiguration
-from app.schemas.interview import InterviewSessionCreate, InterviewSessionResponse
+from app.schemas.interview import InterviewSessionCreate, InterviewSessionResponse, InterviewResultResponse
 import logging
 from uuid import UUID
 import uuid
@@ -192,3 +192,38 @@ async def get_events(
         for e in events
     ]
 
+
+@router.get("/{session_id}/result", response_model=InterviewResultResponse)
+async def get_interview_result(
+    session_id: UUID,
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency
+):
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid User ID format")
+
+    result = await db.execute(
+        select(InterviewSession).where(
+            InterviewSession.id == session_id,
+            InterviewSession.candidate_profile_id == user_uuid
+        )
+    )
+    session = result.scalar_one_or_none()
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found.")
+        
+    if session.status not in ("COMPLETED", "TERMINATED"):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Result not available. Interview status is {session.status}."
+        )
+
+    return InterviewResultResponse(
+        session_id=session.id,
+        status=session.status,
+        completed_at=session.completed_at,
+        final_result=session.final_result
+    )

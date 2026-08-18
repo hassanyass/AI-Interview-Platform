@@ -2,6 +2,11 @@ import json
 from app.llm.provider import LLMProvider
 from app.llm.prompts import PLANNER_PROMPT
 from app.interview.models import InterviewPlan
+from app.interview.input_limits import (
+    MAX_JOB_DESCRIPTION_CHARS,
+    MAX_PROFILE_CHARS,
+    truncate_prompt_text,
+)
 
 class InterviewPlanner:
     def __init__(self, llm_provider: LLMProvider):
@@ -25,8 +30,8 @@ class InterviewPlanner:
             "content": (
                 f"Role: {role}\n"
                 f"Duration: {duration_minutes} minutes\n"
-                f"Job Description: {job_description or 'None provided.'}\n"
-                f"Candidate Profile: {json.dumps(candidate_profile, indent=2)}\n"
+                f"Job Description: {truncate_prompt_text(job_description, MAX_JOB_DESCRIPTION_CHARS) or 'None provided.'}\n"
+                f"Candidate Profile: {truncate_prompt_text(json.dumps(candidate_profile, indent=2), MAX_PROFILE_CHARS)}\n"
             )
         }
         

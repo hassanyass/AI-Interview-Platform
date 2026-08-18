@@ -11,7 +11,9 @@ class GroqProvider(LLMProvider):
         if not api_key:
             raise ValueError("GROQ_API_KEY is missing")
         self.client = groq.AsyncGroq(api_key=api_key)
-        self.model = os.getenv("LLM_MODEL", "llama-3.1-70b-versatile")
+        self.model = os.getenv("LLM_MODEL")
+        if not self.model:
+            raise ValueError("LLM_MODEL is missing in configuration. Agent must explicitly declare which model to use.")
         
     async def generate_structured(
         self,

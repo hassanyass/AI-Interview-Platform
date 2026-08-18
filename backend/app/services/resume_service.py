@@ -11,7 +11,11 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 # Initialize Supabase client for backend operations (using secret key for admin privileges)
-supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SECRET_KEY)
+try:
+    supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SECRET_KEY)
+except Exception as e:
+    logger.error(f"Failed to initialize Supabase client: {e}")
+    supabase = None
 
 class ResumeService:
     @staticmethod
@@ -30,6 +34,9 @@ class ResumeService:
             file_bytes = await file.read()
             storage_path = f"users/{user_id}/resumes/{resume_id}.pdf"
             
+            if supabase is None:
+                raise HTTPException(status_code=500, detail="Supabase client is not initialized.")
+                
             # Using Supabase storage api
             res = supabase.storage.from_("resumes").upload(
                 path=storage_path,
@@ -68,6 +75,7 @@ class ResumeService:
         system_prompt = """
         You are an expert technical recruiter. Your task is to extract structured information from a software engineer's resume.
         You must output ONLY valid JSON matching the exact schema provided. Do not include markdown formatting or explanations.
+        Extract the candidate's current or most recent professional title as professional_title. If it is not clear, return null rather than inventing one.
         Evaluate their experience and recommend a level strictly from one of these values: "junior", "mid", "senior".
         """
         

@@ -18,6 +18,7 @@ class CandidateProfile(Base):
     programming_languages = Column(JSONB, nullable=True)
     frameworks = Column(JSONB, nullable=True)
     projects = Column(JSONB, nullable=True)
+    professional_title = Column(String, nullable=True)
     
     recommended_level = Column(String, nullable=True)
     confirmed_level = Column(String, nullable=True)

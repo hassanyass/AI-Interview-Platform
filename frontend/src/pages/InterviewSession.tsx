@@ -1,183 +1,113 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
-import { ArrowLeft, Play, Settings, Clock, BrainCircuit, Mic } from 'lucide-react'
-import { API_BASE_URL } from '../lib/api'
-import { LiveKitRoom, RoomAudioRenderer, DisconnectButton } from '@livekit/components-react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { LiveKitRoom, RoomAudioRenderer } from '@livekit/components-react'
+import { InterviewProvider } from '../stores/InterviewContext'
+import { InterviewWorkspace } from '../features/interview-session/InterviewWorkspace'
+import { getInterviewSession, getLiveKitToken } from '../services/api/interviews'
+import type { InterviewSessionResponse } from '../types/api'
 import '@livekit/components-styles'
 
 export default function InterviewSession() {
   const { id } = useParams()
-  const { getAccessToken } = useAuth()
-  const [session, setSession] = useState<any>(null)
+  const navigate = useNavigate()
+  
+  const [session, setSession] = useState<InterviewSessionResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   
   const [livekitToken, setLivekitToken] = useState('')
   const [livekitUrl, setLivekitUrl] = useState('')
-  const [connecting, setConnecting] = useState(false)
 
   useEffect(() => {
-    async function fetchSession() {
+    async function init() {
+      if (!id) return;
       try {
-        const token = await getAccessToken()
-        const res = await fetch(`${API_BASE_URL}/api/v1/interviews/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
+        setLoading(true);
+        // Fetch session status
+        const sess = await getInterviewSession(id);
         
-        if (!res.ok) {
-          throw new Error("Failed to load interview session")
+        // If it's already COMPLETED, go to results
+        if (sess.status === "COMPLETED") {
+          navigate(`/interviews/${id}/result`);
+          return;
         }
-        
-        setSession(await res.json())
+
+        setSession(sess);
+
+        // Fetch LiveKit connection details
+        const { token, url } = await getLiveKitToken(id);
+        setLivekitToken(token);
+        setLivekitUrl(url);
+
       } catch (err: any) {
-        setError(err.message)
+        setError(err.message || "Failed to initialize interview session");
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     }
     
-    fetchSession()
-  }, [id])
+    init();
+  }, [id, navigate]);
 
-  async function joinRoom() {
-    try {
-      setConnecting(true)
-      const token = await getAccessToken()
-      const res = await fetch(`${API_BASE_URL}/api/v1/livekit/token`, {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ session_id: id })
-      })
-      
-      if (!res.ok) {
-        throw new Error("Failed to generate LiveKit token")
+  useEffect(() => {
+    // Navigation guard to prevent accidental tab closures/refreshes
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Only protect if we have an active session that hasn't completed
+      if (session && session.status !== "COMPLETED" && session.status !== "TERMINATED") {
+        e.preventDefault();
+        // Chrome requires returnValue to be set
+        e.returnValue = "";
+        return "";
       }
-      
-      const data = await res.json()
-      setLivekitUrl(data.url)
-      setLivekitToken(data.token)
-    } catch (err: any) {
-      setError(err.message)
-      setConnecting(false)
-    }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [session]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-muted-foreground">Preparing Interview Room...</p>
+        </div>
+      </div>
+    );
   }
 
-  if (loading) return <div className="flex justify-center p-20">Loading session...</div>
-
-  if (error) return (
-    <div className="max-w-4xl mx-auto py-10 px-4">
-      <div className="bg-red-50 text-red-700 p-6 rounded-lg text-center">
-        <p className="font-semibold mb-2">Error</p>
-        <p>{error}</p>
-        <Link to="/dashboard" className="text-blue-600 hover:underline mt-4 inline-block">Return to Dashboard</Link>
-      </div>
-    </div>
-  )
-
-  if (livekitToken && livekitUrl) {
+  if (error) {
     return (
-      <div className="h-screen w-screen flex flex-col bg-gray-900 text-white">
-        <LiveKitRoom
-          video={false}
-          audio={true}
-          token={livekitToken}
-          serverUrl={livekitUrl}
-          data-lk-theme="default"
-          className="flex-1 flex flex-col p-6"
-          onDisconnected={() => {
-            setLivekitToken('')
-            setConnecting(false)
-          }}
+      <div className="flex h-screen flex-col items-center justify-center bg-background text-foreground p-4 text-center">
+        <h2 className="text-2xl font-bold mb-2 text-destructive">Connection Error</h2>
+        <p className="text-muted-foreground mb-6 max-w-md">{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
         >
-          <div className="flex-1 flex flex-col items-center justify-center space-y-8">
-            <h2 className="text-2xl font-bold text-gray-200">Interview in Progress</h2>
-            
-            {/* Visual indicator of audio activity */}
-            <div className="bg-gray-800 p-8 rounded-full shadow-lg border border-gray-700">
-               <Mic size={48} className="text-blue-400 mb-4 mx-auto" />
-               <div className="h-24 w-64 flex items-center justify-center">
-                 <p className="text-gray-500 text-sm">Voice Active</p>
-               </div>
-            </div>
-            
-            <p className="text-gray-400">Speak naturally. The AI Agent will respond.</p>
-            <RoomAudioRenderer />
-            <DisconnectButton className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-bold" />
-          </div>
-        </LiveKitRoom>
+          Try Again
+        </button>
       </div>
-    )
+    );
+  }
+
+  if (!session || !livekitToken || !livekitUrl) {
+    return null;
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-10 px-4">
-      <div className="mb-6">
-        <Link to="/dashboard" className="text-gray-500 hover:text-gray-900 flex items-center space-x-2 w-fit">
-          <ArrowLeft size={16} /> <span>Back to Dashboard</span>
-        </Link>
-      </div>
-
-      <div className="flex justify-between items-start mb-8">
-        <div>
-          <div className="flex items-center space-x-3 mb-2">
-            <h1 className="text-3xl font-bold text-gray-900">{session.role}</h1>
-            <span className="bg-blue-100 text-blue-800 text-xs px-3 py-1 rounded-full uppercase tracking-wide font-semibold">
-              {session.status}
-            </span>
-          </div>
-          <p className="text-gray-500">Created on {new Date(session.created_at).toLocaleString()}</p>
-        </div>
-        
-        <button 
-          onClick={joinRoom}
-          disabled={connecting}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-colors disabled:opacity-50"
-        >
-          <Play size={20} fill="currentColor" />
-          <span>{connecting ? "Connecting..." : "Connect to Interview Room"}</span>
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex items-center space-x-2">
-          <Settings size={20} className="text-gray-500" />
-          <h2 className="text-lg font-semibold text-gray-800">Session Configuration</h2>
-        </div>
-        
-        <div className="p-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-            <div>
-              <p className="text-sm text-gray-500 mb-1">Level</p>
-              <p className="font-medium capitalize">{session.level}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 mb-1">Language</p>
-              <p className="font-medium uppercase">{session.language}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 mb-1 flex items-center"><Clock size={14} className="mr-1"/> Duration</p>
-              <p className="font-medium">{session.configuration?.duration} mins</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500 mb-1 flex items-center"><BrainCircuit size={14} className="mr-1"/> Thinking Time</p>
-              <p className="font-medium">{session.configuration?.thinking_time} secs</p>
-            </div>
-          </div>
-          
-          {session.configuration?.job_description && (
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Job Description Context</p>
-              <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-600 whitespace-pre-wrap border border-gray-100 max-h-64 overflow-y-auto">
-                {session.configuration.job_description}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
+    <LiveKitRoom
+      video={false}
+      audio={true}
+      token={livekitToken}
+      serverUrl={livekitUrl}
+      connect={true}
+      className="h-full w-full"
+    >
+      <RoomAudioRenderer />
+      <InterviewProvider>
+        <InterviewWorkspace session={session} />
+      </InterviewProvider>
+    </LiveKitRoom>
+  );
 }

@@ -47,7 +47,7 @@ class InterviewPersistence(ABC):
         pass
 
     @abstractmethod
-    async def update_status(self, session_id: str, status: str) -> None:
+    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> None:
         """Update the interview session status."""
         pass
 
@@ -73,13 +73,41 @@ class MockPersistence(InterviewPersistence):
             "time_remaining_seconds": context.time_remaining_seconds,
             "message_sequence": context.message_sequence,
             "event_sequence": context.event_sequence,
+            "current_question_snapshot": context.current_question.model_dump() if context.current_question else None,
+            "section_progress": {
+                "background": context.background_progress.model_dump(),
+                "technical": context.technical_progress.model_dump(),
+            },
+            "question_records": [r.model_dump() for r in context.question_records],
+            "evaluation_signals": [e.model_dump() for e in context.evaluation_signals],
+            "competencies_evaluated": context.competencies_evaluated,
         }
+        logger.info(f"[MockPersistence] Saved checkpoint for {context.session_id} - Phase: {context.current_phase.value}")
 
     async def save_completion(self, context: InterviewRuntimeContext) -> None:
+        status = "COMPLETED" if context.current_phase.value == "COMPLETED" else "TERMINATED"
         self.storage[context.session_id] = {
-            "status": "COMPLETED",
+            "status": status,
             "current_phase": context.current_phase.value,
         }
+        if status == "COMPLETED":
+            completed_questions = sum(1 for r in context.question_records if r.outcome == "COMPLETED")
+            skipped_questions = sum(1 for r in context.question_records if r.outcome == "SKIPPED")
+            changed_questions = sum(1 for r in context.question_records if r.outcome == "CHANGED")
+            
+            final_result = {
+                "session_id": context.session_id,
+                "role": context.role,
+                "level": context.confirmed_level,
+                "total_questions": len(context.question_records),
+                "completed": completed_questions,
+                "skipped": skipped_questions,
+                "changed": changed_questions,
+                "question_records": [r.model_dump() for r in context.question_records],
+                "competencies_evaluated": context.competencies_evaluated,
+            }
+            self.storage[context.session_id]["final_result"] = final_result
+            
         logger.info(f"[MockPersistence] Saved final state for {context.session_id}")
 
     async def save_message(
@@ -184,6 +212,8 @@ class APIPersistence(InterviewPersistence):
                 "background": context.background_progress.model_dump(),
                 "technical": context.technical_progress.model_dump(),
             },
+            "question_records": [r.model_dump() for r in context.question_records],
+            "evaluation_signals": [e.model_dump() for e in context.evaluation_signals],
         }
         try:
             async with session.post(
@@ -197,13 +227,28 @@ class APIPersistence(InterviewPersistence):
 
     async def save_completion(self, context: InterviewRuntimeContext) -> None:
         await self.save_checkpoint(context)
-        status = "COMPLETED" if context.current_phase == InterviewRuntimeContext.__fields__["current_phase"].default else "TERMINATED"
-        # Determine correct status
-        if context.current_phase.value == "COMPLETED":
-            status = "COMPLETED"
-        else:
-            status = "TERMINATED"
-        await self.update_status(context.session_id, status)
+        status = "COMPLETED" if context.current_phase.value == "COMPLETED" else "TERMINATED"
+        
+        final_result = None
+        if status == "COMPLETED":
+            # Generate the final result schema
+            completed_questions = sum(1 for r in context.question_records if r.outcome == "COMPLETED")
+            skipped_questions = sum(1 for r in context.question_records if r.outcome == "SKIPPED")
+            changed_questions = sum(1 for r in context.question_records if r.outcome == "CHANGED")
+            
+            final_result = {
+                "session_id": context.session_id,
+                "role": context.role,
+                "level": context.confirmed_level,
+                "total_questions": len(context.question_records),
+                "completed": completed_questions,
+                "skipped": skipped_questions,
+                "changed": changed_questions,
+                "question_records": [r.model_dump() for r in context.question_records],
+                "competencies_evaluated": context.competencies_evaluated,
+            }
+            
+        await self.update_status(context.session_id, status, final_result=final_result)
 
     async def save_message(
         self, session_id: str, sequence: int, speaker: str, text: str,
@@ -222,8 +267,7 @@ class APIPersistence(InterviewPersistence):
                 self._url(session_id, "messages"), json=body
             ) as resp:
                 if resp.status not in (200, 201):
-                    text_resp = await resp.text()
-                    logger.error(f"Failed to save message: {resp.status} {text_resp}")
+                    logger.error(f"Failed to save message: {resp.status}")
         except Exception as e:
             logger.error(f"Error saving message: {e}")
 
@@ -243,14 +287,15 @@ class APIPersistence(InterviewPersistence):
                 self._url(session_id, "events"), json=body
             ) as resp:
                 if resp.status not in (200, 201):
-                    text_resp = await resp.text()
-                    logger.error(f"Failed to save event: {resp.status} {text_resp}")
+                    logger.error(f"Failed to save event: {resp.status}")
         except Exception as e:
             logger.error(f"Error saving event: {e}")
 
-    async def update_status(self, session_id: str, status: str) -> None:
+    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> None:
         http = await self._get_session()
         body = {"status": status}
+        if final_result is not None:
+            body["final_result"] = final_result
         try:
             async with http.patch(
                 self._url(session_id, "status"), json=body

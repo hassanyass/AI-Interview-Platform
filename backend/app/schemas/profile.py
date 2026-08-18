@@ -12,6 +12,7 @@ class CandidateProfileBase(BaseModel):
     programming_languages: Optional[list] = None
     frameworks: Optional[list] = None
     projects: Optional[list] = None
+    professional_title: Optional[str] = None
     recommended_level: Optional[str] = None
     confirmed_level: Optional[str] = None
 
@@ -29,6 +30,7 @@ class CandidateProfileUpdate(BaseModel):
     programming_languages: Optional[list] = None
     frameworks: Optional[list] = None
     projects: Optional[list] = None
+    professional_title: Optional[str] = None
 
 class CandidateProfileResponse(CandidateProfileBase):
     id: UUID
@@ -51,6 +53,7 @@ class ResumeResponse(BaseModel):
 
 # For LLM Structured Output Validation
 class ExtractedCandidateProfile(BaseModel):
+    professional_title: Optional[str] = Field(default=None, description="Current or most recent professional title")
     education: List[str] = Field(default_factory=list, description="List of degrees and institutions")
     years_of_experience: int = Field(default=0, description="Total years of professional experience")
     skills: List[str] = Field(default_factory=list, description="General professional skills")

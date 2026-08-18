@@ -8,7 +8,7 @@ from app.interview.models import InterviewPhase, ActionEnum, CandidateControlAct
 
 VALID_TRANSITIONS = {
     InterviewPhase.CREATED: [InterviewPhase.BRIEFING, InterviewPhase.CLOSING],
-    InterviewPhase.BRIEFING: [InterviewPhase.WELCOME, InterviewPhase.CLOSING],
+    InterviewPhase.BRIEFING: [InterviewPhase.WELCOME, InterviewPhase.TECHNICAL_INTRO, InterviewPhase.CLOSING],
     InterviewPhase.WELCOME: [InterviewPhase.BACKGROUND, InterviewPhase.TECHNICAL_INTRO, InterviewPhase.CLOSING],
     InterviewPhase.BACKGROUND: [InterviewPhase.TECHNICAL_INTRO, InterviewPhase.CLOSING],
     InterviewPhase.TECHNICAL_INTRO: [InterviewPhase.TECHNICAL, InterviewPhase.CLOSING],
@@ -22,7 +22,11 @@ VALID_TRANSITIONS = {
 
 VALID_ACTIONS_PER_PHASE = {
     InterviewPhase.CREATED: [],
-    InterviewPhase.BRIEFING: [ActionEnum.TRANSITION],
+    InterviewPhase.BRIEFING: [
+        ActionEnum.ASK,
+        ActionEnum.ACKNOWLEDGE,
+        ActionEnum.TRANSITION
+    ],
     InterviewPhase.WELCOME: [
         ActionEnum.ACKNOWLEDGE,
         ActionEnum.ASK,
@@ -36,6 +40,7 @@ VALID_ACTIONS_PER_PHASE = {
         ActionEnum.TRANSITION
     ],
     InterviewPhase.TECHNICAL_INTRO: [
+        ActionEnum.ASK,
         ActionEnum.ACKNOWLEDGE,
         ActionEnum.TRANSITION
     ],
@@ -68,21 +73,34 @@ VALID_ACTIONS_PER_PHASE = {
 
 VALID_CANDIDATE_CONTROLS_PER_PHASE = {
     InterviewPhase.CREATED: [],
-    InterviewPhase.BRIEFING: [CandidateControlAction.END_INTERVIEW],
+    InterviewPhase.BRIEFING: [
+        CandidateControlAction.END_INTERVIEW,
+        CandidateControlAction.MOVE_TO_TECHNICAL,
+        CandidateControlAction.REPEAT_QUESTION,
+        CandidateControlAction.SKIP_QUESTION,
+    ],
     InterviewPhase.WELCOME: [
         CandidateControlAction.END_INTERVIEW,
         CandidateControlAction.MOVE_TO_TECHNICAL,
+        CandidateControlAction.REPEAT_QUESTION,
+        CandidateControlAction.SKIP_QUESTION,
     ],
     InterviewPhase.BACKGROUND: [
         CandidateControlAction.SKIP_SECTION,
         CandidateControlAction.MOVE_TO_TECHNICAL,
         CandidateControlAction.END_INTERVIEW,
+        CandidateControlAction.REPEAT_QUESTION,
+        CandidateControlAction.SKIP_QUESTION,
     ],
     InterviewPhase.TECHNICAL_INTRO: [
         CandidateControlAction.END_INTERVIEW,
+        CandidateControlAction.MOVE_TO_TECHNICAL,
+        CandidateControlAction.REPEAT_QUESTION,
+        CandidateControlAction.SKIP_QUESTION,
     ],
     InterviewPhase.TECHNICAL: [
         CandidateControlAction.SKIP_QUESTION,
+        CandidateControlAction.CHANGE_QUESTION,
         CandidateControlAction.END_INTERVIEW,
         CandidateControlAction.REPEAT_QUESTION,
         CandidateControlAction.REQUEST_CLARIFICATION,
@@ -93,6 +111,7 @@ VALID_CANDIDATE_CONTROLS_PER_PHASE = {
         CandidateControlAction.END_INTERVIEW,
         CandidateControlAction.REQUEST_HINT,
         CandidateControlAction.REQUEST_CLARIFICATION,
+        CandidateControlAction.REPEAT_QUESTION,
     ],
     InterviewPhase.CLOSING: [
         CandidateControlAction.END_INTERVIEW,
