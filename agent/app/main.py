@@ -273,10 +273,12 @@ async def entrypoint(ctx: JobContext):
         tts_plugin.model_name = tts_model
     else:
         tts_model = os.getenv("GROQ_TTS_ENGLISH_MODEL", "canopylabs/orpheus-v1-english")
+        tts_voice = os.getenv("GROQ_TTS_ENGLISH_VOICE", "troy")
         logger.info("Interview language: en")
         logger.info("TTS provider: groq")
         logger.info(f"TTS model: {tts_model}")
-        tts_plugin = groq.TTS(model=tts_model)
+        logger.info(f"TTS voice: {tts_voice}")
+        tts_plugin = groq.TTS(model=tts_model, voice=tts_voice)
         tts_plugin.provider_name = "Groq"
         tts_plugin.model_name = tts_model
 
