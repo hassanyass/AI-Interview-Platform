@@ -38,9 +38,6 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: BACKEND_INTERNAL_URL
-        fromService:
-          type: web
-          name: ai-interview-backend
-          property: url
+        sync: false
       - key: AGENT_API_SECRET
         sync: false

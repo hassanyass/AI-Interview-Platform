@@ -40,6 +40,7 @@ The repository uses Render's **Blueprint** feature to automatically configure th
    - `LIVEKIT_API_SECRET`
    - `GROQ_API_KEY`
    - `AGENT_API_SECRET` (The strong random string you generated)
+   - `BACKEND_INTERNAL_URL`: (Temporarily use `http://127.0.0.1:8000`. We will update this in Step 5.)
    - `BACKEND_CORS_ORIGINS`: Temporarily leave this blank or guess your Vercel URL. We will update this in Step 5.
 7. Click **Save and Deploy**.
 8. Wait for the `ai-interview-backend` to finish deploying. Render will run `alembic upgrade head` automatically. Once it finishes, copy the Backend's public URL (e.g., `https://ai-interview-backend-xxxx.onrender.com`).
@@ -62,7 +63,7 @@ The repository uses Render's **Blueprint** feature to automatically configure th
 
 ---
 
-## 5. Final Wiring (CORS)
+## 5. Final Wiring (CORS & Agent URL)
 
 1. Return to the Render Dashboard.
 2. Select the `ai-interview-backend` Web Service.
@@ -70,7 +71,11 @@ The repository uses Render's **Blueprint** feature to automatically configure th
 4. Update the `BACKEND_CORS_ORIGINS` variable to include your newly generated Vercel domain.
    - Format: `["https://your-project.vercel.app"]`
    - Make sure it's valid JSON syntax.
-5. Save the changes. Render will automatically trigger a new deployment of the backend.
+5. Save the changes.
+6. Now select the `ai-interview-agent` Background Worker.
+7. Navigate to the **Environment** tab.
+8. Update the `BACKEND_INTERNAL_URL` variable to exactly match your Backend's public URL (e.g., `https://ai-interview-backend-xxxx.onrender.com`).
+9. Save the changes. Render will automatically trigger new deployments for both.
 
 ---
 
