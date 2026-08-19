@@ -9,6 +9,7 @@ from app.schemas.interview import InterviewSessionCreate, InterviewSessionRespon
 import logging
 from uuid import UUID
 import uuid
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,38 @@ async def get_interview(
     if session.candidate_profile_id != user_uuid:
         raise HTTPException(status_code=403, detail="Not authorized to access this interview session")
         
+    return session
+
+
+@router.post("/{session_id}/terminate", response_model=InterviewSessionResponse)
+async def terminate_interview(
+    session_id: UUID,
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency,
+):
+    """Close an abandoned user-owned session so a fresh interview can start."""
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid User ID format")
+
+    result = await db.execute(
+        select(InterviewSession)
+        .options(selectinload(InterviewSession.configuration))
+        .where(InterviewSession.id == session_id, InterviewSession.candidate_profile_id == user_uuid)
+    )
+    session = result.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.status in ("COMPLETED", "TERMINATED"):
+        return session
+
+    session.status = "TERMINATED"
+    session.completed_at = datetime.now(timezone.utc)
+    session.active_agent_id = None
+    session.agent_lease_expires_at = None
+    await db.commit()
+    await db.refresh(session)
     return session
 
 
@@ -219,6 +252,12 @@ async def get_interview_result(
         raise HTTPException(
             status_code=400, 
             detail=f"Result not available. Interview status is {session.status}."
+        )
+
+    if session.final_result is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Interview is complete, but the evaluation is still being persisted.",
         )
 
     return InterviewResultResponse(

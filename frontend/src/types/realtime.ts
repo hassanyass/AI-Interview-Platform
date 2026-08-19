@@ -19,6 +19,7 @@ export interface ActiveQuestion {
   test_cases: Array<Record<string, unknown>>;
   supported_languages: string[];
   hints_used: number;
+  source?: "LLM_GENERATED" | "CONTEXTUAL_FALLBACK" | "QUESTION_BANK";
 }
 
 export interface StateUpdatePayload {

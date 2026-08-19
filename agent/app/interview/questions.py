@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, List, Optional
 from app.interview.models import Question
 
 QUESTION_BANK: List[Question] = [
@@ -82,3 +82,36 @@ QUESTION_BANK: List[Question] = [
 def get_questions_by_competency(competency: str, difficulty: str) -> List[Question]:
     """Filter questions based on competency and difficulty."""
     return [q for q in QUESTION_BANK if q.competency == competency and q.difficulty == difficulty]
+
+
+def rank_questions_for_context(
+    role: str,
+    job_description: Optional[str],
+    candidate_profile: Optional[Dict],
+    difficulty: str,
+) -> List[Question]:
+    """Rank supported questions against the role, CV, and job description."""
+    profile = candidate_profile or {}
+    profile_values = " ".join(
+        str(value)
+        for key in ("skills", "programming_languages", "frameworks", "projects")
+        for value in (profile.get(key) or [])
+    )
+    searchable = " ".join([
+        role or "",
+        job_description or "",
+        str(profile.get("professional_title", "")),
+        profile_values,
+    ]).lower()
+    signals = {
+        "data_structures": ("data structure", "array", "hash", "set", "dictionary", "list", "tree", "graph", "python", "javascript"),
+        "algorithms": ("algorithm", "complexity", "performance", "optimization", "cache", "sorting", "search", "concurrency"),
+        "system_design": ("backend", "api", "distributed", "scalability", "scale", "microservice", "service", "database", "postgres", "redis", "cloud", "architecture"),
+    }
+    scores = {competency: sum(keyword in searchable for keyword in keywords) for competency, keywords in signals.items()}
+    ranked: List[Question] = []
+    for competency in sorted(scores, key=scores.get, reverse=True):
+        ranked.extend(q for q in QUESTION_BANK if q.competency == competency and q.difficulty == difficulty)
+    ranked.extend(q for q in QUESTION_BANK if q.difficulty == difficulty and q not in ranked)
+    ranked.extend(q for q in QUESTION_BANK if q not in ranked)
+    return ranked

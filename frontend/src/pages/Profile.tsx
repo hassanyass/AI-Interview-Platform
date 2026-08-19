@@ -5,7 +5,7 @@ import { ArrowLeft, Upload, File as FileIcon, CheckCircle, AlertCircle } from 'l
 import { API_BASE_URL } from '../lib/api'
 
 export default function Profile() {
-  const { user, getAccessToken } = useAuth()
+  const { user, getAccessToken, updateDisplayName } = useAuth()
   const [profile, setProfile] = useState<any>(null)
   const [resumes, setResumes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,7 +61,7 @@ export default function Profile() {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ 
-            full_name: user?.email?.split('@')[0] || 'Candidate', 
+            full_name: user?.user_metadata?.full_name || user?.user_metadata?.name || 'Candidate',
             email: user?.email || '' 
           })
         })
@@ -125,6 +125,17 @@ export default function Profile() {
     } catch (err: any) {
       setError(err.message)
     }
+  }
+
+  const handleNameSave = async (name: string) => {
+    try {
+      const token = await getAccessToken()
+      await updateDisplayName(name)
+      const res = await fetch(`${API_BASE_URL}/api/v1/profiles/me`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ full_name: name.trim() }) })
+      if (!res.ok) throw new Error('Failed to update profile name')
+      setProfile(await res.json())
+      setSuccess('Name updated successfully.')
+    } catch (err: any) { setError(err.message || 'Failed to update name') }
   }
 
   if (loading) return <div className="flex justify-center p-20">Loading...</div>
@@ -200,7 +211,10 @@ export default function Profile() {
             <>
               <div>
                 <p className="text-sm text-gray-500">Name</p>
-                <p className="font-medium">{profile.full_name}</p>
+                <div className="flex gap-2">
+                  <input defaultValue={profile.full_name} aria-label="Full name" className="min-w-0 flex-1 rounded border px-2 py-1 text-sm" onKeyDown={(event) => { if (event.key === 'Enter') handleNameSave(event.currentTarget.value) }} />
+                  <button type="button" className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700" onClick={(event) => handleNameSave(event.currentTarget.previousElementSibling instanceof HTMLInputElement ? event.currentTarget.previousElementSibling.value : profile.full_name)}>Save</button>
+                </div>
               </div>
               
               <div>

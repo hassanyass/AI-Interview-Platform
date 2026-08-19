@@ -10,7 +10,7 @@ The LLM produces conversational content within the constraints the controller pr
 import time
 import json
 import logging
-from typing import Optional, List
+from typing import Awaitable, Callable, Optional, List
 from datetime import datetime
 
 from app.interview.models import (
@@ -18,7 +18,7 @@ from app.interview.models import (
     ActionEnum, CandidateControlAction,
     StructuredAction, Message, Question, EvaluationSignal,
     SectionProgress, SectionLimits, QuestionRecord, QuestionOutcome,
-    AssistanceRecord, AssistanceType,
+    AssistanceRecord, AssistanceType, DetailedEvaluation,
 )
 from app.interview.state_machine import (
     is_transition_valid, is_action_valid, is_candidate_control_valid,
@@ -58,6 +58,12 @@ class InterviewController:
         # Timer
         self._start_time: Optional[float] = None
         self._total_duration_sec = context.time_remaining_seconds
+        self._custom_question: Optional[Question] = None
+        self._question_generator: Optional[Callable[[], Awaitable[Question]]] = None
+        self._question_fallback_builder: Optional[Callable[[], Question]] = None
+        self._question_history: List[Question] = []
+        if context.current_question:
+            self._question_history.append(context.current_question)
 
         # Build interview plan from context if not already set
         if not context.interview_plan:
@@ -69,6 +75,13 @@ class InterviewController:
             # Propagate limits to section progress objects
             context.background_progress.limits = context.interview_plan.background_limits
             context.technical_progress.limits = context.interview_plan.technical_limits
+
+        # One technical problem is submitted per interview. A skip may select
+        # one replacement, but counters must never trigger normal progression.
+        context.interview_plan.technical_limits.target_questions = 1
+        context.interview_plan.technical_limits.max_questions = 1
+        context.technical_progress.limits.target_questions = 1
+        context.technical_progress.limits.max_questions = 1
 
         # Verify unknown/retired questions safely
         from app.interview.questions import QUESTION_BANK
@@ -91,6 +104,42 @@ class InterviewController:
             self._start_time = time.time()
             self.context.interview_started_at = datetime.utcnow()
         self._transition_to(InterviewPhase.BRIEFING)
+
+    def resume_timer(self):
+        """Resume countdown from a checkpoint without changing the current phase."""
+        if not self._start_time:
+            self._start_time = time.time()
+            if not self.context.interview_started_at:
+                self.context.interview_started_at = datetime.utcnow()
+
+    def set_custom_question(self, question: Question):
+        """Set the one generated question to load when technical work begins."""
+        self._custom_question = question
+
+    def set_question_generator(self, generator: Callable[[], Awaitable[Question]]):
+        """Register the per-session generator for initial and skipped questions."""
+        self._question_generator = generator
+
+    def set_question_fallback(self, builder: Callable[[], Question]):
+        self._question_fallback_builder = builder
+
+    def previous_question_summaries(self) -> List[str]:
+        return [f"{question.title}: {question.problem_statement}" for question in self._question_history]
+
+    async def _generate_personalized_question(self) -> Optional[Question]:
+        if not self._question_generator:
+            return None
+        try:
+            question = await self._question_generator()
+            logger.info("[TECH-GEN] Generated personalized question id=%s title=%s source=%s", question.id, question.title, question.source)
+            return question
+        except Exception:
+            logger.exception("[TECH-GEN] Personalized generation FAILED during replacement")
+            if self._question_fallback_builder:
+                question = self._question_fallback_builder()
+                logger.warning("[TECH-GEN] FALLBACK=CONTEXTUAL_FALLBACK id=%s title=%s", question.id, question.title)
+                return question
+            return None
 
     def get_remaining_time(self) -> int:
         if not self._start_time:
@@ -127,33 +176,62 @@ class InterviewController:
         
         plan = self.context.interview_plan
         level = (self.context.confirmed_level or "junior").lower()
-        used_ids = {r.question_id for r in self.context.question_records}
+        used_ids = set(self.context.technical_question_ids_seen)
+        used_ids.update(r.question_id for r in self.context.question_records)
+        logger.info("[TECHNICAL] Previously attempted ids=%s", sorted(used_ids))
+
+        if self._custom_question and self._custom_question.id not in used_ids:
+            question = self._custom_question
+            self._custom_question = None
+            self.load_question(question)
+            logger.info("[TECH-GEN] Final selected question id=%s title=%s source=%s", question.id, question.title, question.source)
+            return question
+
+        if self._question_generator and self._question_fallback_builder:
+            question = self._question_fallback_builder()
+            self.load_question(question)
+            logger.warning("[TECH-GEN] FALLBACK=CONTEXTUAL_FALLBACK reason=pending personalized question was unavailable id=%s", question.id)
+            return question
         
-        # Try matching competency + level
+        # Rank the bank against the role, CV, and job description before using
+        # the generic competency fallback.
+        from app.interview.questions import rank_questions_for_context
+        contextual_questions = rank_questions_for_context(
+            role=self.context.role,
+            job_description=self.context.job_description,
+            candidate_profile=self.context.candidate_profile,
+            difficulty=level,
+        )
+        for q in contextual_questions:
+            if q.id not in used_ids:
+                self.load_question(q)
+                logger.warning("[TECH-GEN] FALLBACK=QUESTION_BANK reason=no personalized question available id=%s title=%s", q.id, q.title)
+                return q
+
+        # Try matching competency + level from the generated plan.
         if plan and plan.competencies:
-            idx = self.context.technical_progress.questions_completed
+            idx = len(used_ids)
             comp = plan.competencies[idx % len(plan.competencies)]
             questions = get_questions_by_competency(comp, level)
             for q in questions:
                 if q.id not in used_ids:
                     self.load_question(q)
-                    return
+                    return q
         
         # Fallback: any unused question matching the level
         for q in QUESTION_BANK:
             if q.id not in used_ids and q.difficulty == level:
                 self.load_question(q)
-                return
+                return q
         
         # Last resort: any unused question at all
         for q in QUESTION_BANK:
             if q.id not in used_ids:
                 self.load_question(q)
-                return
+                return q
         
-        # Absolute last resort: reuse first question
-        if QUESTION_BANK:
-            self.load_question(QUESTION_BANK[0])
+        logger.warning("[TECHNICAL] Question bank exhausted; no replacement selected")
+        return None
 
     def _question_problem_text(self, question: Optional[Question]) -> str:
         """Returns the candidate-facing problem in the selected language."""
@@ -179,6 +257,8 @@ class InterviewController:
 
     def _append_control_response(self, action: StructuredAction):
         """Keep skip acknowledgements out of the next LLM conversation turn."""
+        if not action.response:
+            return
         if action.detected_candidate_control in (
             CandidateControlAction.SKIP_QUESTION,
             CandidateControlAction.SKIP_SECTION,
@@ -346,6 +426,7 @@ class InterviewController:
                 "test_cases": ctx.current_question.test_cases,
                 "supported_languages": ctx.current_question.supported_languages,
                 "hints_used": ctx.hints_used,
+                "source": ctx.current_question.source,
             }
             
         allowed_controls = list(get_allowed_candidate_controls(ctx.current_phase))
@@ -390,27 +471,40 @@ class InterviewController:
         """
         logger.info(f"Received UI Command: {command}")
 
+        # A queued End command can arrive after the submit flow has already
+        # produced the closing turn. Treat it as an idempotent completion
+        # request instead of emitting a second assistant message.
+        if command == "END_INTERVIEW" and self.context.current_phase == InterviewPhase.COMPLETED:
+            return StructuredAction(
+                action=ActionEnum.END,
+                response="",
+                reason="Interview was already completed.",
+                should_transition=False,
+                detected_candidate_control=CandidateControlAction.END_INTERVIEW,
+            )
+
         if command == "SUBMIT_CODE":
             if self.context.current_phase not in (InterviewPhase.TECHNICAL, InterviewPhase.CODING):
                 return None
 
+            submission = payload.get("payload", payload or {}) if isinstance(payload, dict) else {}
+            if isinstance(submission, dict):
+                self.context.technical_submission = {
+                    "code": str(submission.get("code", ""))[:12000],
+                    "language": str(submission.get("language", ""))[:40],
+                }
+            submitted_id = self.context.current_question.id if self.context.current_question else None
             self._record_question_completion()
-            tech = self.context.technical_progress
             response = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])["submit_code"]
-            if tech.questions_completed >= tech.limits.target_questions:
-                self._transition_to(InterviewPhase.CLOSING)
-                handled = StructuredAction(
-                    action=ActionEnum.ACKNOWLEDGE,
-                    response=response,
-                    reason="Candidate submitted the technical answer and reached the target.",
-                    should_transition=True,
-                )
-            elif self.context.current_phase == InterviewPhase.CODING:
-                self._transition_to(InterviewPhase.TECHNICAL)
-                handled = StructuredAction(action=ActionEnum.ACKNOWLEDGE, response=response, reason="Candidate submitted the technical answer.", should_transition=True)
-            else:
-                self._load_next_technical_question()
-                handled = StructuredAction(action=ActionEnum.ACKNOWLEDGE, response=response, reason="Candidate submitted the technical answer.", should_transition=True)
+            self._transition_to(InterviewPhase.CLOSING)
+            logger.info("[TECHNICAL] Submitted question id=%s", submitted_id)
+            logger.info("[TECHNICAL] Technical phase complete; transitioning to CLOSING")
+            handled = StructuredAction(
+                action=ActionEnum.ACKNOWLEDGE,
+                response=response,
+                reason="Candidate submitted the single technical answer.",
+                should_transition=True,
+            )
 
             await self._apply_action(handled)
             self._append_control_response(handled)
@@ -546,6 +640,14 @@ class InterviewController:
         msgs = SYSTEM_MESSAGES.get(lang, SYSTEM_MESSAGES["en"])
         
         if control == CandidateControlAction.END_INTERVIEW:
+            if self.context.current_phase == InterviewPhase.CLOSING:
+                return StructuredAction(
+                    action=ActionEnum.END,
+                    response="",
+                    reason="Closing turn already exists; completing idempotently.",
+                    should_transition=True,
+                    detected_candidate_control=control,
+                )
             self._transition_to(InterviewPhase.CLOSING)
             return StructuredAction(
                 action=ActionEnum.ACKNOWLEDGE,
@@ -559,10 +661,20 @@ class InterviewController:
             current = self.context.current_phase
             new_phase = current
             if current in (InterviewPhase.TECHNICAL, InterviewPhase.CODING):
+                skipped_id = self.context.current_question.id if self.context.current_question else None
                 self._record_question_skip()
-                # _record_question_skip clears current_question. The valid
-                # self-transition owns loading the replacement question.
-                self._transition_to(InterviewPhase.TECHNICAL)
+                logger.info("[TECHNICAL] Skipping question id=%s", skipped_id)
+                replacement = await self._generate_personalized_question()
+                if replacement:
+                    self.load_question(replacement)
+                else:
+                    replacement = self._load_next_technical_question()
+                if replacement:
+                    logger.info("[TECH-GEN] Replacement question id=%s title=%s source=%s", replacement.id, replacement.title, replacement.source)
+                else:
+                    logger.info("[TECHNICAL] No replacement available; transitioning to CLOSING")
+                    self._transition_to(InterviewPhase.CLOSING)
+                new_phase = self.context.current_phase
             else:
                 # A background question skip stays in BACKGROUND until the
                 # existing asked-question maximum is reached. SKIP_SECTION
@@ -750,13 +862,6 @@ class InterviewController:
             return True
 
         if phase == InterviewPhase.CODING:
-            progress = self.context.technical_progress
-            limits = progress.limits
-
-            if progress.questions_completed + progress.questions_skipped >= limits.max_questions:
-                return True
-            if progress.questions_completed >= limits.target_questions:
-                return True
             if remaining < 120:
                 return True
 
@@ -778,9 +883,6 @@ class InterviewController:
                 return True
 
         if phase in (InterviewPhase.TECHNICAL, InterviewPhase.CODING):
-            progress = self.context.technical_progress
-            if progress.questions_completed + progress.questions_skipped >= progress.limits.max_questions:
-                return True
             if remaining < 120:
                 return True
 
@@ -810,6 +912,8 @@ class InterviewController:
             )
             self.context.question_records.append(record)
             self.context.technical_progress.questions_skipped += 1
+            if q.id not in self.context.technical_question_ids_skipped:
+                self.context.technical_question_ids_skipped.append(q.id)
 
         # Reset per-question counters
         self.context.hints_used = 0
@@ -855,6 +959,7 @@ class InterviewController:
                 evaluation=final_eval,
             )
             self.context.question_records.append(record)
+            self.context.technical_question_id_submitted = q.id
             self.context.technical_progress.questions_completed += 1
 
         self.context.hints_used = 0
@@ -864,7 +969,14 @@ class InterviewController:
         self.context.current_question = None
 
     def load_question(self, question: Question):
+        if question.id in self.context.technical_question_ids_seen:
+            if self.context.current_question and self.context.current_question.id == question.id:
+                return
+            raise ValueError(f"Technical question {question.id} was already used in this interview")
+        logger.info("[TECH-GEN] Final selected question id=%s title=%s source=%s", question.id, question.title, question.source)
         self.context.current_question = question
+        self._question_history.append(question)
+        self.context.technical_question_ids_seen.append(question.id)
         self.context.question_index += 1
         self.context.hints_used = 0
         self.context.followups_used = 0
@@ -899,10 +1011,14 @@ class InterviewController:
             )
 
         elif phase == InterviewPhase.WELCOME:
+            interview_focus = self.context.role
+            if self.context.job_description:
+                interview_focus = f"{self.context.role} role aligned to the provided job description"
             system_prompt = WELCOME_PROMPT.format(
                 identity=_INTERVIEWER_IDENTITY,
                 candidate_name=candidate_name,
                 role=self.context.role,
+                interview_focus=interview_focus,
                 allowed_actions=allowed_actions,
             )
 
@@ -929,11 +1045,17 @@ class InterviewController:
         elif phase == InterviewPhase.TECHNICAL_INTRO:
             q = self.context.current_question
             problem_text = self._question_problem_text(q)
+            relevance = (
+                f"This {q.competency.replace('_', ' ')} problem was selected for the {self.context.role} role "
+                "using the candidate profile and job description."
+                if q else "This problem was selected for the interview focus."
+            )
             system_prompt = TECHNICAL_INTRO_PROMPT.format(
                 identity=_INTERVIEWER_IDENTITY,
                 role=self.context.role,
                 level=self.context.confirmed_level,
                 problem=problem_text,
+                relevance=relevance,
                 allowed_actions=allowed_actions,
             )
 
@@ -946,6 +1068,9 @@ class InterviewController:
             system_prompt = TECHNICAL_PROMPT.format(
                 identity=_INTERVIEWER_IDENTITY,
                 problem=problem_text,
+                role=self.context.role,
+                candidate_context=truncate_prompt_text(profile_str, 1800),
+                job_description=truncate_prompt_text(self.context.job_description, 1800) or "No specific job description was provided.",
                 flow_state=flow_state,
                 hints_used=self.context.hints_used,
                 max_hints=tech.limits.max_hints_per_question,
@@ -1012,6 +1137,40 @@ class InterviewController:
 
         return structured_action
 
+    async def generate_final_evaluation(self) -> Optional[DetailedEvaluation]:
+        """Evaluate only the evidence captured in this interview session."""
+        if self.context.final_evaluation is not None:
+            return self.context.final_evaluation
+
+        evidence = {
+            "role": self.context.role,
+            "level": self.context.confirmed_level,
+            "technical_submission": self.context.technical_submission,
+            "question_records": [r.model_dump(mode="json") for r in self.context.question_records],
+            "transcript": [
+                {"speaker": m.role, "text": truncate_prompt_text(m.content, MAX_MESSAGE_CHARS)}
+                for m in self.context.conversation_history
+                if m.role in ("user", "assistant")
+            ][-40:],
+        }
+        prompt = (
+            EVALUATOR_PROMPT
+            + "\n\nUse only the supplied evidence. Distinguish explicit statements from inference. "
+            + "When evidence is missing, say so and leave the score null. Return a concise structured report."
+        )
+        try:
+            evaluation = await self.llm.generate_structured(
+                system_prompt=prompt,
+                messages=[{"role": "user", "content": json.dumps(evidence, ensure_ascii=False)}],
+                response_model=DetailedEvaluation,
+            )
+            self.context.final_evaluation = evaluation
+            logger.info("[EVALUATION] generated status=COMPLETED")
+            return evaluation
+        except Exception:
+            logger.exception("[EVALUATION] generation_failed")
+            return None
+
     # ─── Apply Action Effects ─────────────────────────────────────────────
 
     async def _apply_action(self, action: StructuredAction):
@@ -1055,19 +1214,10 @@ class InterviewController:
         elif current == InterviewPhase.TECHNICAL:
             self._transition_to(InterviewPhase.CODING)
         elif current == InterviewPhase.CODING:
-            # Question done — record and potentially move to next question or closing
+            # There is one technical problem. Any deterministic completion of
+            # the coding stage ends technical work; it never loads another.
             self._record_question_completion()
-            remaining = self.get_remaining_time()
-            tech = self.context.technical_progress
-
-            if (
-                tech.questions_completed >= tech.limits.target_questions
-                or tech.questions_completed + tech.questions_skipped >= tech.limits.max_questions
-                or remaining < 120
-            ):
-                self._transition_to(InterviewPhase.CLOSING)
-            else:
-                self._transition_to(InterviewPhase.TECHNICAL)
+            self._transition_to(InterviewPhase.CLOSING)
         elif current == InterviewPhase.CLOSING:
             self._transition_to(InterviewPhase.COMPLETED)
 

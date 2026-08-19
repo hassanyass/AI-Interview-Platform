@@ -14,7 +14,7 @@ export type InterviewPhase =
   | "TERMINATED"
   | "FAILED";
 
-export type InterviewStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "TERMINATED" | "FAILED";
+export type InterviewStatus = "PENDING" | "IN_PROGRESS" | "DISCONNECTED" | "COMPLETED" | "TERMINATED" | "FAILED";
 
 export type QuestionOutcome = "UNASKED" | "COMPLETED" | "SKIPPED" | "CHANGED";
 
@@ -49,6 +49,31 @@ export interface FinalResult {
   changed: number;
   question_records: QuestionRecord[];
   competencies_evaluated: any[];
+  technical_submission?: { code?: string; language?: string };
+  transcript?: Array<{ speaker: "candidate" | "agent"; text: string }>;
+  evaluation_status?: "COMPLETED" | "FAILED";
+  evaluation?: DetailedEvaluation | null;
+}
+
+export interface EvaluationCategory {
+  score?: number | null;
+  overview: string;
+  strengths: string[];
+  improvements: string[];
+}
+
+export interface DetailedEvaluation {
+  overall_score?: number | null;
+  recommendation: string;
+  summary: string;
+  communication: EvaluationCategory;
+  technical: EvaluationCategory;
+  problem_solving: EvaluationCategory;
+  technical_submission: EvaluationCategory;
+  background: EvaluationCategory;
+  strengths: string[];
+  areas_for_improvement: string[];
+  detailed_overview: string;
 }
 
 export interface InterviewSessionResponse {

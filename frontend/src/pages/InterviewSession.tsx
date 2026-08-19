@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { LiveKitRoom, RoomAudioRenderer } from '@livekit/components-react'
 import { InterviewProvider } from '../stores/InterviewContext'
@@ -17,6 +17,9 @@ export default function InterviewSession() {
   
   const [livekitToken, setLivekitToken] = useState('')
   const [livekitUrl, setLivekitUrl] = useState('')
+  const markCompleted = useCallback(() => {
+    setSession((current) => current && current.status !== "COMPLETED" ? { ...current, status: "COMPLETED" } : current)
+  }, [])
 
   useEffect(() => {
     async function init() {
@@ -53,7 +56,7 @@ export default function InterviewSession() {
     // Navigation guard to prevent accidental tab closures/refreshes
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       // Only protect if we have an active session that hasn't completed
-      if (session && session.status !== "COMPLETED" && session.status !== "TERMINATED") {
+      if (session && ["CREATED", "IN_PROGRESS", "DISCONNECTED"].includes(session.status)) {
         e.preventDefault();
         // Chrome requires returnValue to be set
         e.returnValue = "";
@@ -106,7 +109,10 @@ export default function InterviewSession() {
     >
       <RoomAudioRenderer />
       <InterviewProvider>
-        <InterviewWorkspace session={session} />
+        <InterviewWorkspace
+          session={session}
+          onCompleted={markCompleted}
+        />
       </InterviewProvider>
     </LiveKitRoom>
   );

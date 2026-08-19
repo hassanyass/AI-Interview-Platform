@@ -49,18 +49,23 @@ class VoiceInterviewAdapter:
         self._tts_queue = asyncio.Queue(maxsize=20)
         self._playback_task: Optional[asyncio.Task] = None
         self._current_synthesis_task: Optional[asyncio.Task] = None
+        self._candidate_endpoint_task: Optional[asyncio.Task] = None
         self._is_interrupted = False
         self._generation_id = 0
-        # Groq can return 429 while its LiveKit plugin is already retrying the
-        # same request internally.  Keep a local cooldown so queued chunks do
-        # not immediately create another burst of requests.
-        self._tts_rate_limited_until = 0.0
+        self._candidate_turn_id = 0
+        self._processed_candidate_turns = set()
+        self._pending_candidate_parts: List[str] = []
+        self._last_final_candidate_text = ""
+        self._last_final_candidate_at = 0.0
+        self._transcription_sequence = 0
+        self._completion_persisted = False
         try:
-            self._tts_rate_limit_cooldown = max(
-                5.0, float(os.getenv("TTS_429_COOLDOWN_SECONDS", "30"))
+            self._candidate_endpoint_delay = max(
+                0.25, float(os.getenv("STT_ENDPOINT_DELAY_SECONDS", "0.8"))
             )
         except ValueError:
-            self._tts_rate_limit_cooldown = 30.0
+            self._candidate_endpoint_delay = 0.8
+            
         # STT turns and UI controls share one interview timeline. Never let
         # two controller turns generate responses concurrently.
         self._turn_lock = asyncio.Lock()
@@ -143,8 +148,9 @@ class VoiceInterviewAdapter:
     async def _emit_transcription(self, speaker: str, text: str, is_final: bool = True):
         """Broadcasts a transcription update to the frontend via Data Channel."""
         import json
+        self._transcription_sequence += 1
         payload = json.dumps({
-            "id": f"{speaker}-{hash(text)}",
+            "id": f"{speaker}-{self._transcription_sequence}",
             "speaker": speaker,
             "text": text,
             "isFinal": is_final
@@ -188,8 +194,14 @@ class VoiceInterviewAdapter:
         self._is_interrupted = False
         try:
             action = await self.controller.process_ui_command(command, payload)
-            
-            if not action or not action.response:
+
+            if not action:
+                return
+            if self.controller.context.current_phase == InterviewPhase.COMPLETED and not action.response:
+                await self._handle_completion()
+                return
+            if not action.response:
+                await self._emit_ui_state()
                 return
                 
             logger.info(f"AI ({action.action.value}): {action.response}")
@@ -248,22 +260,70 @@ class VoiceInterviewAdapter:
 
     async def _read_stt_events(self):
         async for event in self._stt_stream:
+            if event.type == stt.SpeechEventType.START_OF_SPEECH:
+                # Speech-start is the authoritative barge-in signal. It must
+                # invalidate audio and any in-flight response immediately.
+                logger.info("[TURN] candidate_speech_started")
+                self._handle_interruption()
+                continue
+
             if event.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
                 transcript = event.alternatives[0].text.strip()
                 if transcript:
-                    logger.info(f"Candidate (STT): {transcript}")
-                    await self._handle_candidate_turn(transcript)
+                    logger.info(f"Candidate (STT final segment): {transcript}")
+                    self._pending_candidate_parts.append(transcript)
+                    self._schedule_candidate_endpoint()
 
             elif event.type == stt.SpeechEventType.INTERIM_TRANSCRIPT:
                 transcript = event.alternatives[0].text.strip()
-                if transcript and not self._is_interrupted:
-                    if len(transcript) > 2:
-                        self._handle_interruption()
+                # Interim STT is for barge-in/UI feedback only. It never
+                # enters the controller and cannot start an LLM generation.
+                if transcript and len(transcript) > 2:
+                    logger.debug("[TURN] interim_transcript_received")
+                    self._handle_interruption()
+
+    def _schedule_candidate_endpoint(self) -> None:
+        """Coalesce VAD segments before declaring one candidate turn complete."""
+        if self._candidate_endpoint_task and not self._candidate_endpoint_task.done():
+            self._candidate_endpoint_task.cancel()
+        self._candidate_endpoint_task = asyncio.create_task(
+            self._finalize_pending_candidate_after_endpoint()
+        )
+
+    async def _finalize_pending_candidate_after_endpoint(self) -> None:
+        try:
+            await asyncio.sleep(self._candidate_endpoint_delay)
+            if not self._pending_candidate_parts:
+                return
+            parts = self._pending_candidate_parts
+            self._pending_candidate_parts = []
+            transcript = " ".join(parts).strip()
+            now = asyncio.get_running_loop().time()
+            is_duplicate_event = (
+                transcript == self._last_final_candidate_text
+                and now - self._last_final_candidate_at < 2.0
+            )
+            if not transcript or is_duplicate_event:
+                logger.info("[TURN] duplicate_candidate_turn_ignored")
+                return
+            self._last_final_candidate_text = transcript
+            self._last_final_candidate_at = now
+            self._candidate_turn_id += 1
+            turn_id = self._candidate_turn_id
+            logger.info("[TURN] candidate_turn_finalized id=%s", turn_id)
+            await self._handle_candidate_turn(transcript, turn_id=turn_id)
+        except asyncio.CancelledError:
+            return
 
     def _handle_interruption(self):
-        logger.info("Candidate barged in! Interrupting playback...")
+        old_generation = self._generation_id
         self._is_interrupted = True
         self._generation_id += 1
+        logger.info(
+            "[BARGE_IN] interviewer_generation_invalidated old_id=%s new_id=%s",
+            old_generation,
+            self._generation_id,
+        )
 
         while not self._tts_queue.empty():
             try:
@@ -275,53 +335,32 @@ class VoiceInterviewAdapter:
         if self._current_synthesis_task and not self._current_synthesis_task.done():
             self._current_synthesis_task.cancel()
 
-    def _segment_text(self, text: str, max_len: int = 190) -> List[str]:
-        """Splits text into chunks <= max_len at natural sentence boundaries."""
-        pattern = r'([^.!?؟:;؛\n]+[.!?؟:;؛\n]+)'
-        parts = re.split(pattern, text)
-        parts = [p.strip() for p in parts if p.strip()]
 
-        chunks = []
-        current_chunk = ""
-
-        for part in parts:
-            if len(current_chunk) + len(part) + 1 <= max_len:
-                current_chunk += (" " if current_chunk else "") + part
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-
-                if len(part) > max_len:
-                    subparts = re.split(r'([^,،\s]+[,،\s]+)', part)
-                    subparts = [sp.strip() for sp in subparts if sp.strip()]
-                    current_sub = ""
-                    for sp in subparts:
-                        if len(current_sub) + len(sp) + 1 <= max_len:
-                            current_sub += (" " if current_sub else "") + sp
-                        else:
-                            if current_sub:
-                                chunks.append(current_sub)
-                            current_sub = sp
-                    if current_sub:
-                        current_chunk = current_sub
-                else:
-                    current_chunk = part
-
-        if current_chunk:
-            chunks.append(current_chunk)
-
-        return chunks
 
     # ─── Core Turn Handler ─────────────────────────────────────────────
 
-    async def _handle_candidate_turn(self, transcript: str, is_chain: bool = False, _lock_held: bool = False):
+    async def _handle_candidate_turn(
+        self,
+        transcript: str,
+        is_chain: bool = False,
+        _lock_held: bool = False,
+        turn_id: Optional[int] = None,
+    ):
         """Process a finalized candidate utterance through the controller."""
         if not _lock_held:
             async with self._turn_lock:
-                await self._handle_candidate_turn(transcript, is_chain=is_chain, _lock_held=True)
+                await self._handle_candidate_turn(
+                    transcript, is_chain=is_chain, _lock_held=True, turn_id=turn_id
+                )
             return
 
         self._is_interrupted = False
+
+        if turn_id is not None:
+            if turn_id in self._processed_candidate_turns:
+                logger.info("[TURN] duplicate_candidate_turn_ignored id=%s", turn_id)
+                return
+            self._processed_candidate_turns.add(turn_id)
 
         transcript = transcript.strip()
         if not transcript and not is_chain:
@@ -343,10 +382,22 @@ class VoiceInterviewAdapter:
             await self._emit_transcription(speaker="candidate", text=transcript)
 
         logger.info("[Agent Thinking...]")
+        response_generation = self._generation_id
+        logger.info("[LLM] generation_started id=%s turn_id=%s", response_generation, turn_id)
         try:
             action = await self.controller.process_candidate_input(transcript)
 
+            if response_generation != self._generation_id or self._is_interrupted:
+                logger.info(
+                    "[LLM] generation_rejected stale_id=%s current_id=%s",
+                    response_generation,
+                    self._generation_id,
+                )
+                return
+
             if not action.response:
+                if self.controller.context.current_phase == InterviewPhase.COMPLETED:
+                    await self._handle_completion()
                 return
 
             logger.info(f"AI ({action.action.value}): {action.response}")
@@ -377,21 +428,17 @@ class VoiceInterviewAdapter:
             await self._emit_ui_state()
 
     async def _speak_text(self, text: str):
-        """Segment and enqueue text for TTS playback."""
+        """Enqueue text for TTS playback without artificial chunking."""
         # Increment generation ID so any stale queued items are invalidated
         self._generation_id += 1
         current_gen = self._generation_id
+        logger.info("[TTS] generation_started id=%s", current_gen)
         
-        # Always segment for Groq TTS to avoid rate limits / length limits
-        chunks = self._segment_text(text)
-        logger.info(f"Segmented AI response into {len(chunks)} TTS chunks (Gen {current_gen}).")
-
-        for i, chunk in enumerate(chunks, 1):
-            if not self._is_interrupted and self._generation_id == current_gen:
-                try:
-                    await asyncio.wait_for(self._tts_queue.put((chunk, i, len(chunks), current_gen)), timeout=5.0)
-                except asyncio.TimeoutError:
-                    logger.warning("TTS queue full, dropping chunk.")
+        if not self._is_interrupted and self._generation_id == current_gen:
+            try:
+                await asyncio.wait_for(self._tts_queue.put((text, 1, 1, current_gen)), timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.warning("TTS queue full, dropping text.")
 
     async def _speak_and_persist(self, text: str, is_agent: bool = True):
         """Convenience: persist a message and speak it."""
@@ -474,19 +521,27 @@ class VoiceInterviewAdapter:
 
     async def _handle_completion(self):
         """Handle interview completion — persist final state."""
+        if self._completion_persisted:
+            logger.info("[COMPLETION] duplicate_completion_ignored")
+            return
         ctx = self.controller.context
         logger.info("Interview completed. Persisting final state.")
 
+        await self.controller.generate_final_evaluation()
         if self.persistence:
             seq = ctx.event_sequence + 1
             ctx.event_sequence = seq
-            await self.persistence.save_event(
-                session_id=ctx.session_id,
-                sequence=seq,
-                event_type="SESSION_COMPLETED",
-                phase=InterviewPhase.COMPLETED.value,
-            )
+            try:
+                await self.persistence.save_event(
+                    session_id=ctx.session_id,
+                    sequence=seq,
+                    event_type="SESSION_COMPLETED",
+                    phase=InterviewPhase.COMPLETED.value,
+                )
+            except Exception:
+                logger.exception("[COMPLETION] failed_to_persist_completion_event")
             await self.persistence.save_completion(ctx)
+        self._completion_persisted = True
             
         await self._emit_ui_state()
 
@@ -506,6 +561,7 @@ class VoiceInterviewAdapter:
 
             # Discard if stale or interrupted
             if self._is_interrupted or gen_id != self._generation_id:
+                logger.info("[TTS] generation_rejected stale_id=%s", gen_id)
                 self._tts_queue.task_done()
                 continue
 
@@ -515,7 +571,7 @@ class VoiceInterviewAdapter:
             try:
                 await self._current_synthesis_task
             except asyncio.CancelledError:
-                logger.info(f"Cancelled playback for chunk: {chunk[:20]}...")
+                logger.info("[TTS] playback_cancelled generation_id=%s", gen_id)
             except Exception as e:
                 # TTS failure must NOT crash the loop or affect the persisted message
                 logger.error(f"TTS Playback error (safe to continue): {e}")
@@ -523,117 +579,46 @@ class VoiceInterviewAdapter:
                 self._tts_queue.task_done()
 
     async def _synthesize_and_play(self, text: str, chunk_idx: int = 1, total_chunks: int = 1, gen_id: int = 0):
-        now = asyncio.get_running_loop().time()
-        if now < self._tts_rate_limited_until:
-            remaining = self._tts_rate_limited_until - now
-            logger.info(
-                "[TTS-DIAG] Skipping synthesis during Groq rate-limit cooldown "
-                f"({remaining:.1f}s remaining). Transcript remains available."
-            )
-            return
-
-        # Strict execution of the configured TTS plugin
-        provider = getattr(self.tts_plugin, "provider_name", "Unknown")
-        model = getattr(self.tts_plugin, "model_name", "Unknown")
-        lang = getattr(self.controller.context, "language", "en")
-        
-        logger.info(f"[TTS-DIAG] Provider: {provider}")
-        logger.info(f"[TTS-DIAG] Model: {model}")
-        logger.info(f"[TTS-DIAG] Synthesizing {lang} speech")
-        import random
-        # The LiveKit provider also retries API failures. Keep adapter-level
-        # retries for transient errors bounded so one turn cannot block the
-        # playback queue for a long time.
-        try:
-            max_retries = max(1, int(os.getenv("TTS_MAX_RETRIES", "2")))
-        except ValueError:
-            max_retries = 2
-        try:
-            rate_limit_retry_delay = max(
-                1.0, float(os.getenv("TTS_429_RETRY_DELAY_SECONDS", "3"))
-            )
-        except ValueError:
-            rate_limit_retry_delay = 3.0
-        rate_limit_retry_used = False
-        base_delay = 1.0
-        
-        for attempt in range(1, max_retries + 1):
-            if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
-                raise asyncio.CancelledError()
+        if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
+            raise asyncio.CancelledError()
             
-            try:
-                resp_id = id(text)
-                logger.info(
-                    f"[TTS-DIAG] Synthesizing chunk {chunk_idx}/{total_chunks} "
-                    f"(ID: {resp_id}) - Attempt {attempt}/{max_retries}: {text[:40]}..."
+        logger.info(f"[TTS-DIAG] Synthesizing response (Gen {gen_id}): {text[:40]}...")
+        
+        try:
+            # We rely on Groq directly and disable internal LiveKit retries so we can control rate-limit handling.
+            async for audio_chunk in self.tts_plugin.synthesize(text, conn_options=APIConnectOptions(max_retry=0)):
+                if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
+                    logger.info("[TTS] Interrupted during playback")
+                    raise asyncio.CancelledError()
+                await self._audio_source.capture_frame(audio_chunk.frame)
+                
+            logger.info(f"[TTS-DIAG] Synthesis playback complete (Gen {gen_id})")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            err_str = str(e)
+            status_code = getattr(e, "status_code", None)
+            response = getattr(e, "response", None)
+            headers = getattr(response, "headers", {}) if response else {}
+            
+            is_429 = (status_code == 429) or ("429" in err_str) or ("Too Many Requests" in err_str)
+            
+            if is_429:
+                retry_after_str = headers.get("retry-after") or headers.get("x-ratelimit-reset-requests") or headers.get("x-ratelimit-reset-tokens")
+                try:
+                    retry_after = float(retry_after_str) if retry_after_str else 0.0
+                except (ValueError, TypeError):
+                    retry_after = 0.0
+                    
+                logger.warning(
+                    f"[TTS-DIAG] Groq TTS rate limit (429) hit for Gen {gen_id}. "
+                    f"Headers: {dict(headers)}. Skipping TTS for this turn to prevent quota starvation."
                 )
                 
-                # Disable LiveKit's default provider retries here. A 429 is a
-                # quota/rate-limit response, not a transient connection error;
-                # retrying it only delays the interview and duplicates traffic.
-                async for audio_chunk in self.tts_plugin.synthesize(
-                    text,
-                    conn_options=APIConnectOptions(max_retry=0),
-                ):
-                    if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
-                        raise asyncio.CancelledError()
-                    await self._audio_source.capture_frame(audio_chunk.frame)
-                
-                logger.info(f"[TTS-DIAG] Success for chunk {chunk_idx}/{total_chunks} (ID: {resp_id})")
+                # If a reasonable reset time is provided, delay pulling the next item from the queue
+                if 0 < retry_after <= 15.0:
+                    logger.info(f"[TTS-DIAG] Pausing TTS queue for {retry_after:.1f}s to respect provider reset window.")
+                    await asyncio.sleep(retry_after)
                 return
                 
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                err_str = str(e)
-                err_type = type(e).__name__
-                status_code = getattr(e, "status_code", None)
-                # Some API errors expose a response or message attribute
-                err_msg = getattr(e, "message", getattr(e, "body", None))
-                
-                is_429 = (status_code == 429) or ("429" in err_str) or ("Too Many Requests" in err_str)
-                
-                logger.warning(
-                    f"[TTS-DIAG] Failed chunk {chunk_idx}/{total_chunks} (ID: {resp_id}) "
-                    f"Attempt {attempt}/{max_retries}. Status: {status_code or (429 if is_429 else 'unknown')} "
-                    f"| Type: {err_type} | Error: {err_str} | Body: {err_msg}"
-                )
-                
-                if is_429:
-                    # Groq's TTS token window commonly resets within a few
-                    # seconds. Allow exactly one reset-aware retry; if the
-                    # window is a hard quota, enter cooldown instead.
-                    if not rate_limit_retry_used:
-                        rate_limit_retry_used = True
-                        logger.warning(
-                            "[TTS-DIAG] Groq TTS rate limit window active. "
-                            f"Waiting {rate_limit_retry_delay:.1f}s for one recovery retry."
-                        )
-                        await asyncio.sleep(rate_limit_retry_delay)
-                        continue
-
-                    self._tts_rate_limited_until = (
-                        asyncio.get_running_loop().time() + self._tts_rate_limit_cooldown
-                    )
-                    logger.error(
-                        "[TTS-DIAG] Groq rate limit detected. Entering "
-                        f"{self._tts_rate_limit_cooldown:.0f}s cooldown; continuing "
-                        "without voice so the interview transcript can proceed."
-                    )
-                    return
-
-                if attempt == max_retries:
-                    logger.error(f"[TTS-DIAG] Max retries reached for chunk {chunk_idx}/{total_chunks}. Failing gracefully.")
-                    break
-                    
-                retry_after = getattr(e, "retry_after", None)
-                if retry_after is not None:
-                    try:
-                        delay = float(retry_after)
-                    except ValueError:
-                        delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
-                else:
-                    delay = base_delay + random.uniform(0, 0.2)
-                    
-                logger.info(f"[TTS-DIAG] Retrying chunk {chunk_idx}/{total_chunks} after {delay:.2f}s...")
-                await asyncio.sleep(delay)
+            logger.error(f"[TTS-DIAG] TTS provider failed for Gen {gen_id} ({type(e).__name__}): {err_str}")

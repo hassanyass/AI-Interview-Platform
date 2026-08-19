@@ -12,6 +12,33 @@ from app.interview.models import InterviewRuntimeContext
 logger = logging.getLogger(__name__)
 
 
+def build_final_result(context: InterviewRuntimeContext) -> dict:
+    """Build the single persisted result envelope used by mock and API stores."""
+    completed_questions = sum(1 for r in context.question_records if r.outcome.value == "COMPLETED")
+    skipped_questions = sum(1 for r in context.question_records if r.outcome.value == "SKIPPED")
+    changed_questions = sum(1 for r in context.question_records if r.outcome.value == "CHANGED")
+    return {
+        "session_id": context.session_id,
+        "role": context.role,
+        "level": context.confirmed_level,
+        "total_questions": len(context.question_records),
+        "completed": completed_questions,
+        "skipped": skipped_questions,
+        "changed": changed_questions,
+        "question_records": [r.model_dump(mode="json") for r in context.question_records],
+        "competencies_evaluated": context.competencies_evaluated,
+        "technical_submission": context.technical_submission,
+        "technical_question_ids_seen": context.technical_question_ids_seen,
+        "transcript": [
+            {"speaker": "candidate" if m.role == "user" else "agent", "text": m.content}
+            for m in context.conversation_history
+            if m.role in ("user", "assistant")
+        ],
+        "evaluation_status": "COMPLETED" if context.final_evaluation else "FAILED",
+        "evaluation": context.final_evaluation.model_dump(mode="json") if context.final_evaluation else None,
+    }
+
+
 class InterviewPersistence(ABC):
     """Abstract interface for loading and saving interview state."""
 
@@ -76,10 +103,20 @@ class MockPersistence(InterviewPersistence):
             "current_question_snapshot": context.current_question.model_dump() if context.current_question else None,
             "section_progress": {
                 "background": context.background_progress.model_dump(),
-                "technical": context.technical_progress.model_dump(),
+                "technical": {
+                    **context.technical_progress.model_dump(),
+                    "technical_question_ids_seen": context.technical_question_ids_seen,
+                    "technical_question_ids_skipped": context.technical_question_ids_skipped,
+                    "technical_question_id_submitted": context.technical_question_id_submitted,
+                    "technical_submission": context.technical_submission,
+                },
             },
-            "question_records": [r.model_dump() for r in context.question_records],
-            "evaluation_signals": [e.model_dump() for e in context.evaluation_signals],
+            "question_records": [r.model_dump(mode="json") for r in context.question_records],
+            "evaluation_signals": [e.model_dump(mode="json") for e in context.evaluation_signals],
+            "technical_question_ids_seen": context.technical_question_ids_seen,
+            "technical_question_ids_skipped": context.technical_question_ids_skipped,
+            "technical_question_id_submitted": context.technical_question_id_submitted,
+            "technical_submission": context.technical_submission,
             "competencies_evaluated": context.competencies_evaluated,
         }
         logger.info(f"[MockPersistence] Saved checkpoint for {context.session_id} - Phase: {context.current_phase.value}")
@@ -91,21 +128,7 @@ class MockPersistence(InterviewPersistence):
             "current_phase": context.current_phase.value,
         }
         if status == "COMPLETED":
-            completed_questions = sum(1 for r in context.question_records if r.outcome == "COMPLETED")
-            skipped_questions = sum(1 for r in context.question_records if r.outcome == "SKIPPED")
-            changed_questions = sum(1 for r in context.question_records if r.outcome == "CHANGED")
-            
-            final_result = {
-                "session_id": context.session_id,
-                "role": context.role,
-                "level": context.confirmed_level,
-                "total_questions": len(context.question_records),
-                "completed": completed_questions,
-                "skipped": skipped_questions,
-                "changed": changed_questions,
-                "question_records": [r.model_dump() for r in context.question_records],
-                "competencies_evaluated": context.competencies_evaluated,
-            }
+            final_result = build_final_result(context)
             self.storage[context.session_id]["final_result"] = final_result
             
         logger.info(f"[MockPersistence] Saved final state for {context.session_id}")
@@ -133,10 +156,12 @@ class MockPersistence(InterviewPersistence):
             "phase": phase,
         })
 
-    async def update_status(self, session_id: str, status: str) -> None:
+    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> None:
         if session_id not in self.storage:
             self.storage[session_id] = {}
         self.storage[session_id]["status"] = status
+        if final_result is not None:
+            self.storage[session_id]["final_result"] = final_result
 
 
 class APIPersistence(InterviewPersistence):
@@ -210,10 +235,16 @@ class APIPersistence(InterviewPersistence):
             ),
             "section_progress": {
                 "background": context.background_progress.model_dump(),
-                "technical": context.technical_progress.model_dump(),
+                "technical": {
+                    **context.technical_progress.model_dump(),
+                    "technical_question_ids_seen": context.technical_question_ids_seen,
+                    "technical_question_ids_skipped": context.technical_question_ids_skipped,
+                    "technical_question_id_submitted": context.technical_question_id_submitted,
+                    "technical_submission": context.technical_submission,
+                },
             },
-            "question_records": [r.model_dump() for r in context.question_records],
-            "evaluation_signals": [e.model_dump() for e in context.evaluation_signals],
+            "question_records": [r.model_dump(mode="json") for r in context.question_records],
+            "evaluation_signals": [e.model_dump(mode="json") for e in context.evaluation_signals],
         }
         try:
             async with session.post(
@@ -232,21 +263,7 @@ class APIPersistence(InterviewPersistence):
         final_result = None
         if status == "COMPLETED":
             # Generate the final result schema
-            completed_questions = sum(1 for r in context.question_records if r.outcome == "COMPLETED")
-            skipped_questions = sum(1 for r in context.question_records if r.outcome == "SKIPPED")
-            changed_questions = sum(1 for r in context.question_records if r.outcome == "CHANGED")
-            
-            final_result = {
-                "session_id": context.session_id,
-                "role": context.role,
-                "level": context.confirmed_level,
-                "total_questions": len(context.question_records),
-                "completed": completed_questions,
-                "skipped": skipped_questions,
-                "changed": changed_questions,
-                "question_records": [r.model_dump() for r in context.question_records],
-                "competencies_evaluated": context.competencies_evaluated,
-            }
+            final_result = build_final_result(context)
             
         await self.update_status(context.session_id, status, final_result=final_result)
 

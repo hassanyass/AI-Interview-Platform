@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 
 export default function AuthPage() {
   const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [isLogin, setIsLogin] = useState(true)
   const [error, setError] = useState('')
@@ -29,7 +30,11 @@ export default function AuthPage() {
         if (error) throw error
         navigate('/dashboard')
       } else {
-        const { error } = await supabase.auth.signUp({ email, password })
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: name.trim(), name: name.trim() } },
+        })
         if (error) throw error
         // Optionally create profile here or let backend handle it, 
         // in our plan we require explicit creation or creation through Resume/Profile page
@@ -60,6 +65,10 @@ export default function AuthPage() {
         
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4">
+            {!isLogin && <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
+              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className="block w-full appearance-none rounded-lg border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500 sm:text-sm" placeholder="Your name" />
+            </div>}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email address</label>
               <input

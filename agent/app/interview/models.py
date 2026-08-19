@@ -86,6 +86,7 @@ class Question(BaseModel):
     title_ar: Optional[str] = None
     problem_statement_ar: Optional[str] = None
     hints_ar: List[str] = Field(default_factory=list)
+    source: str = "QUESTION_BANK"
 
 
 class QuestionOutcome(str, enum.Enum):
@@ -162,6 +163,27 @@ class EvaluationSignal(BaseModel):
     missing: Optional[str] = None
 
 
+class EvaluationCategory(BaseModel):
+    score: Optional[int] = Field(None, ge=1, le=5)
+    overview: str = "Not enough evidence was recorded to evaluate this category."
+    strengths: List[str] = Field(default_factory=list)
+    improvements: List[str] = Field(default_factory=list)
+
+
+class DetailedEvaluation(BaseModel):
+    overall_score: Optional[int] = Field(None, ge=1, le=5)
+    recommendation: str = "Consider / Mixed"
+    summary: str = "The interview did not contain enough evidence for a detailed assessment."
+    communication: EvaluationCategory = Field(default_factory=EvaluationCategory)
+    technical: EvaluationCategory = Field(default_factory=EvaluationCategory)
+    problem_solving: EvaluationCategory = Field(default_factory=EvaluationCategory)
+    technical_submission: EvaluationCategory = Field(default_factory=EvaluationCategory)
+    background: EvaluationCategory = Field(default_factory=EvaluationCategory)
+    strengths: List[str] = Field(default_factory=list)
+    areas_for_improvement: List[str] = Field(default_factory=list)
+    detailed_overview: str = ""
+
+
 # ─── Structured LLM Output ────────────────────────────────────────────────────
 
 class StructuredAction(BaseModel):
@@ -219,10 +241,15 @@ class InterviewRuntimeContext(BaseModel):
     # Records of completed/skipped questions
     question_records: List[QuestionRecord] = []
     assistance_records: List[AssistanceRecord] = []
+    technical_question_ids_seen: List[str] = []
+    technical_question_ids_skipped: List[str] = []
+    technical_question_id_submitted: Optional[str] = None
+    technical_submission: Dict[str, Any] = {}
     
     # Conversation history (in-memory only, NOT bulk-persisted per checkpoint)
     conversation_history: List[Message] = []
     evaluation_signals: List[EvaluationSignal] = []
+    final_evaluation: Optional[DetailedEvaluation] = None
     
     # Persistence sequence counters
     message_sequence: int = 0

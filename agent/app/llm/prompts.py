@@ -95,9 +95,11 @@ The candidate has responded to your greeting. Acknowledge what they said warmly,
 
 Candidate: {candidate_name}
 Role: {role}
+Interview focus: {interview_focus}
 
 RULES:
 - Keep it to 1 sentence.
+- Welcome the candidate by name. Refer to the interview focus naturally, without listing profile fields or repeating the job description.
 - You MUST use action=TRANSITION to move to the background discussion.
 
 Allowed actions: {allowed_actions}
@@ -157,6 +159,7 @@ CURRENT PHASE: TECHNICAL_INTRO
 You are presenting a technical challenge to the candidate.
 
 The problem: {problem}
+Why this is relevant: {relevance}
 
 FIRST TURN (conversation history is empty):
 Present the problem concisely: "Here's your challenge: [problem in 1-2 sentences]. Take a moment to think, then walk me through your approach."
@@ -182,6 +185,9 @@ TECHNICAL_PROMPT = """
 CURRENT PHASE: TECHNICAL
 Current Problem:
 {problem}
+Target role: {role}
+Candidate context: {candidate_context}
+Job description context: {job_description}
 
 PROBLEM STAGE: {flow_state}
 

@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, Clock, RotateCw, SkipForward } from "lucide-react";
-import { getInterviewResult } from "../../services/api/interviews";
-import type { InterviewResultResponse } from "../../types/api";
+import { getInterviewResult, getInterviewSession } from "../../services/api/interviews";
+import type { InterviewResultResponse, InterviewStatus } from "../../types/api";
 import { AppShell } from "../../components/layout/AppShell";
 import { Button } from "../../components/ui/Button";
 
@@ -11,18 +11,50 @@ export default function FinalResult() {
   const [result, setResult] = useState<InterviewResultResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [interviewStatus, setInterviewStatus] = useState<InterviewStatus | null>(null);
 
   useEffect(() => {
     async function fetchResult() {
       if (!id) return;
-      try {
-        const data = await getInterviewResult(id);
-        setResult(data);
-      } catch (err: any) {
-        setError(err.message || "Failed to load result.");
-      } finally {
-        setLoading(false);
+      const maxAttempts = 12;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        try {
+          const data = await getInterviewResult(id);
+          if (data.final_result) {
+            setResult(data);
+            setProcessing(false);
+            setLoading(false);
+            return;
+          }
+        } catch (err: any) {
+          try {
+            const session = await getInterviewSession(id);
+            setInterviewStatus(session.status);
+            if (session.status === "FAILED") {
+              setError("The interview evaluation failed. Please contact support.");
+              setLoading(false);
+              return;
+            }
+            if (session.status === "IN_PROGRESS" || session.status === "DISCONNECTED" || err.message?.includes("still being persisted")) {
+              setProcessing(true);
+            } else if (attempt === maxAttempts - 1) {
+              setError(err.message || "Failed to load result.");
+              setLoading(false);
+              return;
+            }
+          } catch {
+            if (attempt === maxAttempts - 1) {
+              setError(err.message || "Failed to load result.");
+              setLoading(false);
+              return;
+            }
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
+      setProcessing(true);
+      setLoading(false);
     }
     fetchResult();
   }, [id]);
@@ -32,6 +64,20 @@ export default function FinalResult() {
       <AppShell>
         <div className="flex justify-center py-20 text-muted-foreground animate-pulse">
           Retrieving assessment report...
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (processing && !result && !error) {
+    return (
+      <AppShell>
+        <div className="max-w-2xl mx-auto py-12">
+          <div className="rounded-xl border border-border bg-card p-8 text-center space-y-4">
+            <h2 className="text-lg font-medium">{interviewStatus === "IN_PROGRESS" ? "Interview still active" : "Evaluation in progress"}</h2>
+            <p className="text-muted-foreground">{interviewStatus === "IN_PROGRESS" ? "The interview has not reached its completion state yet." : "Your interview is complete. The assessment report is still being finalized."}</p>
+            <Link to="/dashboard"><Button variant="outline">Return to Dashboard</Button></Link>
+          </div>
         </div>
       </AppShell>
     );
@@ -56,6 +102,7 @@ export default function FinalResult() {
   }
 
   const { final_result } = result;
+  const evaluation = final_result.evaluation;
   const interviewDate = "Recent Assessment";
 
   return (
@@ -102,6 +149,56 @@ export default function FinalResult() {
             </div>
           </div>
         </div>
+
+        {final_result.evaluation_status === "FAILED" && (
+          <div className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+            The interview was completed, but the detailed evaluation could not be generated. The transcript and submission below remain available.
+          </div>
+        )}
+
+        {evaluation && (
+          <div className="space-y-8 mb-12">
+            <div className="rounded-xl border border-border bg-card p-6 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-medium tracking-tight text-foreground">Overall Assessment</h2>
+                <span className="rounded-md bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">{evaluation.recommendation}</span>
+              </div>
+              {evaluation.overall_score != null && <p className="text-3xl font-semibold">{evaluation.overall_score}<span className="text-base font-normal text-muted-foreground"> / 5</span></p>}
+              <p className="text-sm leading-7 text-muted-foreground">{evaluation.summary}</p>
+              {evaluation.detailed_overview && <p className="whitespace-pre-line text-sm leading-7 text-muted-foreground">{evaluation.detailed_overview}</p>}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {([
+                ["Communication", evaluation.communication],
+                ["Technical understanding", evaluation.technical],
+                ["Problem solving", evaluation.problem_solving],
+                ["Technical submission", evaluation.technical_submission],
+                ["Background", evaluation.background],
+              ] as const).map(([label, category]) => (
+                <section key={label} className="rounded-xl border border-border bg-card p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-3"><h3 className="font-medium">{label}</h3>{category.score != null && <span className="text-sm font-semibold text-primary">{category.score}/5</span>}</div>
+                  <p className="text-sm leading-6 text-muted-foreground">{category.overview}</p>
+                  {category.strengths.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strengths</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{category.strengths.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  {category.improvements.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Improve</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{category.improvements.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                </section>
+              ))}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <section className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">Strengths</h3>{evaluation.strengths.length ? <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">{evaluation.strengths.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No specific strengths were recorded.</p>}</section>
+              <section className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">Areas for improvement</h3>{evaluation.areas_for_improvement.length ? <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">{evaluation.areas_for_improvement.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No specific improvement areas were recorded.</p>}</section>
+            </div>
+          </div>
+        )}
+
+        {final_result.technical_submission?.code && (
+          <section className="space-y-4 mb-12"><h2 className="text-lg font-medium tracking-tight text-foreground">Technical Submission</h2><pre className="max-h-96 overflow-auto rounded-xl border border-border bg-[#20252b] p-5 text-sm leading-6 text-white">{final_result.technical_submission.code}</pre></section>
+        )}
+
+        {final_result.transcript && final_result.transcript.length > 0 && (
+          <section className="space-y-4 mb-12"><h2 className="text-lg font-medium tracking-tight text-foreground">Interview Transcript</h2><div className="rounded-xl border border-border bg-card divide-y divide-border">{final_result.transcript.map((message, index) => <div key={`${message.speaker}-${index}`} className="p-5"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{message.speaker === "agent" ? "Interviewer" : "Candidate"}</p><p className="mt-2 whitespace-pre-line text-sm leading-7">{message.text}</p></div>)}</div></section>
+        )}
 
         {/* Timeline section */}
         <div className="space-y-4">

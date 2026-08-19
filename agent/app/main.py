@@ -31,6 +31,7 @@ from app.interview.models import (
 )
 from app.interview.controller import InterviewController
 from app.interview.voice_adapter import VoiceInterviewAdapter
+from app.interview.question_generator import generate_custom_question, build_contextual_fallback_question
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("agent")
@@ -117,6 +118,7 @@ async def entrypoint(ctx: JobContext):
         # Recover sequences from messages if checkpoint is missing
         max_msg_seq = max([m.get("sequence_number", 0) for m in recent_messages], default=0)
         
+        checkpoint_technical = (checkpoint.get("section_progress") or {}).get("technical", {})
         context = InterviewRuntimeContext(
             session_id=session_id,
             candidate_id=str(session_data["candidate_profile_id"]),
@@ -132,6 +134,10 @@ async def entrypoint(ctx: JobContext):
             time_remaining_seconds=checkpoint.get("time_remaining_seconds", duration_minutes * 60),
             message_sequence=max(checkpoint.get("last_message_sequence", 0), max_msg_seq),
             event_sequence=checkpoint.get("last_event_sequence", 0),
+            technical_question_ids_seen=checkpoint.get("technical_question_ids_seen", checkpoint_technical.get("technical_question_ids_seen", [])),
+            technical_question_ids_skipped=checkpoint.get("technical_question_ids_skipped", checkpoint_technical.get("technical_question_ids_skipped", [])),
+            technical_question_id_submitted=checkpoint.get("technical_question_id_submitted", checkpoint_technical.get("technical_question_id_submitted")),
+            technical_submission=checkpoint.get("technical_submission", checkpoint_technical.get("technical_submission", {})),
         )
 
         # Restore conversation history from persisted messages
@@ -155,6 +161,12 @@ async def entrypoint(ctx: JobContext):
         question_snapshot = checkpoint.get("current_question_snapshot")
         if question_snapshot:
             context.current_question = Question(**question_snapshot)
+            logger.info(
+                "[TECH-GEN] Resumed existing question id=%s title=%s source=%s",
+                context.current_question.id,
+                context.current_question.title,
+                context.current_question.source,
+            )
             
         # Restore question records
         records_snapshot = checkpoint.get("question_records", [])
@@ -203,6 +215,47 @@ async def entrypoint(ctx: JobContext):
     # ─── Initialize Controller ─────────────────────────────────────────
     llm = GroqProvider()
     controller = InterviewController(llm, persistence, context)
+    async def generate_for_this_session():
+        logger.info(
+            "[TECH-GEN] Interview ID=%s Candidate ID=%s Role=%s Seniority=%s CV available=%s CV context length=%d Job description available=%s",
+            context.session_id, context.candidate_id, context.role, context.confirmed_level,
+            bool(context.candidate_profile), len(str(context.candidate_profile or {})),
+            bool(context.job_description and context.job_description.strip()),
+        )
+        logger.info("[TECH-GEN] Generator invoked: source=LLM_GENERATED")
+        return await generate_custom_question(
+            llm=llm,
+            role=context.role,
+            level=context.confirmed_level,
+            language=context.language,
+            job_description=context.job_description,
+            candidate_profile=context.candidate_profile,
+            previous_questions=controller.previous_question_summaries(),
+        )
+    controller.set_question_generator(generate_for_this_session)
+    controller.set_question_fallback(lambda: build_contextual_fallback_question(
+        role=context.role,
+        level=context.confirmed_level,
+        language=context.language,
+        job_description=context.job_description,
+        candidate_profile=context.candidate_profile,
+    ))
+    if is_resuming:
+        # A checkpoint stores remaining budget, not the process-local clock.
+        controller.resume_timer()
+    if not context.current_question and context.current_phase not in (InterviewPhase.CLOSING, InterviewPhase.COMPLETED):
+        try:
+            custom_question = await generate_for_this_session()
+            controller.set_custom_question(custom_question)
+            logger.info("[TECH-GEN] Generator result: GENERATED id=%s title=%s", custom_question.id, custom_question.title)
+        except Exception as error:
+            logger.exception("[TECH-GEN] Personalized generation FAILED: %s", error)
+            emergency = build_contextual_fallback_question(
+                role=context.role, level=context.confirmed_level, language=context.language,
+                job_description=context.job_description, candidate_profile=context.candidate_profile,
+            )
+            controller.set_custom_question(emergency)
+            logger.warning("[TECH-GEN] FALLBACK=CONTEXTUAL_FALLBACK id=%s title=%s reason=%s", emergency.id, emergency.title, error)
 
     # ─── Initialize Voice Plugins ──────────────────────────────────────
     language = session_data.get("language", "en")
@@ -227,7 +280,17 @@ async def entrypoint(ctx: JobContext):
         tts_plugin.provider_name = "Groq"
         tts_plugin.model_name = tts_model
 
-    vad_plugin = silero.VAD.load()
+    try:
+        vad_min_silence = max(
+            0.55, float(os.getenv("VAD_MIN_SILENCE_DURATION_SECONDS", "0.85"))
+        )
+    except ValueError:
+        vad_min_silence = 0.85
+    logger.info(
+        "Voice endpointing: Silero min_silence_duration=%.2fs, candidate endpoint coalescing enabled",
+        vad_min_silence,
+    )
+    vad_plugin = silero.VAD.load(min_silence_duration=vad_min_silence)
 
     # ─── Create Voice Adapter ──────────────────────────────────────────
     adapter = VoiceInterviewAdapter(
@@ -276,7 +339,13 @@ async def entrypoint(ctx: JobContext):
         await persistence.update_status(session_id, "DISCONNECTED")
     else:
         logger.info("Interview completed.")
-        await persistence.save_completion(context)
+        try:
+            await controller.generate_final_evaluation()
+            await persistence.save_completion(context)
+        except Exception:
+            # Completion must not be lost because room teardown raced a
+            # final persistence request. The next recovery path can retry.
+            logger.exception("Failed to persist completed interview during shutdown")
 
     await persistence.close()
     logger.info("Agent shutdown complete.")

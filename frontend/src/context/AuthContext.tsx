@@ -8,6 +8,7 @@ type AuthContextType = {
   isLoading: boolean
   signOut: () => Promise<void>
   getAccessToken: () => Promise<string | null>
+  updateDisplayName: (name: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -44,8 +45,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return session?.access_token || null
   }
 
+  const updateDisplayName = async (name: string) => {
+    const trimmedName = name.trim()
+    if (!trimmedName) throw new Error('Name cannot be empty')
+    const { data, error } = await supabase.auth.updateUser({ data: { full_name: trimmedName, name: trimmedName } })
+    if (error) throw error
+    setUser(data.user)
+    setSession((current) => current ? { ...current, user: data.user } : current)
+  }
+
   return (
-    <AuthContext.Provider value={{ session, user, isLoading, signOut, getAccessToken }}>
+    <AuthContext.Provider value={{ session, user, isLoading, signOut, getAccessToken, updateDisplayName }}>
       {children}
     </AuthContext.Provider>
   )
