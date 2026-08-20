@@ -6,6 +6,49 @@ import { useInterviewStore } from "../../stores/InterviewContext";
 import { InterviewController } from "./InterviewController";
 import type { InterviewSessionResponse } from "../../types/api";
 
+const AgentConnectingScreen = () => {
+  const [progress, setProgress] = useState(15);
+  const [status, setStatus] = useState("Connecting to server...");
+
+  useEffect(() => {
+    const timer1 = setTimeout(() => { setProgress(45); setStatus("Initializing AI interviewer..."); }, 800);
+    const timer2 = setTimeout(() => { setProgress(80); setStatus("Preparing workspace..."); }, 2200);
+    return () => { clearTimeout(timer1); clearTimeout(timer2); };
+  }, []);
+
+  return (
+    <div className="min-h-screen w-full flex flex-col bg-[#f6f8fb] text-foreground">
+      {/* Skeleton Header matching the actual workspace header */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-sm font-semibold text-white shadow-sm">P</div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-950">Interview session</p>
+              <p className="text-xs text-slate-500">Connecting...</p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Centered Progress Card */}
+      <main className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
+          <h2 className="text-lg font-semibold text-slate-950 mb-1">Starting Interview</h2>
+          <p className="text-sm text-slate-500 mb-6">{status}</p>
+          
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div 
+              className="h-full rounded-full bg-sky-500 transition-all duration-700 ease-out" 
+              style={{ width: `${progress}%` }} 
+            />
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+};
+
 interface InterviewWorkspaceProps { session: InterviewSessionResponse; onCompleted?: () => void; }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -96,6 +139,10 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
     setCodeStatus("Answer submitted.");
     realtimeService?.sendControlIntent("SUBMIT_CODE", { code, language: selectedLanguage });
   };
+
+  if (!state?.phase) {
+    return <AgentConnectingScreen />;
+  }
 
   return (
     <div className="min-h-screen w-full bg-[#f6f8fb] text-foreground">
