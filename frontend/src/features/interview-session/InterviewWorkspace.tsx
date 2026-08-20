@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocalParticipant, useRoomContext } from "@livekit/components-react";
-import { CheckCircle2, Code2, HelpCircle, Loader2, Mic, MicOff, Send, Timer, Volume2 } from "lucide-react";
+import { Code2, HelpCircle, Loader2, Mic, MicOff, Send, Timer, Volume2 } from "lucide-react";
 import { InterviewRealtimeService } from "../../services/livekit/InterviewRealtimeService";
 import { useInterviewStore } from "../../stores/InterviewContext";
 import { InterviewController } from "./InterviewController";
