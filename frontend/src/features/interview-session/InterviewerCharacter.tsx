@@ -251,6 +251,12 @@ function CharacterSVG({ state, blink, speakFrame }: SVGProps) {
           />
         </g>
 
+        {/* ─ Neck ─ */}
+        <path d="M 122 152 L 118 175 L 162 175 L 158 152 Z" fill={C.skin} />
+        {/* Neck shading */}
+        <path d="M 122 152 L 120 168 L 125 175 L 118 175 Z" fill={C.skinSh} opacity="0.30" />
+        <path d="M 158 152 L 160 168 L 155 175 L 162 175 Z" fill={C.skinSh} opacity="0.30" />
+
         {/* ─ Torso / Blazer ─ */}
 
         {/* Base trapezoid — full blazer body */}
@@ -353,12 +359,6 @@ function CharacterSVG({ state, blink, speakFrame }: SVGProps) {
           d="M 134 176 C 136 169 144 169 146 176 L 143 184 L 140 186 L 137 184 Z"
           fill={C.tieDk}
         />
-
-        {/* ─ Neck ─ */}
-        <path d="M 122 152 L 118 175 L 162 175 L 158 152 Z" fill={C.skin} />
-        {/* Neck shading */}
-        <path d="M 122 152 L 120 168 L 125 175 L 118 175 Z" fill={C.skinSh} opacity="0.30" />
-        <path d="M 158 152 L 160 168 L 155 175 L 162 175 Z" fill={C.skinSh} opacity="0.30" />
 
         {/* ── Head group (rotates for listening / thinking tilt) ── */}
         <g className={headClass}>
@@ -517,7 +517,7 @@ export default function InterviewerCharacter({
     }
   }, [state])
 
-  // Speaking mouth cycle — A→B→C→B repeating at ~210ms per frame
+  // Speaking mouth cycle — A→B→C→B repeating at realistic lip-sync speed (~90ms)
   useEffect(() => {
     if (state !== 'speaking') {
       setSpeakFrame(0)
@@ -525,7 +525,7 @@ export default function InterviewerCharacter({
     }
     speakInterval.current = setInterval(() => {
       setSpeakFrame(f => (f + 1) % SPEAK_SEQ.length)
-    }, 210)
+    }, 90)
     return () => {
       if (speakInterval.current) clearInterval(speakInterval.current)
     }
