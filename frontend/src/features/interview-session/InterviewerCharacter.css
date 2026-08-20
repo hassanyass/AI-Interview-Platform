@@ -1,0 +1,200 @@
+/* ============================================================
+   InterviewerCharacter — State Machine Animation System
+   States: idle → listening → thinking → speaking → transition → hidden
+   ============================================================ */
+
+/* ── Wrapper ────────────────────────────────────────────── */
+.interviewer-character {
+  position: relative;
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: ic-enter 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.interviewer-character--small  { width: 160px; height: 248px; }
+.interviewer-character--medium { width: 240px; height: 372px; }
+.interviewer-character--large  { width: 320px; height: 496px; }
+
+/* ── Enter ──────────────────────────────────────────────── */
+@keyframes ic-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+/* ── Transition / exit ──────────────────────────────────── */
+.interviewer-character--transition {
+  animation: ic-exit 520ms cubic-bezier(0.4, 0, 1, 1) forwards !important;
+  pointer-events: none;
+}
+
+@keyframes ic-exit {
+  0%   { opacity: 1; transform: scale(1)    translateY(0);   }
+  100% { opacity: 0; transform: scale(0.98) translateY(-8px); }
+}
+
+/* ── Character root group (transform-box via SVG attrs) ─── */
+
+/* Idle: slow breathing */
+.ic-character--idle {
+  animation: ic-breathe 4.2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+@keyframes ic-breathe {
+  0%, 100% { transform: translateY(0)    scaleY(1);     }
+  50%       { transform: translateY(-3px) scaleY(1.006); }
+}
+
+/* Listening: gentle forward presence */
+.ic-character--listening {
+  animation: ic-breathe-soft 5s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+@keyframes ic-breathe-soft {
+  0%, 100% { transform: translateY(0) scaleY(1);     }
+  50%       { transform: translateY(-2px) scaleY(1.004); }
+}
+
+/* Thinking: very still */
+.ic-character--thinking {
+  animation: ic-breathe-still 6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+@keyframes ic-breathe-still {
+  0%, 100% { transform: translateY(0) scaleY(1);     }
+  50%       { transform: translateY(-1.5px) scaleY(1.003); }
+}
+
+/* Speaking: subtle body sway */
+.ic-character--speaking {
+  animation: ic-speak-sway 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+}
+
+@keyframes ic-speak-sway {
+  0%, 100% { transform: rotate(0deg)    translateY(0);   }
+  28%       { transform: rotate(0.45deg) translateY(-2px); }
+  72%       { transform: rotate(-0.4deg) translateY(-1px); }
+}
+
+/* ── Head tilt ──────────────────────────────────────────── */
+.ic-head {
+  transition: transform 480ms cubic-bezier(0.34, 1.2, 0.64, 1);
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.ic-head--listening {
+  transform: rotate(3.5deg);
+}
+
+.ic-head--thinking {
+  transform: rotate(-3deg);
+}
+
+/* ── Left arm gesture (speaking) ───────────────────────── */
+.ic-arm-left {
+  transition: transform 500ms ease-out;
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+
+.ic-arm-left--speaking {
+  animation: ic-speak-gesture-left 2.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+
+@keyframes ic-speak-gesture-left {
+  0%, 100% { transform: rotate(0deg); }
+  35%       { transform: rotate(-6deg); }
+  68%       { transform: rotate(4deg); }
+}
+
+/* ── Right arm gesture (thinking) ──────────────────────── */
+.ic-arm-right {
+  transition: transform 580ms cubic-bezier(0.34, 1.1, 0.64, 1);
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+
+.ic-arm-right--thinking {
+  transform: rotate(-16deg);
+}
+
+/* ── Presence indicator ─────────────────────────────────── */
+.ic-presence {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  animation: ic-presence-in 400ms ease-out both;
+}
+
+@keyframes ic-presence-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0);   }
+}
+
+.ic-presence__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38C5E0;
+}
+
+/* Thinking: sequential pulse */
+.ic-presence--thinking .ic-presence__dot { background: #9B84E8; }
+.ic-presence--thinking .ic-presence__dot:nth-child(1) { animation: ic-dot-think 1.3s ease-in-out 0s   infinite; }
+.ic-presence--thinking .ic-presence__dot:nth-child(2) { animation: ic-dot-think 1.3s ease-in-out 0.22s infinite; }
+.ic-presence--thinking .ic-presence__dot:nth-child(3) { animation: ic-dot-think 1.3s ease-in-out 0.44s infinite; }
+
+@keyframes ic-dot-think {
+  0%, 100% { opacity: 0.25; transform: scale(0.75); }
+  50%       { opacity: 1;    transform: scale(1.25); }
+}
+
+/* Speaking: waveform bars */
+.ic-presence--speaking .ic-presence__dot {
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: #38C5E0;
+}
+.ic-presence--speaking .ic-presence__dot:nth-child(1) { animation: ic-bar-speak 0.75s ease-in-out 0s    infinite alternate; }
+.ic-presence--speaking .ic-presence__dot:nth-child(2) { animation: ic-bar-speak 0.75s ease-in-out 0.18s infinite alternate; }
+.ic-presence--speaking .ic-presence__dot:nth-child(3) { animation: ic-bar-speak 0.75s ease-in-out 0.36s infinite alternate; }
+
+@keyframes ic-bar-speak {
+  from { transform: scaleY(0.35); opacity: 0.5; }
+  to   { transform: scaleY(1);    opacity: 1;   }
+}
+
+/* ── Reduced motion ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .ic-character--idle,
+  .ic-character--listening,
+  .ic-character--thinking,
+  .ic-character--speaking,
+  .ic-arm-left--speaking,
+  .ic-presence__dot {
+    animation: none !important;
+  }
+
+  .interviewer-character {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
