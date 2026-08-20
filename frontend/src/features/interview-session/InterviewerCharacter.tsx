@@ -28,9 +28,9 @@ const C = {
   ear:          '#D4946C',
   hair:         '#1B1228',
   hairHi:       '#2E1F40',
-  blazer:       '#1C3454',
-  blazerDk:     '#121F38',
-  blazerHi:     '#264876',
+  blazer:       '#1E293B', // sleek slate-black
+  blazerDk:     '#0F172A', // deeper black for shadows
+  blazerHi:     '#334155', // lighter slate for highlights
   shirt:        '#EFEDE6',
   shirtSh:      '#D4D0C8',
   tie:          '#3D70BE',
