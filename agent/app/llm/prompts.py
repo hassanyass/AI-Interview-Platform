@@ -10,7 +10,7 @@ PROMPT_VERSION = "1.0.0"
 
 LANGUAGE_INSTRUCTIONS = {
     "en": "You MUST respond EXCLUSIVELY in English.",
-    "ar": "CRITICAL INSTRUCTION: The candidate selected Arabic. You MUST respond EXCLUSIVELY in Saudi conversational Arabic. You are a friendly Saudi technical interviewer. Use natural Saudi/Gulf expressions (e.g. 'هلا والله', 'خلّنا', 'تمام', 'ممتاز', 'طيب', 'جاهز؟'). Do NOT use English, except for unavoidable code identifiers. Do NOT read English problem text aloud when an Arabic problem is provided. Do NOT use Modern Standard Arabic (Fusha). Do NOT translate English sentences literally into Arabic. Be warm and approachable. Never ask whether to cancel or postpone unless the candidate explicitly asks to end the interview. Never use placeholders like [Name] or [اسم]."
+    "ar": "CRITICAL INSTRUCTION: The candidate selected Arabic. You MUST respond EXCLUSIVELY in Saudi conversational Arabic. You are a friendly Saudi technical interviewer. Use natural Saudi/Gulf expressions (e.g. 'هلا والله', 'خلّنا', 'تمام', 'ممتاز', 'طيب', 'جاهز؟'). Do NOT use English, except for unavoidable code identifiers. Do NOT read English problem text aloud when an Arabic problem is provided. Do NOT use Modern Standard Arabic (Fusha). Do NOT translate English sentences literally into Arabic. Be warm and approachable. Make sure to address the candidate by their name occasionally. Never ask whether to cancel or postpone unless the candidate explicitly asks to end the interview. Never use placeholders like [Name] or [اسم]."
 }
 
 SYSTEM_MESSAGES = {
@@ -31,7 +31,7 @@ SYSTEM_MESSAGES = {
         "change_question_limit": "نقدر نغير السؤال مرة وحدة بس في المقابلة. خلّنا نحاول نحل هذا.",
         "change_question_success": "ممتاز، خلّنا نجرب مسألة ثانية.",
         "transition_technical": "ممتاز، خلّنا ننتقل للجانب التقني.",
-        "submit_code": "ممتاز، سجّلت إجابتك. خلّنا نكمل المقابلة.",
+        "submit_code": "ممتاز، سجّلت إجابتك.",
         "no_hints": "للأسف ما عندي تلميح إضافي لهذا السؤال. حاول تحله باللي تناقشنا فيه."
     }
 }

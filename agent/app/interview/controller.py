@@ -640,19 +640,19 @@ class InterviewController:
         msgs = SYSTEM_MESSAGES.get(lang, SYSTEM_MESSAGES["en"])
         
         if control == CandidateControlAction.END_INTERVIEW:
-            if self.context.current_phase == InterviewPhase.CLOSING:
+            if self.context.current_phase in (InterviewPhase.CLOSING, InterviewPhase.COMPLETED):
                 return StructuredAction(
                     action=ActionEnum.END,
                     response="",
                     reason="Closing turn already exists; completing idempotently.",
-                    should_transition=True,
+                    should_transition=False,
                     detected_candidate_control=control,
                 )
             self._transition_to(InterviewPhase.CLOSING)
             return StructuredAction(
                 action=ActionEnum.ACKNOWLEDGE,
-                response=msgs["end_interview"],
-                reason="Candidate explicitly ended interview.",
+                response="",
+                reason="Candidate explicitly ended interview. Yielding to LLM for closing.",
                 should_transition=True,
                 detected_candidate_control=control,
             )

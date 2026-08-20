@@ -63,10 +63,9 @@ async def generate_custom_question(
     question.source = "LLM_GENERATED"
     question.difficulty = level
     question.coding_required = True
-    if not question.supported_languages:
-        question.supported_languages = ["python"]
-    if not question.starter_code:
-        question.starter_code = {language: "" for language in question.supported_languages}
+    question.supported_languages = ["python"]
+    python_starter = question.starter_code.get("python", "") if question.starter_code else ""
+    question.starter_code = {"python": python_starter}
     return question
 
 

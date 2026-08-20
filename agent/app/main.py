@@ -263,7 +263,7 @@ async def entrypoint(ctx: JobContext):
 
     if language == "ar":
         tts_model = os.getenv("GROQ_TTS_ARABIC_MODEL", "canopylabs/orpheus-arabic-saudi")
-        tts_voice = "fahad"
+        tts_voice = "abdullah"
         logger.info("Interview language: ar")
         logger.info("TTS provider: groq")
         logger.info(f"TTS model: {tts_model}")

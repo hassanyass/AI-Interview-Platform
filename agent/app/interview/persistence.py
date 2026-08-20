@@ -6,6 +6,7 @@ Interview persistence abstraction.
 import logging
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
+import json
 
 from app.interview.models import InterviewRuntimeContext
 
@@ -247,8 +248,11 @@ class APIPersistence(InterviewPersistence):
             "evaluation_signals": [e.model_dump(mode="json") for e in context.evaluation_signals],
         }
         try:
+            body_json = json.dumps(body, default=str)
             async with session.post(
-                self._url(context.session_id, "checkpoints"), json=body
+                self._url(context.session_id, "checkpoints"), 
+                data=body_json,
+                headers={"Content-Type": "application/json"}
             ) as resp:
                 if resp.status not in (200, 201):
                     text = await resp.text()
@@ -314,8 +318,11 @@ class APIPersistence(InterviewPersistence):
         if final_result is not None:
             body["final_result"] = final_result
         try:
+            body_json = json.dumps(body, default=str)
             async with http.patch(
-                self._url(session_id, "status"), json=body
+                self._url(session_id, "status"), 
+                data=body_json,
+                headers={"Content-Type": "application/json"}
             ) as resp:
                 if resp.status not in (200, 201):
                     text_resp = await resp.text()

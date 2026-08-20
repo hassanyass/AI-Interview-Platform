@@ -201,7 +201,12 @@ class VoiceInterviewAdapter:
                 await self._handle_completion()
                 return
             if not action.response:
-                await self._emit_ui_state()
+                if getattr(action, "should_transition", False):
+                    self.controller.context.conversation_history.clear()
+                if command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "END_INTERVIEW"):
+                    await self._handle_candidate_turn("", is_chain=True, _lock_held=True)
+                else:
+                    await self._emit_ui_state()
                 return
                 
             logger.info(f"AI ({action.action.value}): {action.response}")
@@ -524,6 +529,20 @@ class VoiceInterviewAdapter:
         if self._completion_persisted:
             logger.info("[COMPLETION] duplicate_completion_ignored")
             return
+        
+        # Drain the TTS queue so audio doesn't get cut off before disconnecting
+        if not self._tts_queue.empty():
+            await self._tts_queue.join()
+        if self._current_synthesis_task and not self._current_synthesis_task.done():
+            try:
+                import asyncio
+                await asyncio.wait_for(asyncio.shield(self._current_synthesis_task), timeout=30.0)
+            except Exception as e:
+                logger.warning(f"Error waiting for final TTS playback: {e}")
+        
+        # Give audio engine a little time to empty buffers
+        await asyncio.sleep(2.0)
+        
         ctx = self.controller.context
         logger.info("Interview completed. Persisting final state.")
 
