@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, UserRound } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -7,10 +7,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
 
-  const navItems = [
-    { name: "Interviews", path: "/dashboard", icon: LayoutDashboard },
-    { name: "Profile & resume", path: "/profile", icon: UserRound },
-  ];
+  const navItems: Array<{name: string, path: string, icon: any}> = [];
 
   const handleSignOut = async () => {
     await signOut();
@@ -22,10 +19,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex h-[72px] max-w-[1480px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-8">
-            <Link to="/dashboard" className="flex items-center gap-2.5" aria-label="Path2Hire home">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-950 text-sm font-bold text-white shadow-sm">P</span>
-              <span className="text-[15px] font-semibold tracking-[-0.02em] text-slate-950">Path2Hire</span>
-            </Link>
+            <div className="flex items-center gap-2.5" aria-label="e& Himma home">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-white shadow-sm">e&</span>
+              <span className="text-[17px] font-bold tracking-tight text-slate-950">هِمّة</span>
+            </div>
             <nav className="hidden items-center gap-1 md:flex" aria-label="Primary navigation">
               {navItems.map(({ name, path, icon: Icon }) => {
                 const isActive = location.pathname.startsWith(path);
@@ -34,7 +31,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2.5 border-r border-slate-200 pr-4 sm:flex"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">{(user?.email?.[0] || "U").toUpperCase()}</span><span className="max-w-[180px] truncate text-sm font-medium text-slate-600">{user?.email}</span></div>
+            <div className="hidden items-center gap-2.5 border-e border-slate-200 pe-4 sm:flex"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700">{(user?.email?.[0] || "U").toUpperCase()}</span><span className="max-w-[180px] truncate text-sm font-medium text-slate-600">{user?.email}</span></div>
             <button type="button" onClick={handleSignOut} title="Sign out" className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900"><LogOut className="h-4 w-4" /></button>
           </div>
         </div>

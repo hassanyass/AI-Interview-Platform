@@ -2,35 +2,38 @@
 @import "@fontsource/inter/400.css";
 @import "@fontsource/inter/500.css";
 @import "@fontsource/inter/600.css";
+@import "@fontsource/ibm-plex-sans-arabic/400.css";
+@import "@fontsource/ibm-plex-sans-arabic/500.css";
+@import "@fontsource/ibm-plex-sans-arabic/600.css";
 @config "../tailwind.config.js";
 
 @layer base {
   :root {
-    /* Background: Warm near-white */
-    --background: 0 0% 98%; 
-    /* Foreground: Deep charcoal */
+    /* Background: White */
+    --background: 0 0% 100%; 
+    /* Foreground: Black */
     --foreground: 0 0% 7%;
 
-    /* Muted: Neutral gray for surfaces */
-    --muted: 0 0% 94%;
-    --muted-foreground: 0 0% 40%;
+    /* Muted: Light Grey / e& Grey */
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 39%;
 
     /* Borders: Subtle neutral */
-    --border: 0 0% 88%;
-    --input: 0 0% 88%;
-    --ring: 221 39% 45%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 2 100% 44%; /* e& Red focus ring */
 
-    /* Primary: Restrained professional accent (slate/blue) */
-    --primary: 221 39% 45%;
+    /* Primary: e& Red */
+    --primary: 2 100% 44%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary: Quiet structural distinct */
-    --secondary: 0 0% 90%;
-    --secondary-foreground: 0 0% 20%;
+    /* Secondary: e& Maroon */
+    --secondary: 345 67% 18%;
+    --secondary-foreground: 0 0% 100%;
 
-    /* Accent: Hover states */
-    --accent: 0 0% 92%;
-    --accent-foreground: 0 0% 10%;
+    /* Accent: Soft Neutral / Warm Surface */
+    --accent: 60 17% 88%;
+    --accent-foreground: 0 0% 11%;
 
     /* Semantics */
     --success: 150 40% 45%;
@@ -42,8 +45,12 @@
     --destructive: 0 60% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Radius: Restrained defaults */
-    --radius: 0.25rem;
+    /* Radius System from e& */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    --radius-xl: 32px;
+    --radius: var(--radius-md);
   }
 }
 

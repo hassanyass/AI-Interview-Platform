@@ -8,10 +8,10 @@ import json
 # Add agent to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agent'))
 
-from app.interview.controller import InterviewController
-from app.interview.models import InterviewRuntimeContext, InterviewPhase, ActionEnum, StructuredAction
-from app.llm.provider import LLMProvider
-from app.interview.persistence import InterviewPersistence
+from agent.interview.controller import InterviewController
+from agent.interview.models import InterviewRuntimeContext, InterviewPhase, ActionEnum, StructuredAction
+from agent.llm.provider import LLMProvider
+from agent.interview.persistence import InterviewPersistence
 
 # Minimal mock LLM to force specific actions
 class MockLLM(LLMProvider):
@@ -79,8 +79,8 @@ async def run_phase3b_tests():
     q1_id = controller.context.current_question.id
     
     ui_state = controller.generate_ui_state()
-    assert ui_state["question"]["id"] == q1_id
-    
+    assert ui_state["current_question"]["id"] == q1_id
+
     # Let LLM transition from TECHNICAL_INTRO -> TECHNICAL
     await controller.process_candidate_input("I am ready.")
     assert controller.context.current_phase == InterviewPhase.TECHNICAL
@@ -112,7 +112,7 @@ async def run_phase3b_tests():
     ui_state = controller.generate_ui_state()
     assert ui_state["last_question_outcome"] == "COMPLETED"
     assert ui_state["questions_completed"] == 1
-    assert ui_state["question"] is None
+    assert ui_state["current_question"] is None
     
     # Now transition again, which should load the next question
     controller._transition_to(InterviewPhase.TECHNICAL)
@@ -172,7 +172,7 @@ async def run_phase3b_tests():
     
     # Test 10: Boundary Enforcement
     # Prove that RUN_CODE and SUBMIT_CODE are strictly rejected and not allowed in Phase 3B
-    from app.interview.models import CandidateControlAction
+    from agent.interview.models import CandidateControlAction
     assert not hasattr(CandidateControlAction, "RUN_CODE"), "Boundary Violation: RUN_CODE found in models"
     assert not hasattr(CandidateControlAction, "SUBMIT_CODE"), "Boundary Violation: SUBMIT_CODE found in models"
     

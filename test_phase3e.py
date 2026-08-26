@@ -5,12 +5,12 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agent'))
 
 from unittest.mock import MagicMock
-from app.interview.controller import InterviewController
-from app.interview.models import (
+from agent.interview.controller import InterviewController
+from agent.interview.models import (
     CandidateControlAction, InterviewPhase, Question, StructuredAction, ActionEnum, SectionProgress,
     InterviewRuntimeContext, InterviewPlan, SectionLimits, QuestionOutcome, EvaluationSignal
 )
-from app.interview.persistence import MockPersistence
+from agent.interview.persistence import MockPersistence
 
 @pytest.fixture
 def mock_controller():
@@ -134,8 +134,8 @@ async def test_phase3e_completion_deterministic_selection(mock_controller):
 @pytest.mark.asyncio
 async def test_phase3e_persistence_roundtrip():
     """Prove evaluation_signals survive a checkpoint restoration."""
-    from app.main import entrypoint
-    from app.interview.models import EvaluationSignal
+    from agent.main import entrypoint
+    from agent.interview.models import EvaluationSignal
     
     # Setup mock session data with an in-flight evaluation
     session_data = {

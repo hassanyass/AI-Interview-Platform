@@ -109,7 +109,7 @@ export default function FinalResult() {
     <AppShell>
       <div className="max-w-3xl mx-auto py-8">
         <Link to="/dashboard" className="text-sm font-medium text-muted-foreground hover:text-foreground inline-flex items-center mb-10 transition-colors">
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+          <ArrowLeft className="me-2 h-4 w-4" /> Back to Dashboard
         </Link>
 
         {/* Header section */}
@@ -179,15 +179,15 @@ export default function FinalResult() {
                 <section key={label} className="rounded-xl border border-border bg-card p-5 space-y-3">
                   <div className="flex items-center justify-between gap-3"><h3 className="font-medium">{label}</h3>{category.score != null && <span className="text-sm font-semibold text-primary">{category.score}/5</span>}</div>
                   <p className="text-sm leading-6 text-muted-foreground">{category.overview}</p>
-                  {category.strengths.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strengths</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{category.strengths.map((item) => <li key={item}>{item}</li>)}</ul></div>}
-                  {category.improvements.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Improve</p><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">{category.improvements.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  {category.strengths.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strengths</p><ul className="mt-2 list-disc space-y-1 ps-5 text-sm text-muted-foreground">{category.strengths.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+                  {category.improvements.length > 0 && <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Improve</p><ul className="mt-2 list-disc space-y-1 ps-5 text-sm text-muted-foreground">{category.improvements.map((item) => <li key={item}>{item}</li>)}</ul></div>}
                 </section>
               ))}
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <section className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">Strengths</h3>{evaluation.strengths.length ? <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">{evaluation.strengths.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No specific strengths were recorded.</p>}</section>
-              <section className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">Areas for improvement</h3>{evaluation.areas_for_improvement.length ? <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-muted-foreground">{evaluation.areas_for_improvement.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No specific improvement areas were recorded.</p>}</section>
+              <section className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">Strengths</h3>{evaluation.strengths.length ? <ul className="mt-3 list-disc space-y-2 ps-5 text-sm text-muted-foreground">{evaluation.strengths.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No specific strengths were recorded.</p>}</section>
+              <section className="rounded-xl border border-border bg-card p-5"><h3 className="font-medium">Areas for improvement</h3>{evaluation.areas_for_improvement.length ? <ul className="mt-3 list-disc space-y-2 ps-5 text-sm text-muted-foreground">{evaluation.areas_for_improvement.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No specific improvement areas were recorded.</p>}</section>
             </div>
           </div>
         )}

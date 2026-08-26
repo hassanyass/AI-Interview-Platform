@@ -13,8 +13,8 @@ export function Badge({ className, variant = "default", ...props }: BadgeProps) 
         {
           "bg-primary/10 text-primary border-primary/20": variant === "default",
           "bg-secondary text-secondary-foreground border-transparent": variant === "secondary",
-          "bg-success/10 text-success border-success/20": variant === "success",
-          "bg-warning/10 text-warning-foreground border-warning/20": variant === "warning",
+          "bg-green-500/10 text-green-500 border-transparent": variant === "success",
+          "bg-yellow-500/10 text-yellow-500 border-transparent": variant === "warning",
           "bg-destructive/10 text-destructive border-destructive/20": variant === "destructive",
           "text-foreground border-border bg-transparent": variant === "outline",
         },

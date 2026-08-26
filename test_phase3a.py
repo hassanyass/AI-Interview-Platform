@@ -17,7 +17,7 @@ os.environ["SUPABASE_SECRET_KEY"] = "mock_secret_key"
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
-from app.core.config import settings
+from backend.core.config import settings
 
 # Override settings before importing app.main
 settings.SUPABASE_URL = "http://localhost:8000"
@@ -26,7 +26,7 @@ settings.LIVEKIT_API_KEY = "devkey"
 settings.LIVEKIT_API_SECRET = "secret"
 settings.AGENT_API_SECRET = "dummy_secret"
 
-from app.main import app
+from backend.main import app
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 MOCK_USER_ID = "00000000-0000-0000-0000-000000000000"
 AGENT_SECRET = settings.AGENT_API_SECRET or "dummy_secret"
 
-from app.core.security import get_current_user
+from backend.api.deps import get_current_candidate_profile_id
 async def override_current_user():
     return MOCK_USER_ID
 
-app.dependency_overrides[get_current_user] = override_current_user
+app.dependency_overrides[get_current_candidate_profile_id] = override_current_user
 
 async def create_profile_if_missing(client: AsyncClient):
     resp = await client.get("/api/v1/profiles/me")
@@ -59,16 +59,34 @@ async def test_phase3a_persistence_integration():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         await create_profile_if_missing(client)
         
-        # 1. Create a session
-        resp = await client.post("/api/v1/interviews/", json={
-            "configuration": {
-                "role": "Software Engineer",
-                "level": "mid",
-                "language": "en"
-            }
-        })
-        assert resp.status_code == 200
-        session_id = resp.json()["id"]
+        # 1. Create a session (via DB)
+        from backend.api.deps import get_db
+        from backend.models.interview import InterviewSession, InterviewConfiguration
+        import uuid as uuid_module
+        
+        session_id = str(uuid_module.uuid4())
+        db_gen = get_db()
+        db = await anext(db_gen)
+        try:
+            db_session = InterviewSession(
+                id=session_id,
+                candidate_profile_id=uuid_module.UUID(MOCK_USER_ID),
+                role="Software Engineer",
+                level="mid",
+                language="en",
+                status="CREATED"
+            )
+            db.add(db_session)
+            db_config = InterviewConfiguration(
+                session_id=session_id,
+                role="Software Engineer",
+                level="mid",
+                language="en"
+            )
+            db.add(db_config)
+            await db.commit()
+        finally:
+            await db.close()
 
         # 2. Agent loads session (claims lease)
         agent_id = "agent-phase3a"
@@ -162,15 +180,30 @@ async def test_phase3a_persistence_integration():
         # ==========================================================
         # 5. Test Backward Compatibility
         # ==========================================================
-        resp2 = await client.post("/api/v1/interviews/", json={
-            "configuration": {
-                "role": "Software Engineer",
-                "level": "mid",
-                "language": "en"
-            }
-        })
-        assert resp2.status_code == 200
-        session_id2 = resp2.json()["id"]
+        # Create a session via DB
+        session_id2 = str(uuid_module.uuid4())
+        db_gen = get_db()
+        db = await anext(db_gen)
+        try:
+            db_session2 = InterviewSession(
+                id=session_id2,
+                candidate_profile_id=uuid_module.UUID(MOCK_USER_ID),
+                role="Software Engineer",
+                level="mid",
+                language="en",
+                status="CREATED"
+            )
+            db.add(db_session2)
+            db_config2 = InterviewConfiguration(
+                session_id=session_id2,
+                role="Software Engineer",
+                level="mid",
+                language="en"
+            )
+            db.add(db_config2)
+            await db.commit()
+        finally:
+            await db.close()
 
         agent_id_old = "agent-phase3a-old"
         await client.get(f"/api/v1/internal/interviews/{session_id2}/load?agent_id={agent_id_old}", headers=agent_headers)

@@ -1,2 +1,633 @@
-INFO:     127.0.0.1:50122 - "GET /health HTTP/1.1" 200 OK
-INFO:     127.0.0.1:51350 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63794 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63798 - "GET /api/v1/internal/interviews/ab06bf02-ba57-4d39-87f4-92b91f4d8d9c/load?agent_id=manual-precheck3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63804 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55271 - "OPTIONS /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50359 - "OPTIONS /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50359 - "GET /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55271 - "GET /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "OPTIONS /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "OPTIONS /api/v1/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "OPTIONS /api/v1/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=2f796476-9689-402d-9108-f2c1b5dca568, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=2f796476-9689-402d-9108-f2c1b5dca568, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:49932 - "GET /api/v1/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "OPTIONS /api/v1/livekit/token HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=2f796476-9689-402d-9108-f2c1b5dca568, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=2f796476-9689-402d-9108-f2c1b5dca568, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:63801 - "GET /api/v1/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63801 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49932 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49177 - "GET /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/load?agent_id=agent-b06ba961 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49177 - "PATCH /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49179 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:61439 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:52590 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53095 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53096 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53097 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53099 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53100 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:52041 - "GET /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64076 - "GET /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64076 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64076 - "OPTIONS /api/v1/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64076 - "OPTIONS /api/v1/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=038f7a81-f8f8-41dd-98b9-4fcd3ea51877, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=038f7a81-f8f8-41dd-98b9-4fcd3ea51877, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:64076 - "GET /api/v1/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=038f7a81-f8f8-41dd-98b9-4fcd3ea51877, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=038f7a81-f8f8-41dd-98b9-4fcd3ea51877, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:64076 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58951 - "GET /api/v1/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58951 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "GET /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/load?agent_id=agent-0f5fa300 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59749 - "PATCH /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59750 - "POST /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:61462 - "POST /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:61462 - "POST /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64085 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64086 - "POST /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64088 - "PATCH /api/v1/internal/interviews/8aabd47a-e353-4fa0-ac70-7213a9fceb3d/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62388 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63984 - "OPTIONS /api/v1/interviews/a21e6833-62d7-41a4-803e-cb22c034192a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62013 - "OPTIONS /api/v1/interviews/a21e6833-62d7-41a4-803e-cb22c034192a HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=d2e87265-1c37-4c0b-802b-189fec7c2772, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=d2e87265-1c37-4c0b-802b-189fec7c2772, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:62013 - "GET /api/v1/interviews/a21e6833-62d7-41a4-803e-cb22c034192a HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=d2e87265-1c37-4c0b-802b-189fec7c2772, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=d2e87265-1c37-4c0b-802b-189fec7c2772, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:63984 - "GET /api/v1/interviews/a21e6833-62d7-41a4-803e-cb22c034192a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62013 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62013 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59077 - "GET /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/load?agent_id=agent-cd2d33f5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59077 - "PATCH /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59093 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53060 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53069 - "POST /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53069 - "POST /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53071 - "PATCH /api/v1/internal/interviews/fa1acc5f-1c84-4faf-9b57-580cc830119c/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56177 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56177 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56177 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53207 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53207 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56177 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "POST /api/v1/admin/jobs HTTP/1.1" 201 Created
+INFO:     127.0.0.1:60358 - "OPTIONS /api/v1/admin/definitions/213894e1-1450-4ad9-b882-21675dbae8ab HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "PATCH /api/v1/admin/definitions/213894e1-1450-4ad9-b882-21675dbae8ab HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "OPTIONS /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61993 - "OPTIONS /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61993 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "OPTIONS /api/v1/admin/sections HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60358 - "POST /api/v1/admin/sections HTTP/1.1" 201 Created
+INFO:     127.0.0.1:60358 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57923 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:57924 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49718 - "OPTIONS /api/v1/admin/sections/56c66ad9-47f8-4572-93d2-5e8aa165a2dc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49718 - "DELETE /api/v1/admin/sections/56c66ad9-47f8-4572-93d2-5e8aa165a2dc HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:49718 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63567 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49987 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49988 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54080 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/renew-lease?agent_id=agent-cd2d33f5 HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:54081 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49933 - "OPTIONS /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57332 - "OPTIONS /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57332 - "GET /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57332 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49933 - "GET /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49933 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52395 - "GET /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/load?agent_id=agent-223a7810 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52395 - "PATCH /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64929 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64932 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64936 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64938 - "POST /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64939 - "PATCH /api/v1/internal/interviews/a21e6833-62d7-41a4-803e-cb22c034192a/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56865 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56867 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56868 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56868 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56870 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56870 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:60668 - "GET /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/load?agent_id=agent-4ea49b17 HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:59447 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59447 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62043 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54580 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63831 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63831 - "OPTIONS /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63831 - "OPTIONS /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63831 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58379 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58379 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58379 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63831 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56795 - "OPTIONS /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57851 - "OPTIONS /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61530 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57851 - "GET /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57851 - "OPTIONS /api/v1/livekit/token HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:56795 - "GET /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61530 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56795 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50104 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50060 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61729 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61729 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49726 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49726 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49726 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:49726 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53944 - "GET /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=de987bfa-c57c-4c61-bf9f-60fa90baf8f0, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:60781 - "GET /api/v1/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53944 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53944 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53765 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61760 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61760 - "OPTIONS /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61760 - "OPTIONS /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61760 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59710 - "GET /api/v1/admin/jobs/ee781787-4d15-4567-8090-57d8111e3b36 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61812 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61812 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50407 - "GET /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/load?agent_id=agent-9fb75968 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50407 - "PATCH /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/status HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50407 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:55631 - "OPTIONS /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "OPTIONS /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "OPTIONS /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "OPTIONS /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60473 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52242 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54358 - "OPTIONS /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63225 - "OPTIONS /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63225 - "GET /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54358 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63225 - "GET /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63225 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55631 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63225 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60448 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60448 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60448 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60448 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62310 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60448 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "OPTIONS /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "POST /api/v1/apply/SOMTZ4xXJShzcrKkXRB4mfP72RPwU8tz/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "OPTIONS /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "OPTIONS /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:49669 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49669 - "OPTIONS /api/v1/livekit/token HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:49669 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64749 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57901 - "GET /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/load?agent_id=agent-491d0746 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57901 - "PATCH /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57916 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:55092 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57925 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:55092 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53291 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:55092 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65387 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65387 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55092 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65387 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65387 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55092 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63613 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57608 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56033 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56033 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56034 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56033 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57608 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56034 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56033 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53451 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53453 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53454 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:52295 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:52296 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65024 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65024 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65026 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65033 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65033 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65033 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65037 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:53450 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60191 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "OPTIONS /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:60191 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:53450 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 400 Bad Request
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50090 - "POST /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:50092 - "PATCH /api/v1/internal/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57960 - "GET /api/v1/interviews/a60f9949-95cf-4497-b0cd-8880f9f77643/result HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50785 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61411 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61411 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50785 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61411 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50785 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50785 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61411 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57690 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57690 - "POST /api/v1/admin/jobs HTTP/1.1" 201 Created
+INFO:     127.0.0.1:57690 - "OPTIONS /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57690 - "PATCH /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57690 - "OPTIONS /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "OPTIONS /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57690 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51596 - "OPTIONS /api/v1/admin/sections HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51596 - "POST /api/v1/admin/sections HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51596 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51596 - "OPTIONS /api/v1/admin/sections/27d6509a-f393-49ff-804c-3efa230b1061/generate-questions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55193 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/renew-lease?agent_id=agent-9fb75968 HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:51596 - "POST /api/v1/admin/sections/27d6509a-f393-49ff-804c-3efa230b1061/generate-questions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:51596 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59679 - "PATCH /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59679 - "OPTIONS /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81/publish HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59679 - "POST /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81/publish HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:63033 - "OPTIONS /api/v1/admin/sections/27d6509a-f393-49ff-804c-3efa230b1061 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63033 - "PATCH /api/v1/admin/sections/27d6509a-f393-49ff-804c-3efa230b1061 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63033 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60681 - "PATCH /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60681 - "POST /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81/publish HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60681 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60681 - "OPTIONS /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63033 - "OPTIONS /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60681 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63033 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55548 - "OPTIONS /api/v1/apply/fwFa7ZFw8Pk9UFgoNNdc4ML3u1OY-z7A HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "OPTIONS /api/v1/apply/fwFa7ZFw8Pk9UFgoNNdc4ML3u1OY-z7A HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51549 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/v1/apply/fwFa7ZFw8Pk9UFgoNNdc4ML3u1OY-z7A HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55548 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63497 - "GET /api/v1/apply/fwFa7ZFw8Pk9UFgoNNdc4ML3u1OY-z7A HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51549 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51549 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55548 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55548 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55079 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55417 - "OPTIONS /api/v1/apply/fwFa7ZFw8Pk9UFgoNNdc4ML3u1OY-z7A/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55417 - "POST /api/v1/apply/fwFa7ZFw8Pk9UFgoNNdc4ML3u1OY-z7A/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55417 - "OPTIONS /api/v1/interviews/78ce1006-4557-4b26-8b1d-89273fec1558 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62074 - "OPTIONS /api/v1/interviews/78ce1006-4557-4b26-8b1d-89273fec1558 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=dbdd49bc-3571-4073-a589-c65688907a83, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=dbdd49bc-3571-4073-a589-c65688907a83, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:62074 - "GET /api/v1/interviews/78ce1006-4557-4b26-8b1d-89273fec1558 HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=dbdd49bc-3571-4073-a589-c65688907a83, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=dbdd49bc-3571-4073-a589-c65688907a83, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:62074 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55417 - "GET /api/v1/interviews/78ce1006-4557-4b26-8b1d-89273fec1558 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55417 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64522 - "GET /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/load?agent_id=agent-4b78ff7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64522 - "PATCH /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64523 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64252 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:64253 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54917 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54917 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54918 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56145 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56146 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:65373 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59299 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59299 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59299 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65373 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59301 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59299 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58718 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58718 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58720 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58720 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:60297 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/renew-lease?agent_id=agent-9fb75968 HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:61373 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62414 - "POST /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62415 - "PATCH /api/v1/internal/interviews/8acd25dc-87de-4df0-afb8-d54a4feb5550/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61586 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61586 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61586 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61576 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61576 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61586 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61576 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61586 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52406 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/renew-lease?agent_id=agent-4b78ff7e HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:59762 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50134 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/renew-lease?agent_id=agent-4b78ff7e HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:61656 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "OPTIONS /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "OPTIONS /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "OPTIONS /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62467 - "OPTIONS /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "OPTIONS /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49400 - "OPTIONS /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "OPTIONS /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49400 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62467 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53086 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61656 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49400 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62467 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49668 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49668 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49668 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54613 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49668 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65393 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54613 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49243 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55516 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54613 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58973 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58792 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58973 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58792 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58973 - "GET /api/v1/admin/jobs/e563741b-fe6d-4fb6-97d2-a767450f6c81 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58973 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54077 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58792 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49668 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58973 - "GET /api/v1/admin/definitions/556d5704-1c0d-45e9-aa53-60a22a3187c3/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58792 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56090 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54077 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54701 - "POST /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:54702 - "PATCH /api/v1/internal/interviews/78ce1006-4557-4b26-8b1d-89273fec1558/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58792 - "GET /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "OPTIONS /api/v1/admin/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "POST /api/v1/admin/jobs HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59284 - "OPTIONS /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "PATCH /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "OPTIONS /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56120 - "OPTIONS /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56120 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "OPTIONS /api/v1/admin/sections HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "POST /api/v1/admin/sections HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59284 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "OPTIONS /api/v1/admin/sections/8436cd16-fc20-4148-8de8-cdf9c447c29d/generate-questions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59284 - "POST /api/v1/admin/sections/8436cd16-fc20-4148-8de8-cdf9c447c29d/generate-questions HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59284 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65441 - "PATCH /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65441 - "OPTIONS /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787/publish HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65441 - "POST /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787/publish HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:62398 - "OPTIONS /api/v1/admin/sections/8436cd16-fc20-4148-8de8-cdf9c447c29d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62398 - "PATCH /api/v1/admin/sections/8436cd16-fc20-4148-8de8-cdf9c447c29d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62398 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59937 - "PATCH /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59937 - "POST /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787/publish HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59937 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59937 - "OPTIONS /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62398 - "OPTIONS /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62398 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59937 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52135 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49886 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52135 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49886 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52135 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52434 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49886 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56871 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52135 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52434 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58798 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57363 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58798 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57363 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58798 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58366 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54068 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57363 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58798 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58366 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58366 - "PATCH /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58366 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58366 - "PATCH /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58366 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54121 - "PATCH /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54121 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51149 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51149 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51149 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56080 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54095 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64119 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64119 - "OPTIONS /api/v1/apply/9p-cAFK5mf9_J2mmuqeF3o4X3EBEOBFC HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54095 - "OPTIONS /api/v1/apply/9p-cAFK5mf9_J2mmuqeF3o4X3EBEOBFC HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54095 - "GET /api/v1/apply/9p-cAFK5mf9_J2mmuqeF3o4X3EBEOBFC HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64119 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54095 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/apply/9p-cAFK5mf9_J2mmuqeF3o4X3EBEOBFC HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64119 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53376 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64119 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54095 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63278 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "OPTIONS /api/v1/apply/9p-cAFK5mf9_J2mmuqeF3o4X3EBEOBFC/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "POST /api/v1/apply/9p-cAFK5mf9_J2mmuqeF3o4X3EBEOBFC/register HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "OPTIONS /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "OPTIONS /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57122 - "GET /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57122 - "OPTIONS /api/v1/livekit/token HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:57122 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56127 - "GET /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56127 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57400 - "GET /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/load?agent_id=agent-b079d62c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57400 - "PATCH /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57359 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59147 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59147 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59147 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59147 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56709 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59147 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56709 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60186 - "GET /api/v1/admin/jobs/ab1d0572-05d7-4b19-ac12-2df7e8d7f7ee HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59147 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60495 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49973 - "GET /api/v1/admin/definitions/a8463add-7e02-4c7c-81b9-8d29801bc56d/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59147 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49975 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49976 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49978 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49980 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49981 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62976 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62977 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62978 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62987 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62988 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62989 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62991 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/checkpoints HTTP/1.1" 201 Created
+INFO:     127.0.0.1:62992 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:59058 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65062 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62920 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/renew-lease?agent_id=agent-b079d62c HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:63942 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51431 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51311 - "OPTIONS /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51311 - "OPTIONS /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51311 - "OPTIONS /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52460 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:51311 - "GET /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64471 - "GET /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51311 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64471 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63732 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:55906 - "GET /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+DEBUG AUTH: session.candidate_profile_id=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'asyncpg.pgproto.pgproto.UUID'>
+DEBUG AUTH: user_uuid=f818c245-7dd9-4b42-9a52-69bf0192b4be, type=<class 'uuid.UUID'>
+INFO:     127.0.0.1:55906 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63732 - "GET /api/v1/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63732 - "POST /api/v1/livekit/token HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58048 - "OPTIONS /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50175 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56125 - "OPTIONS /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56125 - "OPTIONS /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50881 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/messages HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/jobs/fe1e3287-0706-44e5-97bd-ac347d73c787 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56125 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50881 - "POST /api/v1/internal/interviews/e2375f2e-ecd4-4e99-9ded-78c51fd93fec/events HTTP/1.1" 201 Created
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/definitions/1af87e45-2029-445c-ab1f-11815bd6497b/invitations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58048 - "GET /api/v1/admin/ping HTTP/1.1" 200 OK

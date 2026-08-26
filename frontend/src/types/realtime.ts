@@ -1,6 +1,6 @@
 import type { InterviewPhase } from "./api";
 
-export type AllowedControl = "REQUEST_HINT" | "CHANGE_QUESTION" | "SKIP_QUESTION" | "END_INTERVIEW" | "SUBMIT_CODE";
+export type AllowedControl = "REQUEST_HINT" | "CHANGE_QUESTION" | "SKIP_QUESTION" | "END_INTERVIEW" | "SUBMIT_CODE" | "SUBMIT_MCQ_ANSWER" | "END_SECTION_EARLY" | "PROCEED_TO_NEXT_SECTION";
 
 export interface ActiveQuestion {
   id: string;
@@ -20,6 +20,23 @@ export interface ActiveQuestion {
   supported_languages: string[];
   hints_used: number;
   source?: "LLM_GENERATED" | "CONTEXTUAL_FALLBACK" | "QUESTION_BANK";
+  // Part 1 (rebrand work): the real, un-coerced CodingConfig/MCQConfig dict
+  // for an ordered-flow CODING/MCQ question (empty {} for VERBAL/legacy).
+  // starter_code/constraints here are STRINGS (CodingConfig's real shape),
+  // unlike the legacy Dict[str,string]/string[] fields above. MCQ has no
+  // typed fields at all — options/correct_answers/is_multi_select only
+  // ever arrive here.
+  config?: {
+    // CODING
+    starter_code?: string;
+    constraints?: string;
+    supported_languages?: string[];
+    hints?: string[];
+    // MCQ
+    options?: Array<{ id: string; text: string }>;
+    correct_answers?: string[];
+    is_multi_select?: boolean;
+  };
 }
 
 export interface StateUpdatePayload {
@@ -35,7 +52,13 @@ export interface StateUpdatePayload {
   max_hints: number;
   last_question_outcome: string | null;
   allowed_controls: AllowedControl[];
-  time_remaining_seconds: number;
+  time_remaining_seconds: number | null;
+  sections_progress?: {
+    total: number;
+    completed: number;
+    current_index: number | null; // 1-based
+    current_section_type: string | null;
+  };
 }
 
 export interface RealtimeMessage<T> {

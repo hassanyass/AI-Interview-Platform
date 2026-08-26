@@ -3,8 +3,7 @@ import os
 import sys
 import logging
 
-# Add agent directory to sys path so 'app.interview' resolves to agent/app/interview
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agent'))
+# Add agent directory to sys path so 'agent.interview' resolves to agent/app/interview
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,7 +20,7 @@ class MockLLM:
             raise Exception("Mock LLM Failure")
         
         # Default response
-        from app.interview.models import StructuredAction, ActionEnum
+        from agent.interview.models import StructuredAction, ActionEnum
         return StructuredAction(
             action=ActionEnum.ASK,
             response="Mock response",
@@ -42,8 +41,8 @@ class MockPersistence:
         pass
 
 async def run_phase2_tests():
-    from app.interview.controller import InterviewController
-    from app.interview.models import InterviewRuntimeContext, InterviewPhase, ActionEnum
+    from agent.interview.controller import InterviewController
+    from agent.interview.models import InterviewRuntimeContext, InterviewPhase, ActionEnum
     
     print("\n--- Test 1 & 2: Introduction Phase Limits (Enforcing Boundary) ---")
     ctx = InterviewRuntimeContext(
@@ -83,7 +82,7 @@ async def run_phase2_tests():
     print("[PASS] LLM failure handled safely with fallback response.")
 
     print("\n--- Test 4 & 5: Turn Deduplication ---")
-    from app.interview.voice_adapter import VoiceInterviewAdapter
+    from agent.interview.voice_adapter import VoiceInterviewAdapter
     
     # Mock plugins
     class MockPlugin:

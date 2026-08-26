@@ -5,8 +5,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agent'))
 
 from unittest.mock import MagicMock
-from app.interview.controller import InterviewController
-from app.interview.models import (
+from agent.interview.controller import InterviewController
+from agent.interview.models import (
     CandidateControlAction, InterviewPhase, Question, StructuredAction, ActionEnum, SectionProgress,
     InterviewRuntimeContext, InterviewPlan, SectionLimits
 )
@@ -136,8 +136,8 @@ async def test_phase3c_llm_boundary(mock_controller):
     
     # Generate UI state (which is essentially what gets passed into the prompt)
     ui_state = mock_controller.generate_ui_state()
-    assert "question" in ui_state
-    assert ui_state["question"]["id"] == "q1"
+    assert "current_question" in ui_state
+    assert ui_state["current_question"]["id"] == "q1"
     
     # Attempt a standard LLM completion process 
     # (assuming LLM acts on 'process_turn', we verify it can't mutate question state)
@@ -162,7 +162,7 @@ async def test_phase3c_llm_boundary(mock_controller):
     # These are explicitly tested in `test_phase3a.py` via `test_phase3a_persistence_integration`
     # which tests the full FastAPI -> SQLAlchemy -> DB -> Reload cycle for InterviewRuntimeContext.
 
-from app.llm.prompts import TECHNICAL_PROMPT
+from agent.llm.prompts import TECHNICAL_PROMPT
 
 def test_phase3c_prompt_content():
     """Verify Invariants 14, 15, 16 in the actual prompt."""

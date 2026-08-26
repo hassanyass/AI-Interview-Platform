@@ -12,7 +12,10 @@ export type InterviewPhase =
   | "CLOSING"
   | "COMPLETED"
   | "TERMINATED"
-  | "FAILED";
+  | "FAILED"
+  // WR-B: candidate-visible section break phase
+  | "WAITING_ROOM";
+
 
 export type InterviewStatus = "PENDING" | "IN_PROGRESS" | "DISCONNECTED" | "COMPLETED" | "TERMINATED" | "FAILED";
 
@@ -88,6 +91,13 @@ export interface InterviewSessionResponse {
   completed_at?: string;
   created_at: string;
   updated_at: string;
+  /** Job.instructions, surfaced for the pre-session intro screen. */
+  candidate_instructions?: string | null;
+  /** Ordered core-section-type list (VERBAL/CODING/MCQ) from the session's
+   *  InterviewDefinition, order_index order. Used to compute the waiting
+   *  room's "next section" label client-side — the live realtime state only
+   *  reports the currently-active section (null during WAITING_ROOM itself). */
+  sections?: string[];
 }
 
 export interface InterviewResultResponse {

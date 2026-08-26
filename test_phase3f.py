@@ -2,19 +2,19 @@ import pytest
 from uuid import uuid4
 from datetime import datetime, timezone
 
-from app.interview.controller import InterviewController
-from app.interview.models import (
+from agent.interview.controller import InterviewController
+from agent.interview.models import (
     InterviewRuntimeContext, InterviewPhase, ActionEnum,
     CandidateControlAction, QuestionOutcome, EvaluationSignal, QuestionRecord,
     Question, InterviewPlan, SectionLimits
 )
-from app.interview.persistence import MockPersistence
+from agent.interview.persistence import MockPersistence
 
 @pytest.fixture
 def mock_persistence():
     return MockPersistence()
 
-from app.llm.provider import LLMProvider
+from agent.llm.provider import LLMProvider
 class DummyLLM(LLMProvider):
     async def generate_response(self, context): return None
     async def stream_response(self, context): pass
@@ -50,7 +50,7 @@ async def test_phase3f_completion_flow(mock_controller):
     """Test standard completion flow from CLOSING."""
     
     # We are in CLOSING. If the candidate ends or the agent decides to transition to END.
-    from app.interview.models import StructuredAction
+    from agent.interview.models import StructuredAction
     action = StructuredAction(
         action=ActionEnum.END,
         response="Goodbye.",
@@ -92,7 +92,7 @@ async def test_phase3f_immutability(mock_controller):
 @pytest.mark.asyncio
 async def test_phase3f_evaluate_does_not_complete():
     """Verify that EVALUATE cannot transition to COMPLETED by itself."""
-    from app.interview.models import StructuredAction
+    from agent.interview.models import StructuredAction
     
     context = InterviewRuntimeContext(
         session_id=str(uuid4()),

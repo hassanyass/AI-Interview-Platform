@@ -1,44 +1,75 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { RoleProvider } from './context/RoleContext'
 import AuthPage from './pages/Auth'
-import Dashboard from './pages/Dashboard'
-import Profile from './pages/Profile'
-import NewInterview from './pages/NewInterview'
 import InterviewSession from './pages/InterviewSession'
 import FinalResult from './features/results/FinalResult'
+import InvitePage from './pages/InvitePage'
+import ApplyPage from './pages/ApplyPage'
+import AdminLayout from './routes/admin/AdminLayout'
+import JobsListPage from './routes/admin/JobsListPage'
+import JobCreatePage from './routes/admin/JobCreatePage'
+import JobDetailPage from './routes/admin/JobDetailPage'
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, isLoading } = useAuth()
-  
+
   if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>
   if (!user) return <Navigate to="/login" replace />
-  
+
+  return <>{children}</>
+}
+
+// Phase 6, Sub-phase 6D — accepts EITHER a real Supabase session OR a
+// Flow B guest token. Deliberately scoped to only the routes a guest is
+// meant to reach (/interviews/:id and its /result variant) rather than
+// widening the general ProtectedRoute — see docs/CURRENT_DECISIONS.md's
+// unresolved list: this is a UX-scoping choice, not a security boundary,
+// since the backend already honors a guest token for any
+// current_user_dependency-gated endpoint regardless of frontend routing.
+const GuestOrAuthRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, guestToken, isLoading } = useAuth()
+
+  if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>
+  if (!user && !guestToken) return <Navigate to="/login" replace />
+
   return <>{children}</>
 }
 
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <div className="min-h-screen bg-background text-foreground">
-          <Routes>
-            {/* Public Route */}
-            <Route path="/login" element={<AuthPage />} />
-            
-            {/* Protected Routes */}
-            <Route path="/" element={<ProtectedRoute><Navigate to="/dashboard" replace /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/interviews/new" element={<ProtectedRoute><NewInterview /></ProtectedRoute>} />
-            <Route path="/interviews/:id" element={<ProtectedRoute><InterviewSession /></ProtectedRoute>} />
-            <Route path="/interviews/:id/result" element={<ProtectedRoute><FinalResult /></ProtectedRoute>} />
-            
-            {/* Catch all */}
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </div>
-      </BrowserRouter>
+      <RoleProvider>
+        <BrowserRouter>
+          <div className="min-h-screen bg-background text-foreground">
+            <Routes>
+              {/* Public Routes */}
+              <Route path="/login" element={<AuthPage />} />
+              <Route path="/invite/:token" element={<InvitePage />} />
+              <Route path="/apply/:token" element={<ApplyPage />} />
+
+              {/* Admin Routes */}
+              <Route path="/admin" element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
+                <Route index element={<Navigate to="jobs" replace />} />
+                <Route path="dashboard" element={<Navigate to="jobs" replace />} />
+                <Route path="jobs" element={<JobsListPage />} />
+                <Route path="jobs/new" element={<JobCreatePage />} />
+                <Route path="jobs/:id" element={<JobDetailPage />} />
+                <Route path="settings" element={<div>Settings Placeholder</div>} />
+              </Route>
+
+              {/* Protected Routes (Candidate Facing) */}
+              <Route path="/" element={<Navigate to="/admin" replace />} />
+              <Route path="/interviews/:id" element={<GuestOrAuthRoute><InterviewSession /></GuestOrAuthRoute>} />
+              <Route path="/interviews/:id/result" element={<GuestOrAuthRoute><FinalResult /></GuestOrAuthRoute>} />
+              
+              {/* Catch all */}
+              <Route path="*" element={<Navigate to="/admin" replace />} />
+            </Routes>
+          </div>
+        </BrowserRouter>
+      </RoleProvider>
     </AuthProvider>
   )
 }

@@ -17,7 +17,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           "disabled:pointer-events-none disabled:opacity-50",
           {
             "bg-primary text-primary-foreground hover:bg-primary/90": variant === "primary",
-            "bg-secondary text-secondary-foreground hover:bg-secondary/80": variant === "secondary",
+            "bg-secondary text-secondary-foreground hover:bg-secondary/90": variant === "secondary",
             "hover:bg-accent hover:text-accent-foreground text-foreground": variant === "ghost",
             "bg-destructive text-destructive-foreground hover:bg-destructive/90": variant === "destructive",
             "border border-input hover:bg-accent hover:text-accent-foreground": variant === "outline",

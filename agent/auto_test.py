@@ -3,12 +3,12 @@ import uuid
 import sys
 import logging
 
-from app.llm.groq_provider import GroqProvider
-from app.interview.models import InterviewRuntimeContext, InterviewPhase
-from app.interview.persistence import MockPersistence
-from app.interview.planner import InterviewPlanner
-from app.interview.controller import InterviewController
-from app.interview.questions import get_questions_by_competency
+from agent.llm.groq_provider import GroqProvider
+from agent.interview.models import InterviewRuntimeContext, InterviewPhase
+from agent.interview.persistence import MockPersistence
+from agent.interview.planner import InterviewPlanner
+from agent.interview.controller import InterviewController
+from agent.interview.questions import get_questions_by_competency
 
 from dotenv import load_dotenv
 import os

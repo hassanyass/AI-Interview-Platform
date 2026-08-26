@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 import httpx
 
 # Add backend to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
 
 # Mock environment variables for missing API keys
 os.environ["SUPABASE_URL"] = "http://localhost:8000"
@@ -17,16 +16,16 @@ os.environ["SUPABASE_SECRET_KEY"] = "mock_secret_key"
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 
-from app.core.config import settings
+from backend.core.config import settings
 
-# Override settings before importing app.main
+# Override settings before importing backend.main
 settings.SUPABASE_URL = "http://localhost:8000"
 settings.SUPABASE_SECRET_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSJ9.mock"
 settings.LIVEKIT_API_KEY = "devkey"
 settings.LIVEKIT_API_SECRET = "secret"
 settings.AGENT_API_SECRET = "dummy_secret"
 
-from app.main import app
+from backend.main import app
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,11 +36,11 @@ MOCK_OTHER_USER_ID = "11111111-1111-1111-1111-111111111111"
 AGENT_SECRET = settings.AGENT_API_SECRET or "dummy_secret"
 
 # We override the auth dependency to simulate our mock user
-from app.core.security import get_current_user
+from backend.api.deps import get_current_candidate_profile_id
 async def override_current_user():
     return MOCK_USER_ID
 
-app.dependency_overrides[get_current_user] = override_current_user
+app.dependency_overrides[get_current_candidate_profile_id] = override_current_user
 
 
 async def create_profile_if_missing(client: AsyncClient):
@@ -64,18 +63,38 @@ async def run_tests():
         await create_profile_if_missing(client)
         
         print("\n--- Test 1: Create session ---")
-        resp = await client.post("/api/v1/interviews/", json={
-            "configuration": {
-                "role": "Software Engineer",
-                "level": "mid",
-                "language": "en"
-            }
-        })
-        assert resp.status_code == 200, f"Failed to create session: {resp.text}"
-        session_data = resp.json()
-        session_id = session_data["id"]
-        assert session_data["status"] == "CREATED"
-        print(f"[PASS] Session created: {session_id}")
+        print("[SKIP] Test 1 (Create session) is skipped because the legacy create_interview endpoint was removed in RB-A.")
+        
+        # Setup: Manually insert a mock session into the DB for the remaining tests
+        from backend.api.deps import get_db
+        from backend.models.interview import InterviewSession, InterviewConfiguration
+        import uuid as uuid_module
+        
+        session_id = str(uuid_module.uuid4())
+        db_gen = get_db()
+        db = await anext(db_gen)
+        try:
+            db_session = InterviewSession(
+                id=session_id,
+                candidate_profile_id=uuid_module.UUID(MOCK_USER_ID),
+                role="Software Engineer",
+                level="mid",
+                language="en",
+                status="CREATED"
+            )
+            db.add(db_session)
+            db_config = InterviewConfiguration(
+                session_id=session_id,
+                role="Software Engineer",
+                level="mid",
+                language="en"
+            )
+            db.add(db_config)
+            await db.commit()
+        finally:
+            await db.close()
+            
+        print(f"[PASS] Setup mock DB session manually: {session_id}")
 
         print("\n--- Test 2: Start session (Agent Bootstrap) ---")
         # 1. Client gets token
@@ -132,14 +151,14 @@ async def run_tests():
         print("\n--- Test 5: Unauthorized session ---")
         # Temporarily switch user
         async def override_other_user(): return MOCK_OTHER_USER_ID
-        app.dependency_overrides[get_current_user] = override_other_user
+        app.dependency_overrides[get_current_candidate_profile_id] = override_other_user
         
         unauth_resp = await client.post("/api/v1/livekit/token", json={"session_id": session_id})
         assert unauth_resp.status_code == 404  # 404 is returned because the ownership query returns None
         print("[PASS] Unauthorized user rejected")
         
         # Restore mock user
-        app.dependency_overrides[get_current_user] = override_current_user
+        app.dependency_overrides[get_current_candidate_profile_id] = override_current_user
 
 
         print("\n--- Test 6: Invalid lifecycle state ---")
@@ -164,9 +183,30 @@ async def run_tests():
         print("[PASS] Verified by schema and adapter design.")
         
         print("\n--- Test 9: Concurrent Agent Lease Race Condition ---")
-        # Create a new session
-        resp = await client.post("/api/v1/interviews/", json={"configuration": {"role": "SE", "level": "mid", "language": "en"}})
-        new_session_id = resp.json()["id"]
+        # Create a new session via DB
+        new_session_id = str(uuid_module.uuid4())
+        db_gen = get_db()
+        db = await anext(db_gen)
+        try:
+            db_session2 = InterviewSession(
+                id=new_session_id,
+                candidate_profile_id=uuid_module.UUID(MOCK_USER_ID),
+                role="SE",
+                level="mid",
+                language="en",
+                status="CREATED"
+            )
+            db.add(db_session2)
+            db_config2 = InterviewConfiguration(
+                session_id=new_session_id,
+                role="SE",
+                level="mid",
+                language="en"
+            )
+            db.add(db_config2)
+            await db.commit()
+        finally:
+            await db.close()
         
         # Agent 1 grabs lease
         a1_load = await client.get(f"/api/v1/internal/interviews/{new_session_id}/load?agent_id=agent-1", headers=agent_headers)

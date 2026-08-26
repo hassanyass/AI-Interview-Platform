@@ -5,8 +5,8 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agent'))
 
 from unittest.mock import MagicMock, patch
-from app.interview.controller import InterviewController
-from app.interview.models import (
+from agent.interview.controller import InterviewController
+from agent.interview.models import (
     CandidateControlAction, InterviewPhase, Question, StructuredAction, ActionEnum, SectionProgress,
     InterviewRuntimeContext, InterviewPlan, SectionLimits, QuestionOutcome
 )
@@ -107,7 +107,7 @@ async def test_phase3d_change_question_flow(mock_controller):
 async def test_phase3d_rejected_change(mock_controller):
     """Tests 6, 7, 8, 12: Second change rejected"""
     # Setup: Already changed one question
-    from app.interview.models import QuestionRecord
+    from agent.interview.models import QuestionRecord
     mock_controller.context.question_records.append(
         QuestionRecord(question_id="q0", outcome=QuestionOutcome.CHANGED, hints_used=0, followups_used=0)
     )
