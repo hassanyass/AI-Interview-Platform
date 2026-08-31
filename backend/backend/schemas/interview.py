@@ -71,6 +71,7 @@ class InterviewSessionResponse(BaseModel):
     # (None while WAITING_ROOM itself is active).
     candidate_instructions: Optional[str] = None
     sections: Optional[List[str]] = None
+    candidate_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

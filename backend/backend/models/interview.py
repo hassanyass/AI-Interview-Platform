@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, UniqueConstraint, Boolean
+from sqlalchemy import Column, String, Integer, Float, DateTime, ForeignKey, Text, UniqueConstraint, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from backend.db.session import Base
@@ -159,6 +159,7 @@ class InterviewSession(Base):
     messages = relationship("InterviewMessage", back_populates="session", cascade="all, delete-orphan", order_by="InterviewMessage.sequence_number")
     events = relationship("InterviewEvent", back_populates="session", cascade="all, delete-orphan", order_by="InterviewEvent.sequence_number")
     checkpoints = relationship("InterviewCheckpoint", back_populates="session", cascade="all, delete-orphan", order_by="InterviewCheckpoint.created_at.desc()")
+    evaluation = relationship("Evaluation", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
 
 class InterviewConfiguration(Base):
@@ -253,5 +254,110 @@ class InterviewCheckpoint(Base):
     evaluation_signals = Column(JSONB, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
+
     session = relationship("InterviewSession", back_populates="checkpoints")
+
+
+# ─── Phase 8B/8C: Assessment Criteria & Structured Evaluation ──────────────────
+# Additive, replaces nothing -- InterviewSession.final_result stays exactly as
+# it is for every existing session (per the explicit "leave legacy read-only,
+# no auto-backfill" decision). These tables are the new, queryable home for
+# every session evaluated from Phase 8C onward.
+
+class AssessmentCriterion(Base):
+    """HR-configured criterion the evaluator scores independently.
+    job_id/section_id NULL together = a system TEMPLATE row (the 5 seeded
+    behavioral criteria) -- a menu of criteria, not tied to any one job.
+    job_id set = a real, job-instantiated criterion (created by 8E's
+    authoring UI, cloned from a template or fully custom); section_id set on
+    top of that scopes it to one specific InterviewSection instead of the
+    whole job. Until 8E ships, no job-scoped rows exist yet -- /load resolves
+    every job to the enabled TEMPLATE rows as its default set (see
+    internal.py's load_session_for_agent), a deliberate, explicitly-flagged
+    interim behavior, not a permanent design decision on its own."""
+    __tablename__ = "assessment_criteria"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=True)
+    section_id = Column(UUID(as_uuid=True), ForeignKey("interview_sections.id", ondelete="CASCADE"), nullable=True)
+
+    key = Column(String, nullable=False)
+    label = Column(String, nullable=False)
+    kind = Column(String, nullable=False)  # "behavioral" | "content"
+    enabled = Column(Boolean, nullable=False, default=True, server_default="true")
+    guidance_text = Column(Text, nullable=True)
+    source = Column(String, nullable=False, default="CUSTOM", server_default="CUSTOM")  # "TEMPLATE" | "CUSTOM"
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        # Real per-job/per-section duplicate keys are meaningfully caught here.
+        UniqueConstraint("job_id", "section_id", "key", name="uq_criterion_job_section_key"),
+        # Postgres treats NULL != NULL, so the constraint above does NOT catch
+        # duplicate template keys (job_id/section_id both NULL) -- a partial
+        # index closes that gap specifically for the template tier.
+        Index(
+            "uq_criterion_template_key", "key",
+            unique=True,
+            postgresql_where=(job_id.is_(None) & section_id.is_(None)),
+        ),
+    )
+
+
+class Evaluation(Base):
+    """One per CandidateInterviewSession/InterviewSession -- created the
+    first time generate_final_evaluation() succeeds for that session (Phase
+    8C), regardless of whether any criteria were resolved (an empty `scores`
+    list is a legitimate state: legacy session, or a job with nothing
+    configured -- not an error). Upserted, not blindly inserted, by
+    POST /internal/interviews/{id}/evaluation, so a retry from the agent's
+    teardown safety net can never create a duplicate row."""
+    __tablename__ = "evaluations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    overall_score = Column(Integer, nullable=True)
+    recommendation = Column(String, nullable=True)  # "Hire" | "Consider / Mixed" | "No Hire"
+    evidence_sufficiency = Column(Float, nullable=True)
+    summary = Column(Text, nullable=True)
+    detailed_overview = Column(Text, nullable=True)
+
+    # Phase 8F: admin manual override of the computed "suggested" status.
+    # None = no override (use computed evidence_sufficiency + recommendation),
+    # True = HR says yes (override to suggested), False = HR says no.
+    # Both the computed and overridden values stay visible/auditable.
+    override_suggested = Column(Boolean, nullable=True)
+    override_reason = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    session = relationship("InterviewSession", back_populates="evaluation")
+    scores = relationship("Score", back_populates="evaluation", cascade="all, delete-orphan")
+
+
+class Score(Base):
+    """One per criterion actually scored for one Evaluation."""
+    __tablename__ = "scores"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    evaluation_id = Column(UUID(as_uuid=True), ForeignKey("evaluations.id", ondelete="CASCADE"), nullable=False)
+    # Nullable + denormalized key: a criterion can be edited/deleted later by
+    # HR without corrupting or cascading into a historical score. criterion_key
+    # is the durable record of what was actually evaluated at the time.
+    criterion_id = Column(UUID(as_uuid=True), ForeignKey("assessment_criteria.id", ondelete="SET NULL"), nullable=True)
+    criterion_key = Column(String, nullable=False)
+
+    score = Column(Integer, nullable=True)
+    overview = Column(Text, nullable=True)
+    strengths = Column(JSONB, nullable=True)
+    improvements = Column(JSONB, nullable=True)
+    evidence_reference = Column(Text, nullable=True)
+
+    evaluation = relationship("Evaluation", back_populates="scores")
+    # Phase 8D: read-only join for display (criterion_label/kind) — one-
+    # directional, no back_populates needed. None if the criterion was
+    # later edited/deleted (ondelete="SET NULL" above) — criterion_key
+    # stays the durable record either way.
+    criterion = relationship("AssessmentCriterion", viewonly=True)

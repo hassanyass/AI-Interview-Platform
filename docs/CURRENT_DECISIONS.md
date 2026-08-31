@@ -105,14 +105,44 @@ confirmed explicitly with the user, not an oversight.**
   with a confirmation dialog — moving to the waiting room (or CLOSING if
   it was the last section) with any remaining unanswered questions in that
   section marked not-attempted, not silently dropped from the record.
-- What does NOT change: Issue 6's SKIP_QUESTION fix stays exactly as-is —
-  a candidate still cannot skip one individual core question while staying
-  in the same section. This is a SECTION-level "I'm done, move on"
-  affordance, not a return of question-level skipping.
+- At the time this was written: Issue 6's SKIP_QUESTION fix stayed exactly
+  as-is — a candidate could not skip one individual core question while
+  staying in the same section. **This has since changed — see "Candidate
+  can skip an individual core question" below, a second, later reversal.**
+  This was a SECTION-level "I'm done, move on" affordance, not
+  question-level skipping, at the time it was made.
 - Implementation should use a new, dedicated control action (e.g.
   END_SECTION_EARLY), distinct from the legacy SKIP_SECTION mechanism
   (which stays disabled for active core sections per Issue 6 — this is a
   new, purpose-built mechanism, not a resurrection of the old one).
+
+## Candidate can skip an individual core question (RESOLVED — second reversal, 2026-08-27)
+**This further reverses Issue 6's SKIP_QUESTION fix — deliberately,
+confirmed explicitly with the user (asked directly: reword the rejection
+message vs. make Skip actually work; user chose "make Skip actually
+work"), not an oversight. The section above ("Candidate can end a section
+early") already reversed the original spec's section-level skipping; this
+extends that same reversal down to the individual question level, which
+that earlier decision explicitly still ruled out at the time.**
+
+- `SKIP_QUESTION` now genuinely skips the CURRENT ordered core question
+  (any section type — VERBAL/CODING/MCQ) — marks it `SKIPPED` (a distinct
+  outcome from `COMPLETED`/`TIME_EXPIRED`/`NOT_ATTEMPTED`, preserving the
+  real reason it wasn't answered) and advances to the next question, or
+  ends the section/interview exactly the way `SUBMIT_CODE`/
+  `SUBMIT_MCQ_ANSWER` already do when it's the last question in a section.
+- Scoped narrowly to genuinely-active core questions only (BACKGROUND
+  phase, a real `current_question` present) — a `SKIP_QUESTION` sent during
+  `BRIEFING`/`WELCOME`, before any core question has actually started, is
+  still rejected exactly as Issue 6 originally intended (there's nothing
+  concrete yet to skip). That original repro case is unaffected.
+- `SKIP_SECTION` stays fully blocked for ordered core sections, unchanged
+  — this reversal is per-QUESTION only. `END_SECTION_EARLY` remains the
+  one mechanism for "skip the whole section."
+- `generate_ui_state()`'s `allowed_controls` now advertises `SKIP_QUESTION`
+  again for an active ordered core section (previously stripped, correctly,
+  back when it was still a no-op) — `SKIP_SECTION`/`MOVE_TO_TECHNICAL`
+  stay stripped there, matching their still-blocked status.
 
 ## Intro screen's "end" control (RESOLVED)
 The post-registration intro/greeting screen's "end" affordance sends
@@ -152,6 +182,20 @@ frontend now reads instead. Live-verified with real captured
 diff). `controller.py`/`main.py` changes were reviewed and approved before
 being made, per this file's own frozen-contract rule.
 
+## Phase 8C: Recommendation enum values (RESOLVED — deliberate, 2026-08-31)
+`agent/agent/interview/models.py`'s new `Recommendation` enum (replacing the
+previous unconstrained free-text `recommendation` string) deliberately kept
+the existing values verbatim — `"Hire"`, `"Consider / Mixed"`, `"No Hire"` —
+including the slightly awkward `"Consider / Mixed"` string, instead of
+cleaning them up to something like `CONSIDER`/`NO_HIRE`-style plain enum
+names. This was for backward compatibility: `evaluations.recommendation`
+(DB), every existing `final_result.evaluation.recommendation` JSONB value,
+and `agent/test_skip_regressions.py`'s ~7 `DetailedEvaluation(recommendation=
+"Hire", ...)` call sites all already use these exact strings. **Do not "fix"
+this cosmetically in a future pass** — renaming the enum values is a breaking
+schema/data change (every existing DB row and JSONB blob would need
+migrating), not a free cleanup.
+
 ## Still unresolved (do not implement against these silently)
 - Invitation expiration policy
 - Whether public candidates need any email verification at all (currently: no, by design)
@@ -160,3 +204,11 @@ being made, per this file's own frozen-contract rule.
 - Editing an already-published interview
 - Permissions / multiple Admin users
 - Email templates (blocked on P1)
+- `voice_adapter.py`'s `start(resume=True)` unconditionally speaks a
+  "Welcome back, continuing from {phase}" message with no exclusion for
+  `phase === COMPLETED` — nonsensical and audible if a finished session's
+  resume path is ever reached (currently avoided by the new dedicated
+  `loadedAlreadyCompleted` flag in `InterviewSession.tsx`, which bypasses
+  this path entirely for the initial-load case, but the underlying bug in
+  `voice_adapter.py` is still real and unfixed). Low priority, frozen
+  file, found during Plan 11's flow-audit follow-up.

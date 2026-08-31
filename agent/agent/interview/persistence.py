@@ -54,8 +54,8 @@ class InterviewPersistence(ABC):
         pass
 
     @abstractmethod
-    async def save_completion(self, context: InterviewRuntimeContext) -> None:
-        """Persist final interview completion state."""
+    async def save_completion(self, context: InterviewRuntimeContext) -> bool:
+        """Persist final interview completion state. Returns True iff persistence actually succeeded."""
         pass
 
     @abstractmethod
@@ -75,8 +75,19 @@ class InterviewPersistence(ABC):
         pass
 
     @abstractmethod
-    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> None:
-        """Update the interview session status."""
+    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> bool:
+        """Update the interview session status. Returns True iff the update actually succeeded."""
+        pass
+
+    @abstractmethod
+    async def submit_evaluation(self, context: InterviewRuntimeContext) -> bool:
+        """Persist context.final_evaluation into the normalized Evaluation/Score
+        tables (Phase 8C), in addition to (not instead of) the legacy
+        final_result JSONB envelope save_completion() already writes. Safe to
+        call more than once for the same session -- the backend upserts on
+        session_id. Returns True iff persistence actually succeeded; a no-op
+        (context.final_evaluation is None -- nothing to submit) also returns
+        True, since that isn't a persistence failure."""
         pass
 
 
@@ -131,7 +142,7 @@ class MockPersistence(InterviewPersistence):
         }
         logger.info(f"[MockPersistence] Saved checkpoint for {context.session_id} - Phase: {context.current_phase.value}")
 
-    async def save_completion(self, context: InterviewRuntimeContext) -> None:
+    async def save_completion(self, context: InterviewRuntimeContext) -> bool:
         status = "COMPLETED" if context.current_phase.value == "COMPLETED" else "TERMINATED"
         self.storage[context.session_id] = {
             "status": status,
@@ -140,8 +151,9 @@ class MockPersistence(InterviewPersistence):
         if status == "COMPLETED":
             final_result = build_final_result(context)
             self.storage[context.session_id]["final_result"] = final_result
-            
+
         logger.info(f"[MockPersistence] Saved final state for {context.session_id}")
+        return True
 
     async def save_message(
         self, session_id: str, sequence: int, speaker: str, text: str,
@@ -166,12 +178,21 @@ class MockPersistence(InterviewPersistence):
             "phase": phase,
         })
 
-    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> None:
+    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> bool:
         if session_id not in self.storage:
             self.storage[session_id] = {}
         self.storage[session_id]["status"] = status
         if final_result is not None:
             self.storage[session_id]["final_result"] = final_result
+        return True
+
+    async def submit_evaluation(self, context: InterviewRuntimeContext) -> bool:
+        if context.final_evaluation is None:
+            return True
+        if context.session_id not in self.storage:
+            self.storage[context.session_id] = {}
+        self.storage[context.session_id]["evaluation_submission"] = context.final_evaluation.model_dump(mode="json")
+        return True
 
 
 class APIPersistence(InterviewPersistence):
@@ -278,16 +299,16 @@ class APIPersistence(InterviewPersistence):
         except Exception as e:
             logger.error(f"Error saving checkpoint: {e}")
 
-    async def save_completion(self, context: InterviewRuntimeContext) -> None:
+    async def save_completion(self, context: InterviewRuntimeContext) -> bool:
         await self.save_checkpoint(context)
         status = "COMPLETED" if context.current_phase.value == "COMPLETED" else "TERMINATED"
-        
+
         final_result = None
         if status == "COMPLETED":
             # Generate the final result schema
             final_result = build_final_result(context)
-            
-        await self.update_status(context.session_id, status, final_result=final_result)
+
+        return await self.update_status(context.session_id, status, final_result=final_result)
 
     async def save_message(
         self, session_id: str, sequence: int, speaker: str, text: str,
@@ -330,7 +351,7 @@ class APIPersistence(InterviewPersistence):
         except Exception as e:
             logger.error(f"Error saving event: {e}")
 
-    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> None:
+    async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> bool:
         http = await self._get_session()
         body = {"status": status}
         if final_result is not None:
@@ -338,15 +359,39 @@ class APIPersistence(InterviewPersistence):
         try:
             body_json = json.dumps(body, default=str)
             async with http.patch(
-                self._url(session_id, "status"), 
+                self._url(session_id, "status"),
                 data=body_json,
                 headers={"Content-Type": "application/json"}
             ) as resp:
                 if resp.status not in (200, 201):
                     text_resp = await resp.text()
                     logger.error(f"Failed to update status: {resp.status} {text_resp}")
+                    return False
+                return True
         except Exception as e:
             logger.error(f"Error updating status: {e}")
+            return False
+
+    async def submit_evaluation(self, context: InterviewRuntimeContext) -> bool:
+        if context.final_evaluation is None:
+            return True
+        http = await self._get_session()
+        body = context.final_evaluation.model_dump(mode="json")
+        try:
+            body_json = json.dumps(body, default=str)
+            async with http.post(
+                self._url(context.session_id, "evaluation"),
+                data=body_json,
+                headers={"Content-Type": "application/json"}
+            ) as resp:
+                if resp.status not in (200, 201):
+                    text_resp = await resp.text()
+                    logger.error(f"Failed to submit evaluation: {resp.status} {text_resp}")
+                    return False
+                return True
+        except Exception as e:
+            logger.error(f"Error submitting evaluation: {e}")
+            return False
 
     async def renew_lease(self, session_id: str) -> None:
         session = await self._get_session()

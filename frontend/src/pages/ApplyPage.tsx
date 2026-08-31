@@ -81,42 +81,51 @@ export default function ApplyPage() {
       <header className="border-b bg-white">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-primary">
-            e& <span className="text-muted-foreground font-normal">|</span> هِمّة
+            <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
           </div>
           <LanguageToggle />
         </div>
       </header>
 
       <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-lg space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-2xl">{context?.job_title}</CardTitle>
-              {context?.seniority && (
-                <CardDescription className="text-base">{context.seniority}</CardDescription>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {context?.job_description && (
-                <p className="text-sm text-foreground">{context.job_description}</p>
-              )}
-              {context?.candidate_instructions && (
-                <div className="border-t pt-4 mt-2">
-                  <h4 className="text-sm font-semibold mb-1">{t('invite.instructions')}</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {context.candidate_instructions}
+        <div className="w-full max-w-lg space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out">
+          <div className="text-center space-y-4 px-4">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground leading-tight">
+              {context?.job_title}
+            </h1>
+            
+            {(context?.seniority || context?.job_description) && (
+              <div className="space-y-2 max-w-md mx-auto">
+                {context?.seniority && (
+                  <p className="text-sm font-semibold text-primary uppercase tracking-wider">
+                    {context.seniority}
                   </p>
-                </div>
-              )}
-              <div className="bg-secondary/10 p-3 rounded-md border border-secondary/20">
-                <p className="text-sm text-secondary-foreground font-medium">
-                  {t('invite.estDuration', { minutes: context?.duration_minutes })}
+                )}
+                {context?.job_description && (
+                  <p className="text-muted-foreground">
+                    {context.job_description}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {context?.candidate_instructions && (
+              <p className="text-sm text-muted-foreground max-w-md mx-auto italic">
+                "{context.candidate_instructions}"
+              </p>
+            )}
+
+            {context?.duration_minutes && (
+              <div className="inline-flex bg-muted/50 px-4 py-2 rounded-full border border-muted mt-2">
+                <p className="text-sm text-muted-foreground font-medium flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-primary/60"></span>
+                  {t('invite.estDuration', { minutes: context.duration_minutes })}
                 </p>
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </div>
 
-          <Card>
+          <Card className="shadow-xl shadow-black/5 border-muted/60">
             <CardContent className="p-6 space-y-4">
               {error && (
                 <div className="bg-destructive/10 border border-destructive/20 text-destructive p-3 rounded-md text-sm">
@@ -124,42 +133,49 @@ export default function ApplyPage() {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    {t('apply.fullName')}
-                  </label>
-                  <input
-                    required
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
+              {step === "registering" ? (
+                <div className="flex flex-col items-center justify-center py-8 space-y-4 animate-in fade-in zoom-in-95 duration-500">
+                  <div className="h-8 w-8 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                  <p className="text-sm font-medium text-muted-foreground">{t('invite.starting')}</p>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                    {t('invite.emailLabel')}
-                  </label>
-                  <input
-                    required
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                </div>
-                {/* CV upload deliberately deferred — see docs/CURRENT_DECISIONS.md /
-                    Sub-phase 6C's resume_id: Optional field, added later once the
-                    upload-sequencing question is resolved. */}
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={submitting || step === "registering"}
-                >
-                  {step === "registering" ? t('invite.starting') : submitting ? t('apply.submitting') : t('apply.continue')}
-                </Button>
-              </form>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in duration-300">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      {t('apply.fullName')}
+                    </label>
+                    <input
+                      required
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      {t('invite.emailLabel')}
+                    </label>
+                    <input
+                      required
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                  </div>
+                  {/* CV upload deliberately deferred — see docs/CURRENT_DECISIONS.md /
+                      Sub-phase 6C's resume_id: Optional field, added later once the
+                      upload-sequencing question is resolved. */}
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={submitting}
+                  >
+                    {submitting ? t('apply.submitting') : t('apply.continue')}
+                  </Button>
+                </form>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocalParticipant, useRoomContext } from "@livekit/components-react";
-import { Loader2, Timer } from "lucide-react";
+import { useLocalParticipant, useRoomContext, useTracks } from "@livekit/components-react";
+import { Track, type RemoteAudioTrack } from "livekit-client";
+import { Loader2, Timer, LogOut } from "lucide-react";
 import { InterviewRealtimeService } from "../../services/livekit/InterviewRealtimeService";
 import { useInterviewStore } from "../../stores/InterviewContext";
 import type { InterviewSessionResponse } from "../../types/api";
@@ -10,6 +11,10 @@ import { WaitingRoomScreen } from "./WaitingRoomScreen";
 import { VerbalSectionView } from "./VerbalSectionView";
 import { CodingSectionView } from "./CodingSectionView";
 import { McqSectionView } from "./McqSectionView";
+import { SessionEndedScreen } from "./SessionEndedScreen";
+import { TtsRetryOverlay } from "./TtsRetryOverlay";
+import { InterviewController } from "./InterviewController";
+import { EndInterviewDialog } from "./EndInterviewDialog";
 
 const AgentConnectingScreen = () => {
   const { t } = useTranslation();
@@ -29,7 +34,7 @@ const AgentConnectingScreen = () => {
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-primary">
-              e& <span className="text-muted-foreground font-normal">|</span> هِمّة
+              <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
             </div>
             <div className="min-w-0 ms-4 ps-4 border-s">
               <p className="truncate text-sm font-semibold text-foreground">{t('workspace.session')}</p>
@@ -105,7 +110,16 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
   const { t } = useTranslation();
   const room = useRoomContext();
   const { isMicrophoneEnabled } = useLocalParticipant();
-  const { state, updateState, isAgentSpeaking, setIsAgentSpeaking, transcriptMessages, updateTranscript } = useInterviewStore();
+  // The agent's live mic track, handed straight to BlobCharacter (see its
+  // audioTrack prop) so IT can sample the waveform inside its own animation
+  // loop. useTracks only re-renders on track/room events, not per-frame —
+  // deliberately NOT using useTrackVolume here, since that returns a
+  // React-state number that would re-render this whole tree every frame.
+  const micTrackRefs = useTracks([Track.Source.Microphone], { onlySubscribed: true });
+  const agentAudioTrack = micTrackRefs.find(
+    (ref) => !ref.participant.isLocal && "publication" in ref,
+  )?.publication?.track as RemoteAudioTrack | undefined;
+  const { state, updateState, isAgentSpeaking, setIsAgentSpeaking, transcriptMessages, updateTranscript, ttsStatus, updateTtsStatus } = useInterviewStore();
   const [realtimeService, setRealtimeService] = useState<InterviewRealtimeService | null>(null);
   const [characterState, setCharacterState] = useState<'idle' | 'listening' | 'thinking' | 'speaking' | 'hidden'>('idle');
   const [code, setCode] = useState("");
@@ -117,10 +131,12 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
   const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
   const [mcqSubmitted, setMcqSubmitted] = useState(false);
   const [displaySeconds, setDisplaySeconds] = useState(0);
+  const [isEndDialogOpen, setIsEndDialogOpen] = useState(false);
+  const [isEndingSession, setIsEndingSession] = useState(false);
   const timerDeadlineRef = useRef<number | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const question = state?.current_question;
-  const isCompleted = state?.phase === "COMPLETED" || state?.phase === "TERMINATED";
+  const isCompleted = state?.phase === "COMPLETED" || state?.phase === "TERMINATED" || state?.phase === "CLOSING" || session.status === "COMPLETED" || session.status === "TERMINATED";
   // Rebrand pass (2026-08-26): Phase 9's ordered CODING/MCQ questions run
   // under phase BACKGROUND (see _active_core_section()'s docstring in
   // controller.py), not the legacy TECHNICAL_INTRO/TECHNICAL/CODING phases
@@ -238,12 +254,12 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
 
   useEffect(() => {
     if (!room) return;
-    const service = new InterviewRealtimeService(room, updateState, updateTranscript);
+    const service = new InterviewRealtimeService(room, updateState, updateTranscript, updateTtsStatus);
     setRealtimeService(service);
     const onSpeakersChanged = (speakers: Array<{ identity: string }>) => setIsAgentSpeaking(speakers.some((speaker) => speaker.identity !== room.localParticipant.identity));
     room.on("activeSpeakersChanged", onSpeakersChanged);
     return () => { room.off("activeSpeakersChanged", onSpeakersChanged); service.cleanup(); };
-  }, [room, updateState, updateTranscript, setIsAgentSpeaking]);
+  }, [room, updateState, updateTranscript, updateTtsStatus, setIsAgentSpeaking]);
 
   useEffect(() => {
     const languages = question?.supported_languages || Object.keys(question?.starter_code || {});
@@ -271,14 +287,41 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
   useEffect(() => {
     if (!isCompleted || !session.id) return;
     onCompleted?.();
-    const timer = setTimeout(() => { window.location.href = `/interviews/${session.id}/result`; }, 5000);
-    return () => clearTimeout(timer);
   }, [isCompleted, session.id, onCompleted]);
+
+  // Audit fix (2026-08-27): client-side Web Speech API fallback. Fires only
+  // on ttsStatus.status === "gave_up" — the point voice_adapter.py has
+  // definitively failed to speak this turn server-side (TTS provider outage,
+  // exhausted quota, etc.), not on every "retrying" tick. Free, unlimited,
+  // built into every mainstream browser — the interview keeps a voice even
+  // when the server-side provider is completely down. Lower voice quality
+  // than the real provider, which is the acceptable tradeoff for "never
+  // fully silent" over "perfect voice or nothing."
+  useEffect(() => {
+    if (ttsStatus?.status !== "gave_up" || !ttsStatus.text) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      console.warn("[TTS-FALLBACK] Web Speech API unavailable in this browser; turn stays silent.");
+      return;
+    }
+    // Cancel any still-pending fallback utterance before queuing a new one —
+    // mirrors the server-side barge-in/interruption behavior rather than
+    // letting stale turns queue up and speak out of order.
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(ttsStatus.text);
+    utterance.lang = ttsStatus.language === "ar" ? "ar-SA" : "en-US";
+    window.speechSynthesis.speak(utterance);
+  }, [ttsStatus]);
 
   const handleControl = (control: string) => { if (!isCompleted) realtimeService?.sendControlIntent(control as never); };
   const handleCodeSubmit = () => {
     setCodeStatus(t('workspace.answerSubmitted'));
     realtimeService?.sendControlIntent("SUBMIT_CODE", { code, language: selectedLanguage });
+  };
+
+  const handleConfirmEnd = () => {
+    setIsEndingSession(true);
+    setIsEndDialogOpen(false);
+    handleControl("END_INTERVIEW");
   };
 
   // 9H: MCQ selection + submission. Matches controller.py's SUBMIT_MCQ_ANSWER
@@ -299,17 +342,21 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
     realtimeService?.sendControlIntent("SUBMIT_MCQ_ANSWER", { selected_option_ids: selectedOptionIds });
   };
 
+  if (isCompleted) {
+    return <SessionEndedScreen session={session} />;
+  }
+
   if (!state?.phase) {
     return <AgentConnectingScreen />;
   }
 
   return (
-    <div className="min-h-screen w-full bg-background text-foreground">
+    <div className="h-[100dvh] flex flex-col w-full bg-background text-foreground overflow-hidden">
       <header className="border-b bg-white">
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-primary hidden sm:flex">
-              e& <span className="text-muted-foreground font-normal">|</span> هِمّة
+              <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
             </div>
             <div className="min-w-0 sm:ms-4 sm:ps-4 sm:border-s">
               <p className="truncate text-sm font-semibold text-foreground">{session.role || t('workspace.session')}</p>
@@ -324,34 +371,45 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
               <span className={`h-2 w-2 rounded-full ${isCompleted ? "bg-muted-foreground" : state?.phase === "WAITING_ROOM" ? "bg-blue-400" : "bg-success"}`} />
               {isCompleted ? t('workspace.sessionEnded') : state?.phase === "WAITING_ROOM" ? t('workspace.phase.waitingRoom') : t('workspace.liveConnection')}
             </span>
-            {/* Hide timer entirely during WAITING_ROOM (clock is paused) and
-                for CODING/MCQ, whose own consolidated header shows it
-                instead — consolidation pass, avoid showing it twice. */}
-            {state?.phase !== "WAITING_ROOM" && !isOrderedCoding && !isOrderedMcq && (
+            {/* Show timer always except during WAITING_ROOM (clock is paused). */}
+            {state?.phase !== "WAITING_ROOM" && (
               <span className="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-1.5 font-semibold tabular-nums text-foreground">
                 <Timer className="h-3.5 w-3.5 text-muted-foreground" />
                 {formatTime(displaySeconds)}
               </span>
             )}
+            
+            <button
+              onClick={() => setIsEndDialogOpen(true)}
+              disabled={isCompleted || isEndingSession}
+              className="hidden sm:flex items-center gap-1.5 rounded-md bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+            >
+              {isEndingSession ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+              End Session
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-[calc(100vh-64px)] max-w-[1440px] grid-cols-1 gap-4 p-4 sm:p-6 lg:h-[calc(100vh-64px)] lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6 lg:overflow-hidden">
+      {/* Audit fix (2026-08-27): relative wrapper around main + the sticky
+          controller bar, purely so TtsRetryOverlay (an absolute inset-0
+          child) can blur just the live interview content below the header
+          — the header itself (logo, phase label, timer, End Session) is a
+          SIBLING above this wrapper, outside its bounding box, so it stays
+          fully visible and clickable through the overlay with no z-index/
+          height math needed. */}
+      <div className="relative flex flex-1 min-h-0 flex-col">
+      <main className={`mx-auto grid w-full flex-1 min-h-0 max-w-[1440px] grid-cols-1 p-3 sm:p-4 lg:overflow-hidden ${state?.phase === "WAITING_ROOM" ? "place-items-center" : "gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6"}`}>
 
         {/* WAITING_ROOM: full-width, replaces the normal two-column layout */}
         {state?.phase === "WAITING_ROOM" ? (
-          <>
-            <WaitingRoomScreen
-              completedSectionIndex={sectionsProgress?.completed ?? 1}
-              totalSections={sectionsProgress?.total ?? 1}
-              completedSectionType={completedSectionType}
-              nextSectionType={nextSectionType}
-              onContinue={() => handleControl("PROCEED_TO_NEXT_SECTION")}
-            />
-            {/* Transcript sidebar stays visible during the break */}
-            <aside className="flex min-h-0 flex-col gap-4 lg:overflow-hidden"><section className="flex min-h-[280px] flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-sm"><div className="flex items-center justify-between border-b px-5 py-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">{t('workspace.liveTranscript')}</p><p className="mt-1 text-xs text-muted-foreground">{t('workspace.finalizedTurns')}</p></div><span className="rounded bg-muted px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{t('workspace.live')}</span></div><div ref={transcriptRef} className="flex-1 space-y-4 overflow-y-auto p-5">{visibleTranscripts.length ? visibleTranscripts.map((message) => <div key={message.id} className="border-s-2 border-border ps-3"><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{message.speaker === "agent" ? t('workspace.interviewer') : t('workspace.you')}</p><p className={`mt-1 text-sm leading-6 ${message.speaker === "agent" ? "text-foreground" : "text-muted-foreground"}`}>{message.text}</p></div>) : <p className="text-sm leading-6 text-muted-foreground">{t('workspace.conversationWillAppear')}</p>}</div></section></aside>
-          </>
+          <WaitingRoomScreen
+            completedSectionIndex={sectionsProgress?.completed ?? 1}
+            totalSections={sectionsProgress?.total ?? 1}
+            completedSectionType={completedSectionType}
+            nextSectionType={nextSectionType}
+            onContinue={() => handleControl("PROCEED_TO_NEXT_SECTION")}
+          />
         ) : isOrderedCoding ? (
           question ? (
             <CodingSectionView
@@ -409,6 +467,7 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
             isTechnical={isTechnical}
             hasEditor={hasEditor}
             characterState={characterState}
+            agentAudioTrack={agentAudioTrack}
             code={code}
             setCode={setCode}
             selectedLanguage={selectedLanguage}
@@ -429,6 +488,32 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
           />
         )}
       </main>
+
+      {/* Global Unified Controller */}
+      {state?.phase !== "WAITING_ROOM" && (
+        <div className="sticky bottom-0 z-20 w-full border-t bg-background/95 px-4 py-3 backdrop-blur sm:py-4">
+          <div className="mx-auto max-w-[1440px]">
+            <InterviewController
+              isCompleted={isCompleted}
+              allowedControls={state?.allowed_controls || []}
+              isMicrophoneEnabled={isMicrophoneEnabled}
+              onToggleMicrophone={() => room?.localParticipant?.setMicrophoneEnabled(!isMicrophoneEnabled)}
+              onSendControl={handleControl}
+              backendState={state}
+              hasNextSection={hasNextSection}
+            />
+          </div>
+        </div>
+      )}
+
+      <TtsRetryOverlay ttsStatus={ttsStatus} />
+      </div>
+
+      <EndInterviewDialog
+        isOpen={isEndDialogOpen}
+        onCancel={() => setIsEndDialogOpen(false)}
+        onConfirm={handleConfirmEnd}
+      />
     </div>
   );
 }

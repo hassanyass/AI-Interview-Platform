@@ -14,24 +14,22 @@ async def make_admin(email: str):
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
     async with async_session() as session:
-        # 1. Find user by email to get their Supabase UUID
+        # 1. Find user by email directly in Supabase's auth.users — this is the
+        # source of truth for the UUID and doesn't depend on a candidate_profiles
+        # row existing (that row is only created lazily by candidate-facing
+        # endpoints, which the admin login path never calls).
         res = await session.execute(
-            text("SELECT supabase_user_id FROM candidate_profiles WHERE email = :email"),
+            text("SELECT id FROM auth.users WHERE email = :email"),
             {"email": email}
         )
         row = res.fetchone()
-        
+
         if not row:
-            print(f"User '{email}' not found in the database.")
-            print("Please log into the frontend at least once so your profile is created.")
+            print(f"User '{email}' not found in auth.users.")
+            print("Please log into the frontend at least once so Supabase creates your account.")
             return
-            
+
         user_uuid = row[0]
-        if not user_uuid:
-            print(f"User '{email}' exists but has no Supabase UUID attached.")
-            print("Please log out and log back into the frontend to link your account.")
-            return
-            
         print(f"Found user {email} (UUID: {user_uuid})")
         
         # 2. Insert into users_roles

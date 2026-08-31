@@ -129,6 +129,18 @@ class SectionPayload(BaseModel):
     questions: List[QuestionPayload] = []
 
 
+# ─── Phase 8C: Resolved Assessment Criteria ────────────────────────────────────
+# Additive, mirrors QuestionPayload/SectionPayload's pattern above — empty
+# `criteria` for a legacy session or a job with nothing resolved.
+
+class CriterionPayload(BaseModel):
+    key: str
+    label: str
+    kind: str  # "behavioral" | "content"
+    guidance_text: Optional[str] = None
+    section_id: Optional[str] = None
+
+
 # ─── Session Load Response (for agent bootstrap) ──────────────────────────────
 
 class SessionLoadResponse(BaseModel):
@@ -152,6 +164,10 @@ class SessionLoadResponse(BaseModel):
     # B2B ordered core-question sections (Phase 7D) — empty for legacy sessions
     sections: List[SectionPayload] = []
 
+    # Phase 8C: resolved assessment criteria for this session's job — empty
+    # for legacy sessions or a job with nothing resolved.
+    criteria: List[CriterionPayload] = []
+
     # Latest checkpoint for recovery
     latest_checkpoint: Optional[CheckpointResponse] = None
 
@@ -161,3 +177,28 @@ class SessionLoadResponse(BaseModel):
     # Agent lease
     active_agent_id: Optional[str] = None
     agent_lease_expires_at: Optional[datetime] = None
+
+
+# ─── Phase 8C: Evaluation Submission ───────────────────────────────────────────
+# Body shape mirrors agent/agent/interview/models.py's DetailedEvaluation/
+# CriterionScore exactly — the agent submits its model_dump(mode="json")
+# directly. Every field optional/defaulted so an empty or partial evaluation
+# (e.g. legacy session, empty criterion_scores) is a valid submission, not a
+# validation error.
+
+class CriterionScoreSubmit(BaseModel):
+    criterion_key: str
+    score: Optional[int] = None
+    overview: Optional[str] = None
+    strengths: List[str] = []
+    improvements: List[str] = []
+    evidence_reference: Optional[str] = None
+
+
+class EvaluationSubmit(BaseModel):
+    overall_score: Optional[int] = None
+    recommendation: Optional[str] = None  # "Hire" | "Consider / Mixed" | "No Hire"
+    evidence_sufficiency: Optional[float] = None
+    summary: Optional[str] = None
+    detailed_overview: Optional[str] = None
+    criterion_scores: List[CriterionScoreSubmit] = []

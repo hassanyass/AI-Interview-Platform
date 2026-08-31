@@ -77,3 +77,22 @@ export interface TranscriptionPayload {
   text: string;
   isFinal: boolean;
 }
+
+/** Broadcast on the "tts_status" data-channel topic whenever a TTS 429
+ *  retry is in flight, resolves, or gives up (see voice_adapter.py's
+ *  _broadcast_tts_status). Distinct from StateUpdatePayload — this is the
+ *  audio pipeline's own transient state, not interview state.
+ *  "switching_key" (2026-08-27, follow-up): Groq multi-key rotation —
+ *  fires the instant a configured key hits its daily quota and the agent
+ *  is switching to the next one (attempt/max here are the 1-based key
+ *  position and total key count, e.g. "2 of 7", not a retry counter).
+ *  text/language are only ever populated on "gave_up" — the browser's own
+ *  Web Speech API fallback speaks this turn client-side since server-side
+ *  TTS has definitively failed for it (not just mid-retry/mid-rotation). */
+export interface TtsStatusPayload {
+  status: "retrying" | "switching_key" | "ok" | "gave_up";
+  attempt?: number | null;
+  max?: number | null;
+  text?: string | null;
+  language?: string | null;
+}

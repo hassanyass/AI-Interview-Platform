@@ -6,3 +6,4 @@ pydantic
 livekit-plugins-groq
 livekit-plugins-openai
 livekit-plugins-silero
+livekit-plugins-azure

@@ -13,7 +13,7 @@ import uuid as uuid_mod
 
 from dotenv import load_dotenv
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
-from livekit.plugins import groq, silero
+from livekit.plugins import groq, silero, azure
 
 from agent.llm.groq_provider import GroqProvider
 from agent.interview.persistence import APIPersistence
@@ -21,9 +21,11 @@ from agent.interview.models import (
     InterviewRuntimeContext, InterviewPhase, InterviewPlan,
     SectionProgress, SectionLimits, Message,
     Question, QuestionRecord, OrderedSectionProgress,
+    AssessmentCriterionData,
 )
 from agent.interview.controller import InterviewController
 from agent.interview.voice_adapter import VoiceInterviewAdapter
+from agent.interview.groq_key_rotator import GroqKeyRotator
 from agent.interview.question_generator import generate_custom_question, build_contextual_fallback_question
 
 # RT-B0: default logging.basicConfig() has no timestamp at all (its default
@@ -124,6 +126,24 @@ def build_core_sections(session_data: dict) -> dict:
     return built_sections
 
 
+def build_criteria(session_data: dict) -> list:
+    """Phase 8C: maps /load's `criteria` payload into a list of
+    AssessmentCriterionData. Always sourced fresh from /load, same rationale
+    as build_core_sections above. Returns [] for a legacy session or a job
+    with nothing resolved -- session_data has no "criteria" key or an empty
+    list in either case."""
+    return [
+        AssessmentCriterionData(
+            key=c["key"],
+            label=c["label"],
+            kind=c["kind"],
+            guidance_text=c.get("guidance_text"),
+            section_id=c.get("section_id"),
+        )
+        for c in (session_data.get("criteria") or [])
+    ]
+
+
 async def entrypoint(ctx: JobContext):
     _load_env()
     logger.info("Initializing Agent (Phase 5)...")
@@ -192,6 +212,7 @@ async def entrypoint(ctx: JobContext):
     # docstring). Only the mutable pointer (current_index/completed) is
     # restored from the checkpoint below, on the resume path.
     built_sections = build_core_sections(session_data)
+    built_criteria = build_criteria(session_data)
 
     # Safely determine if the initial greeting was already generated and persisted.
     has_greeting = any(
@@ -229,6 +250,7 @@ async def entrypoint(ctx: JobContext):
             technical_question_id_submitted=checkpoint.get("technical_question_id_submitted", checkpoint_technical.get("technical_question_id_submitted")),
             technical_submission=checkpoint.get("technical_submission", checkpoint_technical.get("technical_submission", {})),
             sections=built_sections,
+            criteria=built_criteria,
         )
 
         # Restore the ordered core-question pointer (Phase 7D) — the question
@@ -299,6 +321,7 @@ async def entrypoint(ctx: JobContext):
             candidate_profile=session_data.get("candidate_profile", {}),
             time_remaining_seconds=duration_minutes * 60,
             sections=built_sections,
+            criteria=built_criteria,
         )
 
         # Transition to IN_PROGRESS
@@ -360,26 +383,82 @@ async def entrypoint(ctx: JobContext):
     language = session_data.get("language", "en")
     stt_plugin = groq.STT(model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"))
 
+    # Audit fix (2026-08-27): Groq's TTS free tier is a hard 3.6K-tokens/day
+    # (TPD) ceiling per model (confirmed live against the real account — see
+    # docs/CURRENT_DECISIONS.md), not a short burst that retrying can outlast
+    # -- one real test day exhausted it outright, and it would exhaust
+    # again within a single real candidate interview once this deploys for
+    # actual user testing. Azure Speech becomes the default TTS provider;
+    # the Groq path below is deliberately kept fully intact, not deleted --
+    # this is a config-level swap (TTS_PROVIDER=groq reverts it instantly),
+    # not a rip-and-replace. Confirmed via direct plugin-source inspection
+    # (both TTS classes share the exact same livekit.agents.tts.TTS /
+    # ChunkedStream / AudioEmitter base machinery Groq's plugin uses) that
+    # this doesn't disturb RT-B0's metrics_collected listeners or RT-B1's
+    # AudioSource.clear_queue() interruption fix -- both operate on that
+    # shared base layer, not any Groq-specific code.
+    tts_provider = os.getenv("TTS_PROVIDER", "azure").lower()
+
     if language == "ar":
-        tts_model = os.getenv("GROQ_TTS_ARABIC_MODEL", "canopylabs/orpheus-arabic-saudi")
-        tts_voice = "abdullah"
-        logger.info("Interview language: ar")
-        logger.info("TTS provider: groq")
-        logger.info(f"TTS model: {tts_model}")
-        logger.info(f"TTS voice: {tts_voice}")
-        tts_plugin = groq.TTS(model=tts_model, voice=tts_voice)
-        tts_plugin.provider_name = "Groq"
-        tts_plugin.model_name = tts_model
+        if tts_provider == "azure":
+            # ar-SA has exactly two neural voices in Azure's catalog:
+            # ar-SA-ZariyahNeural (female) and ar-SA-HamedNeural (male).
+            # Hamed chosen for consistency with InterviewerCharacter.tsx's
+            # existing male-presenting avatar (thobe/ghutra) already shown
+            # to every candidate throughout the interview.
+            tts_voice = os.getenv("AZURE_TTS_ARABIC_VOICE", "ar-SA-HamedNeural")
+            logger.info("Interview language: ar")
+            logger.info("TTS provider: azure")
+            logger.info(f"TTS voice: {tts_voice}")
+            tts_plugin = azure.TTS(voice=tts_voice, language="ar-SA")
+            tts_plugin.provider_name = "Azure"
+            tts_plugin.model_name = tts_voice
+        else:
+            # Audit fix (2026-08-27, follow-up): Groq's TTS 429 is a
+            # per-KEY daily quota (confirmed live) — a different key has
+            # its own independent quota, so multi-key rotation (7 real
+            # keys provisioned for prototype user testing) replaces
+            # waiting-and-retrying the same exhausted key. One rotator per
+            # language — independent models, independent quotas, no
+            # reason a rotation on one should affect the other's starting
+            # key. See docs/tts-provider-switching.md.
+            tts_model = os.getenv("GROQ_TTS_ARABIC_MODEL", "canopylabs/orpheus-arabic-saudi")
+            tts_voice = "abdullah"
+            key_rotator = GroqKeyRotator("ar", model=tts_model, voice=tts_voice)
+            logger.info("Interview language: ar")
+            logger.info("TTS provider: groq")
+            logger.info(f"TTS model: {tts_model}")
+            logger.info(f"TTS voice: {tts_voice}")
+            logger.info(f"Groq key rotator: key {key_rotator.current_position}/{key_rotator.total_keys}")
+            tts_plugin = key_rotator.rebuild_plugin()
     else:
-        tts_model = os.getenv("GROQ_TTS_ENGLISH_MODEL", "canopylabs/orpheus-v1-english")
-        tts_voice = os.getenv("GROQ_TTS_ENGLISH_VOICE", "troy")
-        logger.info("Interview language: en")
-        logger.info("TTS provider: groq")
-        logger.info(f"TTS model: {tts_model}")
-        logger.info(f"TTS voice: {tts_voice}")
-        tts_plugin = groq.TTS(model=tts_model, voice=tts_voice)
-        tts_plugin.provider_name = "Groq"
-        tts_plugin.model_name = tts_model
+        if tts_provider == "azure":
+            # en-US-AvaNeural: one of Azure's newer voices explicitly
+            # designed/tuned for conversational, casual dialogue (not just
+            # formal narration) -- a better fit for a spoken interview than
+            # older general-purpose voices, and a stable, generally
+            # available (non-preview) voice rather than the newer
+            # Dragon-HD-preview tier, which isn't guaranteed available on
+            # every region/subscription.
+            tts_voice = os.getenv("AZURE_TTS_ENGLISH_VOICE", "en-US-AvaNeural")
+            logger.info("Interview language: en")
+            logger.info("TTS provider: azure")
+            logger.info(f"TTS voice: {tts_voice}")
+            tts_plugin = azure.TTS(voice=tts_voice, language="en-US")
+            tts_plugin.provider_name = "Azure"
+            tts_plugin.model_name = tts_voice
+        else:
+            # See the matching Arabic branch above for the full multi-key
+            # rotation rationale.
+            tts_model = os.getenv("GROQ_TTS_ENGLISH_MODEL", "canopylabs/orpheus-v1-english")
+            tts_voice = os.getenv("GROQ_TTS_ENGLISH_VOICE", "troy")
+            key_rotator = GroqKeyRotator("en", model=tts_model, voice=tts_voice)
+            logger.info("Interview language: en")
+            logger.info("TTS provider: groq")
+            logger.info(f"TTS model: {tts_model}")
+            logger.info(f"TTS voice: {tts_voice}")
+            logger.info(f"Groq key rotator: key {key_rotator.current_position}/{key_rotator.total_keys}")
+            tts_plugin = key_rotator.rebuild_plugin()
 
     try:
         vad_min_silence = max(
@@ -447,6 +526,15 @@ async def entrypoint(ctx: JobContext):
             # Completion must not be lost because room teardown raced a
             # final persistence request. The next recovery path can retry.
             logger.exception("Failed to persist completed interview during shutdown")
+
+        # Phase 8C: same last-resort retry for the normalized Evaluation/
+        # Score submission, independent of the block above -- the backend
+        # endpoint upserts on session_id, so retrying here even when the
+        # mid-session attempt already succeeded is safe, not just tolerated.
+        try:
+            await persistence.submit_evaluation(context)
+        except Exception:
+            logger.exception("[EVALUATION_SUBMIT] failed_to_persist_completed_interview_during_shutdown")
 
     await persistence.close()
     logger.info("Agent shutdown complete.")

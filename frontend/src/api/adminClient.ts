@@ -83,6 +83,69 @@ export interface JobDetail extends Omit<Job, 'definition'> {
   };
 }
 
+export interface AssessmentCriterion {
+  key: string;
+  label: string;
+  kind: string;
+  enabled: boolean;
+  guidance_text?: string;
+  source: string;
+}
+
+export interface CriterionScore {
+  criterion_key: string;
+  criterion_label?: string;
+  kind?: string;
+  score?: number;
+  overview?: string;
+  strengths: string[];
+  improvements: string[];
+  evidence_reference?: string;
+}
+
+export interface EvaluationDetail {
+  session_id: string;
+  status: string;
+  completed_at?: string;
+  candidate_name?: string;
+  candidate_email?: string;
+  job_title?: string;
+  transcript: any[];
+  question_records: any[];
+  technical_submission: any;
+  overall_score?: number;
+  recommendation?: string;
+  evidence_sufficiency?: number;
+  summary?: string;
+  detailed_overview?: string;
+  scores: CriterionScore[];
+  override_suggested?: boolean;
+  override_reason?: string;
+}
+
+export interface JobCandidateRow {
+  session_id: string;
+  candidate_name?: string;
+  candidate_email?: string;
+  status: string;
+  completed_at?: string;
+  overall_score?: number;
+  recommendation?: string;
+  evidence_sufficiency?: number;
+  suggested: boolean;
+  override_suggested?: boolean;
+}
+
+export interface JobResultsResponse {
+  job_id: string;
+  job_title: string;
+  total_candidates: number;
+  completed_count: number;
+  in_progress_count: number;
+  suggested_count: number;
+  candidates: JobCandidateRow[];
+}
+
 export const adminClient = {
   ping: async (): Promise<{ status: string; admin_id: string }> => {
     return fetchApi<{ status: string; admin_id: string }>("/api/v1/admin/ping");
@@ -102,6 +165,19 @@ export const adminClient = {
   publishJob: async (jobId: string): Promise<Job> => {
     return fetchApi<Job>(`/api/v1/admin/jobs/${jobId}/publish`, {
       method: "POST",
+    });
+  },
+
+  updateJobStatus: async (jobId: string, status: string): Promise<Job> => {
+    return fetchApi<Job>(`/api/v1/admin/jobs/${jobId}/status`, {
+      method: "PATCH",
+      data: { status },
+    });
+  },
+
+  deleteJob: async (jobId: string): Promise<void> => {
+    return fetchApi<void>(`/api/v1/admin/jobs/${jobId}`, {
+      method: "DELETE",
     });
   },
 
@@ -189,6 +265,32 @@ export const adminClient = {
   createTestDrive: async (definitionId: string): Promise<PublicRegisterResponse> => {
     return fetchApi<PublicRegisterResponse>(`/api/v1/admin/definitions/${definitionId}/test-drive`, {
       method: "POST",
+    });
+  },
+
+  getJobCriteria: async (jobId: string): Promise<AssessmentCriterion[]> => {
+    return fetchApi<AssessmentCriterion[]>(`/api/v1/admin/jobs/${jobId}/criteria`);
+  },
+
+  updateJobCriteria: async (jobId: string, enabledKeys: string[]): Promise<AssessmentCriterion[]> => {
+    return fetchApi<AssessmentCriterion[]>(`/api/v1/admin/jobs/${jobId}/criteria`, {
+      method: "PUT",
+      data: { enabled_keys: enabledKeys },
+    });
+  },
+
+  getJobResults: async (jobId: string): Promise<JobResultsResponse> => {
+    return fetchApi<JobResultsResponse>(`/api/v1/admin/jobs/${jobId}/results`);
+  },
+
+  getCandidateResult: async (sessionId: string): Promise<EvaluationDetail> => {
+    return fetchApi<EvaluationDetail>(`/api/v1/admin/interviews/${sessionId}/result`);
+  },
+
+  setSuggestedOverride: async (sessionId: string, overrideSuggested: boolean | null, reason?: string): Promise<any> => {
+    return fetchApi<any>(`/api/v1/admin/interviews/${sessionId}/suggested-override`, {
+      method: "PATCH",
+      data: { override_suggested: overrideSuggested, reason: reason },
     });
   },
 };

@@ -42,7 +42,7 @@ export default function AuthPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-extrabold text-primary">
-            e& <span className="text-muted-foreground font-normal">|</span> هِمّة
+            <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-2">{t('auth.title')}</p>
         </CardHeader>

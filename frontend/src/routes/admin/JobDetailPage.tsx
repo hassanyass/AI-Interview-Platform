@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { adminClient, type JobDetail } from "../../api/adminClient";
-import { ArrowLeft, MapPin, Briefcase, Clock, AlertCircle, Rocket, Loader2 } from "lucide-react";
+import { ArrowLeft, MapPin, Briefcase, Clock, AlertCircle, Rocket, Loader2, Users, Trash2, Pause, Play, RotateCcw } from "lucide-react";
 import SectionsEditor from "./SectionsEditor";
+import CriteriaEditor from "./CriteriaEditor";
 import CandidateAccess from "./CandidateAccess";
 import PublishSetupModal from "./PublishSetupModal";
+import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { useTranslation } from "react-i18next";
@@ -12,6 +14,7 @@ import { useTranslation } from "react-i18next";
 export default function JobDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [job, setJob] = useState<JobDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -19,6 +22,7 @@ export default function JobDetailPage() {
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState("");
   const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const fetchJob = async () => {
     if (!id) return;
@@ -72,6 +76,28 @@ export default function JobDetailPage() {
       setPublishError(err.message || t('jobDetail.failedToPublish'));
     } finally {
       setIsPublishing(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus: string) => {
+    if (!job) return;
+    try {
+      setPublishError("");
+      await adminClient.updateJobStatus(job.id, newStatus);
+      await fetchJob();
+    } catch (err: any) {
+      setPublishError(err.message || "Failed to update job status");
+    }
+  };
+
+  const handleDeleteJob = async () => {
+    if (!job) return;
+    
+    try {
+      await adminClient.deleteJob(job.id);
+      navigate("/admin/jobs");
+    } catch (err: any) {
+      setPublishError(err.message || "Failed to delete job");
     }
   };
 
@@ -154,20 +180,70 @@ export default function JobDetailPage() {
           </div>
         </div>
 
-        {job.status === "DRAFT" && (
+        <div className="flex items-center gap-2">
+          {job.status === "DRAFT" && (
+            <Button
+              onClick={handlePublishClick}
+              disabled={isPublishing}
+              className="inline-flex items-center gap-2 shrink-0"
+            >
+              {isPublishing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Rocket className="h-4 w-4" />
+              )}
+              <span>{t('jobDetail.publish')}</span>
+            </Button>
+          )}
+
+          {job.status === "PUBLISHED" && (
+            <Button
+              onClick={() => handleStatusChange("PAUSED")}
+              variant="outline"
+              className="inline-flex items-center gap-2 shrink-0 border-orange-200 text-orange-600 hover:bg-orange-50"
+            >
+              <Pause className="h-4 w-4" />
+              <span>Pause Job</span>
+            </Button>
+          )}
+
+          {job.status === "PAUSED" && (
+            <Button
+              onClick={() => handleStatusChange("PUBLISHED")}
+              className="inline-flex items-center gap-2 shrink-0"
+            >
+              <Play className="h-4 w-4" />
+              <span>Resume Job</span>
+            </Button>
+          )}
+
+          {(job.status === "PUBLISHED" || job.status === "PAUSED") && (
+            <Button
+              onClick={() => handleStatusChange("DRAFT")}
+              variant="outline"
+              className="inline-flex items-center gap-2 shrink-0 border-muted-foreground/20"
+            >
+              <RotateCcw className="h-4 w-4" />
+              <span>Unpublish</span>
+            </Button>
+          )}
+
+          <Link to={`/admin/jobs/${job.id}/results`}>
+            <Button variant="outline" className="inline-flex items-center gap-2 shrink-0 border-primary/20 hover:bg-primary/5">
+              <Users className="h-4 w-4" />
+              <span>View Results</span>
+            </Button>
+          </Link>
+
           <Button
-            onClick={handlePublishClick}
-            disabled={isPublishing}
-            className="inline-flex items-center gap-2 shrink-0"
+            onClick={() => setIsDeleteDialogOpen(true)}
+            variant="outline"
+            className="inline-flex items-center gap-2 shrink-0 border-red-200 text-red-500 hover:bg-red-50"
           >
-            {isPublishing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Rocket className="h-4 w-4" />
-            )}
-            <span>{t('jobDetail.publish')}</span>
+            <Trash2 className="h-4 w-4" />
+            <span>Delete</span>
           </Button>
-        )}
+        </div>
       </div>
 
       {publishError && (
@@ -185,6 +261,14 @@ export default function JobDetailPage() {
       )}
 
       {job.definition && (
+        <CriteriaEditor
+          jobId={job.id}
+          status={job.status}
+          onRefresh={fetchJob}
+        />
+      )}
+
+      {job.definition && (
         <SectionsEditor 
           jobId={job.id} 
           definition={job.definition} 
@@ -197,6 +281,12 @@ export default function JobDetailPage() {
         isOpen={isSetupModalOpen} 
         onClose={() => setIsSetupModalOpen(false)} 
         onConfirm={handleConfirmPublish} 
+      />
+
+      <ConfirmDeleteModal
+        isOpen={isDeleteDialogOpen}
+        onClose={() => setIsDeleteDialogOpen(false)}
+        onConfirm={handleDeleteJob}
       />
     </div>
   );

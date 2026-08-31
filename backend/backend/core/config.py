@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     
     # Internal agent-to-backend API authentication
     AGENT_API_SECRET: str = ""
+
+    # Phase 8D: HR dashboard "suggested candidates" threshold — reasonable
+    # default, needs real-world tuning once real evaluated sessions exist
+    # to calibrate against (see docs/CURRENT_DECISIONS.md).
+    SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR: float = 0.5
     
     BACKEND_CORS_ORIGINS: str = '["http://localhost:5173", "http://127.0.0.1:5173"]'
 

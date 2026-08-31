@@ -171,6 +171,45 @@ This document captures the exact schema and endpoints at the start of Phase 0, b
 - `role` (String)
 - `created_at` (DateTime)
 
+## Phase 8C Additions
+
+### `assessment_criteria`
+- `id` (UUID, PK)
+- `job_id` (UUID, FK -> `jobs.id`, Nullable — NULL together with `section_id` = system TEMPLATE row)
+- `section_id` (UUID, FK -> `interview_sections.id`, Nullable)
+- `key` (String)
+- `label` (String)
+- `kind` (String) # "behavioral" | "content"
+- `enabled` (Boolean, default True)
+- `guidance_text` (Text, Nullable)
+- `source` (String, default "CUSTOM") # "TEMPLATE" | "CUSTOM"
+- `created_at` (DateTime)
+- Unique: `(job_id, section_id, key)`; partial unique index on `key` where `job_id IS NULL AND section_id IS NULL` (the template tier)
+- Seeded with 5 TEMPLATE rows (behavioral): `clarity_of_thought`, `organization_structure`, `communication`, `confidence_composure`, `professionalism`
+
+### `evaluations`
+- `id` (UUID, PK)
+- `session_id` (UUID, FK -> `interview_sessions.id`, Unique — one per session)
+- `overall_score` (Integer, Nullable)
+- `recommendation` (String, Nullable) # "Hire" | "Consider / Mixed" | "No Hire"
+- `evidence_sufficiency` (Float, Nullable)
+- `summary` (Text, Nullable)
+- `detailed_overview` (Text, Nullable)
+- `created_at` (DateTime)
+- `updated_at` (DateTime, Nullable)
+- Additive only — `interview_sessions.final_result` (JSONB) is untouched and stays the sole record for every pre-8C session (no backfill).
+
+### `scores`
+- `id` (UUID, PK)
+- `evaluation_id` (UUID, FK -> `evaluations.id`)
+- `criterion_id` (UUID, FK -> `assessment_criteria.id`, Nullable, `SET NULL` on delete)
+- `criterion_key` (String — denormalized, durable even if the criterion is later edited/deleted)
+- `score` (Integer, Nullable)
+- `overview` (Text, Nullable)
+- `strengths` (JSONB, Nullable)
+- `improvements` (JSONB, Nullable)
+- `evidence_reference` (Text, Nullable)
+
 ---
 
 ## 2. API Routes
@@ -196,6 +235,9 @@ This document captures the exact schema and endpoints at the start of Phase 0, b
 
 **Admin (`/admin`)**
 - `GET /ping`
+- *(Phases 4/5/9G's Job/Section/Question CRUD routes predate this doc's last update and aren't listed here — pre-existing staleness, not touched by this pass.)*
+- `GET /interviews/{session_id}/result` — Phase 8D. Per-candidate detailed result: legacy `final_result` JSONB (transcript/question_records/technical_submission) + normalized `Evaluation`/`Score` rows in one response. `409` if the session has no `Evaluation` row yet (distinct from `404` if the session itself doesn't exist). Admin-only; does not touch `GET /interviews/{id}/result`'s existing candidate-access lockdown (Plan 11B).
+- `GET /jobs/{job_id}/results` — Phase 8D. Per-job aggregate stats (`total_candidates`, `completed_count`, `in_progress_count`, `suggested_count`) + per-candidate list, joined from `InterviewSession`/`Evaluation`/`CandidateProfile`. `suggested` is computed per-request from `settings.SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR` (env var, default `0.5`), not stored.
 
 **LiveKit (`/livekit`)**
 - `POST /token`
@@ -207,8 +249,9 @@ This document captures the exact schema and endpoints at the start of Phase 0, b
 - `POST /{session_id}/messages`
 - `POST /{session_id}/events`
 - `POST /{session_id}/checkpoints`
+- `POST /{session_id}/evaluation` — Phase 8C. Upserts the normalized `Evaluation`/`Score` rows for a session (idempotent on `session_id`).
 
 ---
 
 ## 3. Agent Load Contract
-Currently, `agent/agent/main.py` reads from `GET /internal/interviews/{session_id}/load` to populate the `InterviewRuntimeContext`: it consumes session identity/configuration (`role`, `level`, `language`, `duration_minutes`, `candidate_profile`, `job_description`), the `latest_checkpoint` (to restore `current_phase`, `section_progress`, `question_records`, `current_question_snapshot`, and timer/sequence state), and `recent_messages` (to restore the `conversation_history` array).
+Currently, `agent/agent/main.py` reads from `GET /internal/interviews/{session_id}/load` to populate the `InterviewRuntimeContext`: it consumes session identity/configuration (`role`, `level`, `language`, `duration_minutes`, `candidate_profile`, `job_description`), the `latest_checkpoint` (to restore `current_phase`, `section_progress`, `question_records`, `current_question_snapshot`, and timer/sequence state), and `recent_messages` (to restore the `conversation_history` array). Phase 8C added `criteria` (resolved `AssessmentCriterion` rows for the session's `job_id` — job-scoped enabled rows if any exist, else the enabled TEMPLATE tier as an interim default) into `InterviewRuntimeContext.criteria`, consumed by `generate_final_evaluation()`.

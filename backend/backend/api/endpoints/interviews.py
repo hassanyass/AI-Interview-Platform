@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from backend.api.deps import db_dependency, current_user_dependency
+from backend.api.deps import db_dependency, current_user_dependency, get_current_admin
 from backend.models.profile import CandidateProfile
 from backend.models.interview import InterviewSession, InterviewConfiguration, InterviewDefinition, Job
 from backend.schemas.interview import (
@@ -62,8 +62,6 @@ async def get_interview(
         raise HTTPException(status_code=404, detail="Interview session not found")
         
     # Security Ownership Check
-    print(f"DEBUG AUTH: session.candidate_profile_id={session.candidate_profile_id}, type={type(session.candidate_profile_id)}")
-    print(f"DEBUG AUTH: user_uuid={user_uuid}, type={type(user_uuid)}")
     if session.candidate_profile_id != user_uuid:
         raise HTTPException(status_code=403, detail="Not authorized to access this interview session")
 
@@ -93,8 +91,20 @@ async def get_interview(
             # at the relationship level (models/interview.py).
             sections = [s.section_type for s in definition.sections]
 
+    candidate_name = None
+    profile_result = await db.execute(
+        select(CandidateProfile).where(CandidateProfile.id == session.candidate_profile_id)
+    )
+    profile = profile_result.scalar_one_or_none()
+    if profile:
+        candidate_name = profile.full_name
+
     return InterviewSessionResponse.model_validate(session).model_copy(
-        update={"candidate_instructions": candidate_instructions, "sections": sections}
+        update={
+            "candidate_instructions": candidate_instructions, 
+            "sections": sections,
+            "candidate_name": candidate_name
+        }
     )
 
 
@@ -219,17 +229,11 @@ async def get_events(
 async def get_interview_result(
     session_id: UUID,
     db: AsyncSession = db_dependency,
-    user_id: str = current_user_dependency
+    admin_id: str = Depends(get_current_admin)
 ):
-    try:
-        user_uuid = UUID(user_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid User ID format")
-
     result = await db.execute(
         select(InterviewSession).where(
-            InterviewSession.id == session_id,
-            InterviewSession.candidate_profile_id == user_uuid
+            InterviewSession.id == session_id
         )
     )
     session = result.scalar_one_or_none()

@@ -98,6 +98,13 @@ export interface InterviewSessionResponse {
    *  room's "next section" label client-side — the live realtime state only
    *  reports the currently-active section (null during WAITING_ROOM itself). */
   sections?: string[];
+  /** CandidateProfile.full_name, resolved server-side from
+   *  session.candidate_profile_id. Always present on the response (the
+   *  backend's InterviewSessionResponse.candidate_name field is
+   *  Optional[str] = None, not omitted), so it's a real string or null —
+   *  never actually absent — but kept optional here to match this file's
+   *  existing style for the same-shaped candidate_instructions field above. */
+  candidate_name?: string | null;
 }
 
 export interface InterviewResultResponse {

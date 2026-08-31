@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminClient, type Job } from "../../api/adminClient";
-import { Plus, Clock, MapPin, Briefcase } from "lucide-react";
+import { Plus, Clock, MapPin, Briefcase, Trash2 } from "lucide-react";
 import { Card, CardContent } from "../../components/ui/Card";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import { useTranslation } from "react-i18next";
 
 export default function JobsListPage() {
@@ -12,6 +13,7 @@ export default function JobsListPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [jobToDelete, setJobToDelete] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadJobs() {
@@ -26,6 +28,18 @@ export default function JobsListPage() {
     }
     loadJobs();
   }, []);
+
+  const handleDeleteJob = async () => {
+    if (!jobToDelete) return;
+    
+    try {
+      await adminClient.deleteJob(jobToDelete);
+      setJobs((prev) => prev.filter((j) => j.id !== jobToDelete));
+      setJobToDelete(null);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete job");
+    }
+  };
 
   if (isLoading) {
     return <div className="animate-pulse">{t('jobsList.loading')}</div>;
@@ -95,14 +109,33 @@ export default function JobsListPage() {
                   )}
                 </div>
               </div>
-                  <Link to={`/admin/jobs/${job.id}`}>
-                    <Button variant="secondary" className="px-5">{t('jobsList.manage')}</Button>
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link to={`/admin/jobs/${job.id}/results`}>
+                      <Button variant="outline" className="px-5">Results</Button>
+                    </Link>
+                    <Link to={`/admin/jobs/${job.id}`}>
+                      <Button variant="secondary" className="px-5">{t('jobsList.manage')}</Button>
+                    </Link>
+                    <Button 
+                      variant="outline" 
+                      className="px-3 border-red-200 text-red-500 hover:bg-red-50"
+                      onClick={() => setJobToDelete(job.id)}
+                      title="Delete Job"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      <ConfirmDeleteModal
+        isOpen={jobToDelete !== null}
+        onClose={() => setJobToDelete(null)}
+        onConfirm={handleDeleteJob}
+      />
     </div>
   );
 }

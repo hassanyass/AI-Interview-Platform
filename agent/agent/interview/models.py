@@ -214,6 +214,23 @@ class InterviewPlan(BaseModel):
     time_tiers: TimeTierThresholds = Field(default_factory=TimeTierThresholds)
 
 
+# ─── Assessment Criteria (Phase 8B/8C) ────────────────────────────────────────
+# Resolved, read-only view of backend AssessmentCriterion rows for this
+# session's job, carried through /load exactly like Question.eval_criteria
+# already is. NOT the same thing as Question.eval_criteria (per-question,
+# content-correctness rubrics, unchanged by this phase) — these are the
+# HR-configured criteria (today: only the 5 seeded behavioral ones; content
+# criteria are a future extension) the evaluator scores independently.
+# Empty for a legacy (pre-Phase-7) session or a job with nothing resolved.
+
+class AssessmentCriterionData(BaseModel):
+    key: str
+    label: str
+    kind: str  # "behavioral" | "content"
+    guidance_text: Optional[str] = None
+    section_id: Optional[str] = None  # None = applies job-wide
+
+
 # ─── Evaluation Signal ────────────────────────────────────────────────────────
 
 class EvaluationSignal(BaseModel):
@@ -234,22 +251,45 @@ class EvaluationSignal(BaseModel):
     missing: Optional[str] = None
 
 
-class EvaluationCategory(BaseModel):
+class Recommendation(str, enum.Enum):
+    """Phase 8B: constrained hiring-intent enum, replacing the previous
+    unconstrained free-text `recommendation` string. Values are kept as the
+    exact display strings the prompt/UI already used (8A found these were
+    the only three ever produced in practice) specifically so this stays a
+    non-breaking change for anything already constructing/asserting on a
+    DetailedEvaluation with recommendation="Hire" etc."""
+    HIRE = "Hire"
+    CONSIDER = "Consider / Mixed"
+    NO_HIRE = "No Hire"
+
+
+class CriterionScore(BaseModel):
+    """Phase 8C: one HR-configured criterion's score+justification, replacing
+    the previous fixed 5-field EvaluationCategory shape. One per criterion
+    actually supplied in the evidence dict's `criteria` list -- the prompt
+    instructs the LLM not to invent or omit any."""
+    criterion_key: str
     score: Optional[int] = Field(None, ge=1, le=5)
-    overview: str = "Not enough evidence was recorded to evaluate this category."
+    overview: str = "Not enough evidence was recorded to evaluate this criterion."
     strengths: List[str] = Field(default_factory=list)
     improvements: List[str] = Field(default_factory=list)
+    # A question_id or transcript excerpt this score is grounded in -- the
+    # phase8 doc's explicit requirement that justification be "tied to
+    # specific evidence... not just a vague LLM sentence."
+    evidence_reference: Optional[str] = None
 
 
 class DetailedEvaluation(BaseModel):
     overall_score: Optional[int] = Field(None, ge=1, le=5)
-    recommendation: str = "Consider / Mixed"
+    recommendation: Optional[Recommendation] = None
+    # Phase 8B item 3: fraction of criteria (+ the overall judgment) the
+    # evaluator could actually ground in real evidence, 0.0-1.0. Lets a
+    # threshold-based "suggested candidates" mechanism (8D) distinguish a
+    # genuinely weak interview from an under-evidenced one -- 8A's
+    # investigation #3 found today's data conflates the two.
+    evidence_sufficiency: Optional[float] = Field(None, ge=0.0, le=1.0)
     summary: str = "The interview did not contain enough evidence for a detailed assessment."
-    communication: EvaluationCategory = Field(default_factory=EvaluationCategory)
-    technical: EvaluationCategory = Field(default_factory=EvaluationCategory)
-    problem_solving: EvaluationCategory = Field(default_factory=EvaluationCategory)
-    technical_submission: EvaluationCategory = Field(default_factory=EvaluationCategory)
-    background: EvaluationCategory = Field(default_factory=EvaluationCategory)
+    criterion_scores: List[CriterionScore] = Field(default_factory=list)
     strengths: List[str] = Field(default_factory=list)
     areas_for_improvement: List[str] = Field(default_factory=list)
     detailed_overview: str = ""
@@ -313,6 +353,12 @@ class InterviewRuntimeContext(BaseModel):
     # keyed by section_type (e.g. "VERBAL"). Empty for legacy sessions —
     # fully separate from background_progress/technical_progress above.
     sections: Dict[str, OrderedSectionProgress] = Field(default_factory=dict)
+
+    # Phase 8C: HR-configured assessment criteria resolved for this session's
+    # job, carried through /load. Empty for legacy sessions or a job with
+    # nothing resolved -- generate_final_evaluation() must degrade
+    # gracefully exactly like it already does for question_eval_criteria.
+    criteria: List[AssessmentCriterionData] = Field(default_factory=list)
 
     # Records of completed/skipped questions
     question_records: List[QuestionRecord] = []

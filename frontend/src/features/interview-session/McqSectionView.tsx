@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, Circle, ListTodo, Mic, Send, Timer, Volume2 } from "lucide-react";
-import { InterviewController } from "./InterviewController";
 import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../types/realtime";
 
 interface McqOption { id: string; text: string }
@@ -59,7 +58,7 @@ export function McqSectionView({
   return (
     <section className="col-span-full flex min-h-0 flex-1 flex-col gap-3 lg:overflow-hidden">
       {/* Consolidated header — one card, not four floating pieces. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-foreground">{question.title}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -79,31 +78,21 @@ export function McqSectionView({
             <Timer className="h-3.5 w-3.5 text-muted-foreground" />
             {formattedTime}
           </span>
-          <InterviewController
-            variant="compact"
-            isCompleted={isCompleted}
-            allowedControls={allowedControls}
-            isMicrophoneEnabled={isMicrophoneEnabled}
-            onToggleMicrophone={onToggleMicrophone}
-            onSendControl={onSendControl}
-            backendState={backendState}
-            hasNextSection={hasNextSection}
-          />
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto py-2">
-        <div className="w-full max-w-2xl space-y-6">
+      <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto py-1">
+        <div className="w-full max-w-2xl">
           <article className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <div className="h-1.5 w-full bg-gradient-to-r from-primary/60 via-primary to-primary/60" />
-            <div className="px-6 py-8 sm:px-10">
-              <div className="mb-4 flex flex-wrap items-center gap-2 text-xs">
+            <div className="px-5 py-4 sm:px-8 sm:py-5">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
                 <span className="rounded-md bg-primary/10 px-2 py-1 font-semibold capitalize text-primary">{question.difficulty}</span>
                 {question.competency && <span className="rounded-md bg-muted px-2 py-1 text-muted-foreground">{question.competency}</span>}
               </div>
-              <h1 className="mb-6 text-xl font-semibold leading-8 text-foreground sm:text-2xl">{question.problem_statement}</h1>
+              <h1 className="mb-3 text-base font-semibold leading-snug text-foreground sm:text-lg">{question.problem_statement}</h1>
 
-              <div className="space-y-2.5" role={mcqIsMultiSelect ? "group" : "radiogroup"}>
+              <div className="space-y-1.5" role={mcqIsMultiSelect ? "group" : "radiogroup"}>
                 {mcqOptions.map((option) => {
                   const isSelected = selectedOptionIds.includes(option.id);
                   return (
@@ -114,16 +103,16 @@ export function McqSectionView({
                       aria-checked={isSelected}
                       onClick={() => onToggleOption(option.id)}
                       disabled={mcqSubmitted}
-                      className={`flex w-full items-center gap-3 rounded-xl border-2 px-5 py-4 text-start text-sm font-medium transition sm:text-base ${isSelected ? "border-primary bg-primary/5 text-foreground" : "border-input hover:border-primary/40 hover:bg-muted/50 text-foreground"} disabled:cursor-not-allowed disabled:opacity-70`}
+                      className={`flex w-full items-center gap-2.5 rounded-xl border-2 px-4 py-2.5 text-start text-sm font-medium transition ${isSelected ? "border-primary bg-primary/5 text-foreground" : "border-input hover:border-primary/40 hover:bg-muted/50 text-foreground"} disabled:cursor-not-allowed disabled:opacity-70`}
                     >
-                      {isSelected ? <CheckCircle2 className="h-5 w-5 shrink-0 text-primary" /> : <Circle className="h-5 w-5 shrink-0 text-muted-foreground" />}
+                      {isSelected ? <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />}
                       {option.text}
                     </button>
                   );
                 })}
               </div>
 
-              <div className="mt-8 flex items-center justify-between gap-2">
+              <div className="mt-5 flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{mcqIsMultiSelect ? t('workspace.selectAllApply') : t('workspace.selectOne')}</span>
                 <button
                   type="button"

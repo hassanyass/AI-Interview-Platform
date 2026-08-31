@@ -1,20 +1,23 @@
 import { Room, DataPacket_Kind, RemoteParticipant } from "livekit-client";
-import type { StateUpdatePayload, AllowedControl, TranscriptionPayload } from "../../types/realtime";
+import type { StateUpdatePayload, AllowedControl, TranscriptionPayload, TtsStatusPayload } from "../../types/realtime";
 
 type StateUpdateCallback = (state: StateUpdatePayload) => void;
 type TranscriptionCallback = (transcript: TranscriptionPayload) => void;
+type TtsStatusCallback = (status: TtsStatusPayload) => void;
 
 export class InterviewRealtimeService {
   private room: Room;
   private onStateUpdate: StateUpdateCallback;
   private onTranscription?: TranscriptionCallback;
+  private onTtsStatus?: TtsStatusCallback;
   private readonly boundDataHandler: (...args: any[]) => void;
 
-  constructor(room: Room, onStateUpdate: StateUpdateCallback, onTranscription?: TranscriptionCallback) {
+  constructor(room: Room, onStateUpdate: StateUpdateCallback, onTranscription?: TranscriptionCallback, onTtsStatus?: TtsStatusCallback) {
     this.room = room;
     this.onStateUpdate = onStateUpdate;
     this.onTranscription = onTranscription;
-    
+    this.onTtsStatus = onTtsStatus;
+
     // Subscribe to incoming data messages
     this.boundDataHandler = this.handleDataReceived.bind(this);
     this.room.on("dataReceived", this.boundDataHandler);
@@ -35,6 +38,8 @@ export class InterviewRealtimeService {
         this.onStateUpdate(message as StateUpdatePayload);
       } else if (_topic === "transcription") {
         this.onTranscription?.(message as TranscriptionPayload);
+      } else if (_topic === "tts_status") {
+        this.onTtsStatus?.(message as TtsStatusPayload);
       }
     } catch (e) {
       console.warn("Failed to parse data channel message:", e);

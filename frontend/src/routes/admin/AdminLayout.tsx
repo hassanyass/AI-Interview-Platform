@@ -32,7 +32,9 @@ export default function AdminLayout() {
       <aside className="w-64 border-e border-border bg-card flex flex-col">
         <div className="p-6 border-b border-border">
           <div className="flex flex-col">
-            <span className="text-xl font-bold tracking-tight text-primary">e& | هِمّة</span>
+            <span className="text-xl font-bold tracking-tight text-primary">
+              <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
+            </span>
             <span className="text-xs text-muted-foreground mt-0.5">{t('adminLayout.adminPortal')}</span>
           </div>
         </div>

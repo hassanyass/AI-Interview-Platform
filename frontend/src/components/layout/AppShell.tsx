@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex h-[72px] max-w-[1480px] items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-2.5" aria-label="e& Himma home">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-white shadow-sm">e&</span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-white shadow-sm"><span dir="ltr">e&</span></span>
               <span className="text-[17px] font-bold tracking-tight text-slate-950">هِمّة</span>
             </div>
             <nav className="hidden items-center gap-1 md:flex" aria-label="Primary navigation">

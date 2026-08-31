@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy.orm import selectinload
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -17,6 +17,7 @@ from backend.core.config import settings
 from backend.models.interview import (
     InterviewSession, InterviewConfiguration, InterviewDefinition, InterviewSection,
     InterviewMessage, InterviewEvent, InterviewCheckpoint,
+    AssessmentCriterion, Evaluation, Score,
 )
 from backend.models.profile import CandidateProfile
 from backend.schemas.persistence import (
@@ -25,6 +26,7 @@ from backend.schemas.persistence import (
     CheckpointCreate, CheckpointResponse,
     StatusUpdate, SessionLoadResponse,
     QuestionPayload, SectionPayload,
+    CriterionPayload, EvaluationSubmit,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +75,35 @@ async def _get_session(db: AsyncSession, session_id: UUID) -> InterviewSession:
     if not session:
         raise HTTPException(status_code=404, detail="Interview session not found.")
     return session
+
+
+async def _resolve_criteria_for_job(db: AsyncSession, job_id) -> list[AssessmentCriterion]:
+    """Phase 8C. job_id-scoped enabled rows if any exist for this job;
+    otherwise falls back to the enabled TEMPLATE tier (job_id/section_id both
+    NULL) as this job's default set. That fallback is a deliberate, flagged
+    interim behavior (no 8E authoring UI exists yet to create job-scoped
+    rows) — see AssessmentCriterion's docstring in models/interview.py.
+    Returns [] entirely for job_id=None (a legacy, non-B2B session)."""
+    if job_id is None:
+        return []
+    result = await db.execute(
+        select(AssessmentCriterion).where(
+            AssessmentCriterion.job_id == job_id,
+            AssessmentCriterion.enabled.is_(True),
+        )
+    )
+    job_criteria = list(result.scalars().all())
+    if job_criteria:
+        return job_criteria
+
+    template_result = await db.execute(
+        select(AssessmentCriterion).where(
+            AssessmentCriterion.job_id.is_(None),
+            AssessmentCriterion.section_id.is_(None),
+            AssessmentCriterion.enabled.is_(True),
+        )
+    )
+    return list(template_result.scalars().all())
 
 
 # ─── Load Session (for agent bootstrap / recovery) ────────────────────────────
@@ -228,6 +259,19 @@ async def load_session_for_agent(
                     ],
                 ))
 
+    # Phase 8C: resolved assessment criteria for this session's job.
+    resolved_criteria = await _resolve_criteria_for_job(db, session.job_id)
+    criteria = [
+        CriterionPayload(
+            key=c.key,
+            label=c.label,
+            kind=c.kind,
+            guidance_text=c.guidance_text,
+            section_id=str(c.section_id) if c.section_id else None,
+        )
+        for c in resolved_criteria
+    ]
+
     response = SessionLoadResponse(
         session_id=session.id,
         candidate_profile_id=session.candidate_profile_id,
@@ -241,6 +285,7 @@ async def load_session_for_agent(
         thinking_time=config.thinking_time if config else 60,
         candidate_profile=candidate_profile,
         sections=sections,
+        criteria=criteria,
         latest_checkpoint=latest_checkpoint,
         recent_messages=recent_messages,
         active_agent_id=session.active_agent_id,
@@ -270,9 +315,17 @@ async def renew_agent_lease(
             detail="You do not hold the lease for this session.",
         )
     now = datetime.now(timezone.utc)
-    session.agent_lease_expires_at = now + AGENT_LEASE_DURATION
+    new_expiry = now + AGENT_LEASE_DURATION
+    session.agent_lease_expires_at = new_expiry
     await db.commit()
-    return {"status": "renewed", "expires_at": session.agent_lease_expires_at.isoformat()}
+    # Audit fix (2026-08-27): db.commit() expires the ORM instance's
+    # attributes by default, so reading session.agent_lease_expires_at
+    # after commit forces a lazy-refresh from the DB outside an
+    # async-safe context -> sqlalchemy.exc.MissingGreenlet, every call.
+    # Same bug class as Phase 3/6A/6B's commit-then-read-ORM-attribute
+    # mistake — fixed the same way: capture the value into a local
+    # BEFORE commit and return that, never the (now-expired) ORM attribute.
+    return {"status": "renewed", "expires_at": new_expiry.isoformat()}
 
 
 # ─── Status Update ─────────────────────────────────────────────────────────────
@@ -459,3 +512,68 @@ async def create_checkpoint(
     await db.refresh(checkpoint)
 
     return checkpoint
+
+
+# ─── Evaluation Submission (Phase 8C) ───────────────────────────────────────────
+
+@router.post(
+    "/{session_id}/evaluation",
+    dependencies=[agent_auth],
+)
+async def submit_evaluation(
+    session_id: UUID,
+    body: EvaluationSubmit,
+    db: AsyncSession = db_dependency,
+):
+    """Upserts the normalized Evaluation + Score rows for this session.
+    Idempotent on session_id -- the agent's own mid-session attempt and its
+    teardown-time retry (both call this) can both succeed without creating
+    duplicate rows. A resubmission replaces (not accumulates) prior scores,
+    matching build_final_result()'s existing single-envelope-per-session
+    semantics for the legacy final_result JSONB."""
+    session = await _get_session(db, session_id)
+
+    result = await db.execute(
+        select(Evaluation).where(Evaluation.session_id == session_id)
+    )
+    evaluation = result.scalar_one_or_none()
+
+    if evaluation is None:
+        evaluation = Evaluation(session_id=session_id)
+        db.add(evaluation)
+        await db.flush()  # assigns evaluation.id before Score rows reference it
+    else:
+        await db.execute(delete(Score).where(Score.evaluation_id == evaluation.id))
+
+    evaluation.overall_score = body.overall_score
+    evaluation.recommendation = body.recommendation
+    evaluation.evidence_sufficiency = body.evidence_sufficiency
+    evaluation.summary = body.summary
+    evaluation.detailed_overview = body.detailed_overview
+
+    if body.criterion_scores:
+        # Best-effort criterion_id resolution, scoped to this exact job's
+        # resolved criteria set (not a bare global key lookup — a key is
+        # only unique within one job/template scope, not across all of them).
+        resolved = await _resolve_criteria_for_job(db, session.job_id)
+        key_to_id = {c.key: c.id for c in resolved}
+        for cs in body.criterion_scores:
+            db.add(Score(
+                evaluation_id=evaluation.id,
+                criterion_id=key_to_id.get(cs.criterion_key),
+                criterion_key=cs.criterion_key,
+                score=cs.score,
+                overview=cs.overview,
+                strengths=cs.strengths,
+                improvements=cs.improvements,
+                evidence_reference=cs.evidence_reference,
+            ))
+
+    # Audit fix (2026-08-27) pattern, same bug class: db.commit() expires the
+    # ORM instance's attributes by default, so reading evaluation.id after
+    # commit forces a lazy-refresh outside an async-safe context ->
+    # sqlalchemy.exc.MissingGreenlet. Capture the value BEFORE commit, return
+    # that local, never the (now-expired) ORM attribute.
+    evaluation_id = evaluation.id
+    await db.commit()
+    return {"session_id": str(session_id), "evaluation_id": str(evaluation_id)}

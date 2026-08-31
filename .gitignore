@@ -43,3 +43,11 @@ dist-ssr/
 # OS
 .DS_Store
 Thumbs.db
+
+# Agent TTS audio cache (agent/agent/interview/tts_cache.py) — machine-local,
+# regenerated on demand, binary
+agent/.tts_cache/
+
+# Agent Groq key-rotation state (agent/agent/interview/groq_key_rotator.py)
+# — machine-local, regenerated on demand
+agent/.groq_key_state_*.json

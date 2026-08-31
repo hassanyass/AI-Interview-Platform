@@ -525,6 +525,19 @@ class InterviewController:
         # Current question details
         q_data = None
         if q:
+            # Audit fix (2026-08-27): q.config is the real, un-coerced
+            # CodingConfig/MCQConfig dict, and for MCQ that dict includes
+            # correct_answers (needed server-side for SUBMIT_MCQ_ANSWER
+            # grading — see process_ui_command's MCQ branch). It must never
+            # reach the candidate's own data channel — this strips it from
+            # the copy that goes into the wire payload below, unconditionally
+            # (not gated on section-type detection: correct_answers never
+            # legitimately belongs in anything sent to the candidate, and
+            # non-MCQ configs never carry that key anyway, so this is a
+            # no-op for VERBAL/CODING/legacy questions).
+            sanitized_config = {
+                k: v for k, v in (q.config or {}).items() if k != "correct_answers"
+            }
             q_data = {
                 "id": q.id,
                 "title": self._question_title_text(q),
@@ -553,10 +566,39 @@ class InterviewController:
                 # defaults for ordered-flow questions — see
                 # build_core_sections() in main.py and Part 3's frontend
                 # rewrite, which reads from here instead).
-                "config": q.config,
+                "config": sanitized_config,
             }
             
         allowed_controls = list(get_allowed_candidate_controls(ctx.current_phase))
+
+        # Audit fix (2026-08-27): the phase-only lookup above has no
+        # awareness of the active core section type, unlike `q` above (the
+        # 9H fix). VALID_CANDIDATE_CONTROLS_PER_PHASE[BACKGROUND] carries
+        # SKIP_SECTION/MOVE_TO_TECHNICAL for the legacy single-question
+        # BACKGROUND flow, where they're meaningful — but
+        # process_ui_command's SKIP_SECTION/MOVE_TO_TECHNICAL branches
+        # reject both outright for any ordered core section (VERBAL/CODING/
+        # MCQ; see _has_pending_core_content()'s docstring). Those two stay
+        # stripped here so their buttons don't invite a click that silently
+        # no-ops. SKIP_QUESTION is deliberately NOT in this list — the
+        # 2026-08-27 policy reversal (see process_ui_command's
+        # SKIP_QUESTION/SKIP_SECTION branch and CURRENT_DECISIONS.md) made
+        # it a real, working per-question skip for ordered core sections
+        # too, so it stays advertised. REQUEST_HINT is excluded specifically
+        # for MCQ, which is 0-hints by design (CURRENT_DECISIONS.md) —
+        # _provide_hint() already degrades gracefully to a "no hints
+        # available" response there, but the button shouldn't invite the
+        # click in the first place.
+        if core_section is not None:
+            for stale_control in (
+                CandidateControlAction.SKIP_SECTION,
+                CandidateControlAction.MOVE_TO_TECHNICAL,
+            ):
+                if stale_control.value in allowed_controls:
+                    allowed_controls.remove(stale_control.value)
+            if core_section.section_type == "MCQ" and CandidateControlAction.REQUEST_HINT.value in allowed_controls:
+                allowed_controls.remove(CandidateControlAction.REQUEST_HINT.value)
+
         # UI-specific explicit control injection
         if sub_phase in ("READING", "THINKING", "APPROACH", "CODING"):
             if CandidateControlAction.REQUEST_CLARIFICATION.value not in allowed_controls:
@@ -678,14 +720,25 @@ class InterviewController:
                 just_finished = core_section
                 self._advance_core_question()
                 next_section = self._active_core_section()
-                if next_section is None:
+                ends_interview = next_section is None
+                if ends_interview:
                     self._transition_to(InterviewPhase.CLOSING)
                 elif just_finished.completed:
                     self._transition_to(InterviewPhase.WAITING_ROOM)
                 logger.info("[CODING] Submitted ordered core question id=%s", submitted_id)
                 handled = StructuredAction(
                     action=ActionEnum.ACKNOWLEDGE,
-                    response=response,
+                    # Audit fix (2026-08-27): when this submission is the
+                    # very last thing in the interview, speaking the
+                    # generic "submit_code" ack ("Got it, let's continue")
+                    # immediately before the chained CLOSING turn's real
+                    # goodbye produced two back-to-back agent messages —
+                    # not smooth. Empty response here lets voice_adapter.py
+                    # go straight to the one real goodbye instead. Mid-
+                    # interview (next question, same or different section),
+                    # the ack stays exactly as before — CODING remains a
+                    # normal, conversational flow throughout solving.
+                    response="" if ends_interview else response,
                     reason="Candidate submitted the ordered CODING core question.",
                     should_transition=False,
                 )
@@ -743,7 +796,6 @@ class InterviewController:
             # and _handle_automatic_transition()'s BACKGROUND case.
             just_finished = core_section
             self._advance_core_question()
-            response = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])["submit_mcq"]
             next_section = self._active_core_section()
             if next_section is None:
                 self._transition_to(InterviewPhase.CLOSING)
@@ -753,7 +805,22 @@ class InterviewController:
 
             handled = StructuredAction(
                 action=ActionEnum.ACKNOWLEDGE,
-                response=response,
+                # Audit fix (2026-08-27): MCQ is 0-live-interaction by
+                # design (CURRENT_DECISIONS.md) — the candidate submits via
+                # the on-screen UI and immediately sees it recorded there;
+                # no verbal confirmation is needed. Previously this always
+                # spoke a "Got it, recorded" ack and then unconditionally
+                # chained into another LLM turn — which, mid-section,
+                # re-announced "this is a multiple-choice question" on
+                # every single question instead of only the section's
+                # first, and at the section's end spoke a redundant ack
+                # immediately before the real transition/goodbye message.
+                # Empty response here + voice_adapter.py's phase-gated
+                # chain (only fires when this submission actually ends the
+                # interview, i.e. current_phase is now CLOSING) makes MCQ
+                # fully silent between questions and WAITING_ROOM, and
+                # exactly one clean message when it's genuinely the end.
+                response="",
                 reason="Candidate submitted an MCQ answer.",
                 should_transition=False,
             )
@@ -955,21 +1022,58 @@ class InterviewController:
             )
 
         if control in (CandidateControlAction.SKIP_QUESTION, CandidateControlAction.SKIP_SECTION):
+            core_section = self._active_core_section()
+
+            # 2026-08-27 policy reversal (explicit, confirmed with the user
+            # — partially reverses Issue 6's "core question integrity: never
+            # skipped live", the same way END_SECTION_EARLY already
+            # partially reversed the original "no section skipping" rule;
+            # see CURRENT_DECISIONS.md). SKIP_QUESTION now genuinely skips
+            # the CURRENT ordered core question — marked SKIPPED (not
+            # COMPLETED/TIME_EXPIRED/NOT_ATTEMPTED: a real, deliberate
+            # candidate choice, distinct from all three) — and advances to
+            # the next one, or ends the section/interview exactly the same
+            # way SUBMIT_CODE/SUBMIT_MCQ_ANSWER already do when it's the
+            # last question. Scoped narrowly: only fires once a core
+            # question is actually active (_active_core_section() is
+            # phase-gated to BACKGROUND, so this can't fire during
+            # BRIEFING/WELCOME before any real question exists — that case
+            # still falls through to the rejection below, Issue 6's
+            # original repro). SKIP_SECTION stays fully blocked here — this
+            # is a per-QUESTION skip, not a new "skip the whole section"
+            # escape hatch (END_SECTION_EARLY already covers that).
+            if control == CandidateControlAction.SKIP_QUESTION and core_section is not None and core_section.current_question is not None:
+                skipped_id = core_section.current_question.id
+                just_finished = core_section
+                self._advance_core_question(outcome_override=QuestionOutcome.SKIPPED)
+                next_section = self._active_core_section()
+                if next_section is None:
+                    self._transition_to(InterviewPhase.CLOSING)
+                elif just_finished.completed:
+                    self._transition_to(InterviewPhase.WAITING_ROOM)
+                logger.info("[SKIP] Skipped ordered core question id=%s", skipped_id)
+                return StructuredAction(
+                    action=ActionEnum.TRANSITION,
+                    response=msgs["skip_question"],
+                    reason="Candidate skipped the ordered core question.",
+                    should_transition=False,
+                    detected_candidate_control=control,
+                )
+
             # Issue 6 fix: HR-approved, ordered core sections/questions
             # (context.sections) can never be skipped/replaced/reordered
-            # live (CURRENT_DECISIONS.md, Phase 7 spec). This branch predates
-            # Phase 7D/9B's core-question walk and jumps straight to the
-            # legacy TECHNICAL_INTRO/TECHNICAL phase below without knowing
-            # sections exist at all — checked BEFORE any of that legacy logic
-            # runs. Deliberately uses _has_pending_core_content(), NOT
+            # live (CURRENT_DECISIONS.md, Phase 7 spec) — this is the
+            # remaining case: no real question is active yet (BRIEFING/
+            # WELCOME) or this is SKIP_SECTION, neither of which the real-
+            # skip branch above handles. This branch predates Phase 7D/9B's
+            # core-question walk and jumps straight to the legacy
+            # TECHNICAL_INTRO/TECHNICAL phase below without knowing sections
+            # exist at all — checked BEFORE any of that legacy logic runs.
+            # Deliberately uses _has_pending_core_content(), NOT
             # _active_core_section() — the real repro skips during
             # BRIEFING/WELCOME, before BACKGROUND (and therefore
             # _active_core_section()) ever engages; see that method's
-            # docstring. Both SKIP_QUESTION and SKIP_SECTION get the same
-            # no-op/acknowledge treatment while core content is pending —
-            # per product decision, SKIP_SECTION is not a "skip to the next
-            # section" escape hatch here, it's disabled entirely, same as
-            # SKIP_QUESTION. Legacy sessions (context.sections empty) are
+            # docstring. Legacy sessions (context.sections empty) are
             # completely unaffected — falls through unchanged.
             if self._has_pending_core_content():
                 return StructuredAction(
@@ -1403,7 +1507,7 @@ class InterviewController:
             return self.context.technical_progress.limits.max_followups_per_question
         return 0
 
-    def _advance_core_question(self):
+    def _advance_core_question(self, outcome_override: Optional[QuestionOutcome] = None):
         """Phase 7D: snapshot the just-finished core question into a
         QuestionRecord (reusing the same record type/reset pattern as the
         legacy load_question()/_record_question_completion() flow) and move
@@ -1419,13 +1523,19 @@ class InterviewController:
         TRANSITION path is now blocked by _should_allow_transition() until
         it's actually asked. Recorded as TIME_EXPIRED rather than COMPLETED
         in that case, so evaluation/reporting doesn't treat an unasked
-        question as answered."""
+        question as answered.
+
+        outcome_override: set explicitly by SKIP_QUESTION's real-skip path
+        (2026-08-27 policy reversal — see CURRENT_DECISIONS.md) to record
+        SKIPPED instead of inferring COMPLETED/TIME_EXPIRED from
+        current_question_asked, which would otherwise mislabel a
+        genuinely-skipped core question as answered."""
         core_section = self._active_core_section()
         if core_section is None:
             return
         current_q = core_section.current_question
         if current_q is not None:
-            outcome = (
+            outcome = outcome_override or (
                 QuestionOutcome.COMPLETED
                 if core_section.current_question_asked
                 else QuestionOutcome.TIME_EXPIRED
@@ -1546,7 +1656,15 @@ class InterviewController:
             json.dumps(self.context.candidate_profile, indent=2, default=str),
             MAX_PROFILE_CHARS,
         )
-        candidate_name = self.context.candidate_profile.get("full_name", "Candidate")
+        # Normalize to the "Candidate" sentinel whenever there's no real name
+        # to say out loud: either the generic placeholder full_name written
+        # by get_current_candidate_profile_id's lazy-create path (backend
+        # deps.py), or a bare email address written by
+        # get_or_create_candidate_profile's no-name fallback (an invitation
+        # created from just an email). Every {candidate_name} prompt site
+        # below is written to skip the name when it sees this exact string.
+        raw_full_name = (self.context.candidate_profile.get("full_name") or "").strip()
+        candidate_name = raw_full_name if raw_full_name and raw_full_name != "Candidate" and "@" not in raw_full_name else "Candidate"
 
         system_prompt = ""
 
@@ -1782,12 +1900,20 @@ class InterviewController:
             if q.eval_criteria is not None
         }
 
+        # Phase 8C: HR-configured assessment criteria resolved for this
+        # session's job (today: only the 5 seeded behavioral ones; empty for
+        # a legacy session or a job with nothing resolved). Distinct from
+        # question_eval_criteria above -- see AssessmentCriterionData's
+        # docstring in models.py.
+        criteria = [c.model_dump(mode="json") for c in self.context.criteria]
+
         evidence = {
             "role": self.context.role,
             "level": self.context.confirmed_level,
             "technical_submission": self.context.technical_submission,
             "question_records": [r.model_dump(mode="json") for r in self.context.question_records],
             "question_eval_criteria": question_eval_criteria,
+            "criteria": criteria,
             "transcript": [
                 {"speaker": m.role, "text": truncate_prompt_text(m.content, MAX_MESSAGE_CHARS)}
                 for m in self.context.conversation_history

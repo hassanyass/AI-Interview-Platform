@@ -16,6 +16,7 @@ class SectionType(str, Enum):
 class JobStatus(str, Enum):
     DRAFT = "DRAFT"
     PUBLISHED = "PUBLISHED"
+    PAUSED = "PAUSED"
 
 
 # ── Type-Specific Question Config ──────────────────────────────────────────
@@ -136,6 +137,9 @@ class JobCreate(BaseModel):
     responsibilities: Optional[List[str]] = None
     language: Optional[JobLanguage] = None
 
+
+class JobStatusUpdate(BaseModel):
+    status: JobStatus
 
 class JobUpdate(BaseModel):
     title: Optional[str] = None
@@ -310,3 +314,111 @@ class InvitationResponse(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── HR Results Dashboard (Phase 8D) ─────────────────────────────────────────
+# Read-only views over the Phase 8C normalized tables (assessment_criteria/
+# evaluations/scores), plus the legacy final_result JSONB's transcript/
+# question_records/technical_submission (read-only, unchanged) for the
+# per-candidate detail view. Not built from a single ORM model, so these
+# are constructed by hand in the endpoint rather than from_attributes.
+
+class CriterionScoreResponse(BaseModel):
+    criterion_key: str
+    # None if the AssessmentCriterion row was later deleted -- criterion_key
+    # above is the durable record of what was actually evaluated.
+    criterion_label: Optional[str] = None
+    kind: Optional[str] = None
+    score: Optional[int] = None
+    overview: Optional[str] = None
+    strengths: List[str] = []
+    improvements: List[str] = []
+    evidence_reference: Optional[str] = None
+
+
+class EvaluationDetailResponse(BaseModel):
+    session_id: UUID
+    status: str
+    completed_at: Optional[datetime] = None
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
+    job_title: Optional[str] = None
+
+    # From the legacy final_result JSONB -- read-only, unchanged.
+    transcript: List[dict] = []
+    question_records: List[dict] = []
+    technical_submission: dict = {}
+
+    # From the normalized Evaluation/Score tables (Phase 8C).
+    overall_score: Optional[int] = None
+    recommendation: Optional[str] = None
+    evidence_sufficiency: Optional[float] = None
+    summary: Optional[str] = None
+    detailed_overview: Optional[str] = None
+    scores: List[CriterionScoreResponse] = []
+
+    # Phase 8F: manual override (None = no override, use computed).
+    override_suggested: Optional[bool] = None
+    override_reason: Optional[str] = None
+
+
+class JobCandidateRow(BaseModel):
+    session_id: UUID
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
+    status: str
+    completed_at: Optional[datetime] = None
+    overall_score: Optional[int] = None
+    recommendation: Optional[str] = None
+    evidence_sufficiency: Optional[float] = None
+    # recommendation == "Hire" AND evidence_sufficiency >= settings.
+    # SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR (8B mechanism B). If
+    # override_suggested is not None, it takes precedence over computed.
+    suggested: bool = False
+    override_suggested: Optional[bool] = None
+
+
+class JobResultsResponse(BaseModel):
+    job_id: UUID
+    job_title: str
+    total_candidates: int
+    completed_count: int
+    in_progress_count: int
+    suggested_count: int
+    candidates: List[JobCandidateRow] = []
+
+
+# ── Manual Override (Phase 8F — Part 1) ──────────────────────────────────────
+
+class SuggestedOverrideRequest(BaseModel):
+    # True = HR says yes, False = HR says no, None = clear override (revert
+    # to computed value). Deliberately Optional[bool], not just bool, per
+    # the user's clarification — an admin must be able to un-override.
+    override_suggested: Optional[bool] = None
+    reason: Optional[str] = None
+
+
+class SuggestedOverrideResponse(BaseModel):
+    session_id: UUID
+    override_suggested: Optional[bool] = None
+    override_reason: Optional[str] = None
+    # Echo the computed value so the UI can show both side by side.
+    computed_suggested: bool = False
+
+
+# ── Assessment Criteria Authoring (Phase 8E) ──────────────────────────────────
+
+class AssessmentCriterionResponse(BaseModel):
+    key: str
+    label: str
+    kind: str
+    enabled: bool
+    guidance_text: Optional[str] = None
+    source: str  # "TEMPLATE" | "CUSTOM"
+
+
+class CriteriaToggleRequest(BaseModel):
+    """The set of behavioral template keys to enable for this job.
+    Any template key NOT in this list is disabled."""
+    enabled_keys: List[str]
+

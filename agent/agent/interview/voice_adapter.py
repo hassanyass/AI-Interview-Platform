@@ -15,6 +15,17 @@ from livekit import rtc
 from agent.interview.controller import InterviewController
 from agent.interview.models import ActionEnum, InterviewPhase
 from agent.interview.persistence import InterviewPersistence
+from agent.interview import tts_cache
+from agent.llm.prompts import SYSTEM_MESSAGES
+
+# Audit fix (2026-08-27): every fixed, non-personalized string any language's
+# SYSTEM_MESSAGES dict can produce -- acks, skip/end-of-section/end-interview
+# lines, etc. Used only to decide whether a given turn's response is safe to
+# cache/replay (see _synthesize_and_play) -- built once at import time since
+# SYSTEM_MESSAGES itself never changes at runtime.
+_FIXED_SYSTEM_MESSAGE_TEXTS = frozenset(
+    text for lang_messages in SYSTEM_MESSAGES.values() for text in lang_messages.values()
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +81,13 @@ class VoiceInterviewAdapter:
         self._last_final_candidate_at = 0.0
         self._transcription_sequence = 0
         self._completion_persisted = False
+        # Phase 8C: tracked independently of _completion_persisted above --
+        # submitting the normalized Evaluation/Score rows is a second,
+        # additive persistence target from save_completion()'s legacy
+        # final_result JSONB write, not gated on it and not gating it. Read
+        # by main.py's teardown retry to decide whether this specifically
+        # still needs retrying.
+        self._evaluation_submitted = False
         try:
             self._candidate_endpoint_delay = max(
                 0.25, float(os.getenv("STT_ENDPOINT_DELAY_SECONDS", "0.8"))
@@ -172,6 +190,38 @@ class VoiceInterviewAdapter:
         await self._emit_ui_state()
 
 
+    async def _broadcast_tts_status(self, status: str, attempt: int = None, max_retries: int = None, text: str = None):
+        """Audit fix (2026-08-27): dedicated, minimal data-channel signal so
+        the frontend can show real feedback while a TTS 429 retry is in
+        flight, instead of silence that looks indistinguishable from the
+        agent simply never responding. Deliberately its own topic/payload,
+        not folded into generate_ui_state() — this reflects the AUDIO
+        pipeline's own transient state, not interview state, and firing on
+        every retry attempt would be noisy inside the interview-state
+        broadcast's existing call sites/logging.
+        status: "retrying" | "ok" | "gave_up".
+        text/language (2026-08-27, follow-up): carried on "gave_up" so the
+        frontend can speak the turn itself via the browser's own Web Speech
+        API — the one case where server-side TTS has definitively failed for
+        this turn (not just mid-retry) and the interview would otherwise go
+        silent for that line regardless of provider/quota state."""
+        import json
+        payload = json.dumps({
+            "status": status,
+            "attempt": attempt,
+            "max": max_retries,
+            "text": text,
+            "language": getattr(self.controller.context, "language", "en") if text else None,
+        }).encode("utf-8")
+        try:
+            await self.room.local_participant.publish_data(
+                payload,
+                reliable=True,
+                topic="tts_status",
+            )
+        except Exception:
+            logger.exception("[TTS-DIAG] Failed to broadcast tts_status=%s", status)
+
     async def _emit_ui_state(self):
         """Broadcasts the current InterviewController state to the UI via LiveKit Data Channel."""
         import json
@@ -266,7 +316,15 @@ class VoiceInterviewAdapter:
         # WR-C: PROCEED_TO_NEXT_SECTION added — guards against the wrap-up
         # message from the just-finished section still being mid-playback
         # when the candidate immediately clicks Proceed.
-        if command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "PROCEED_TO_NEXT_SECTION"):
+        # Audit fix (2026-08-27): END_SECTION_EARLY/END_INTERVIEW were
+        # missing here — the only other control that ends the interview
+        # entirely or ends a section outright, yet the one place that
+        # didn't cut off in-flight agent audio first. Reported symptom:
+        # clicking End Section (or End Interview) while the agent was still
+        # mid-sentence let that queued speech keep playing out over the
+        # transition. Same fix as every other entry in this tuple already
+        # gets — no new mechanism, just closing this gap.
+        if command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "PROCEED_TO_NEXT_SECTION", "END_SECTION_EARLY", "END_INTERVIEW"):
             self._handle_interruption()
             # Wait a tiny bit to ensure the audio frame buffer clears
             await asyncio.sleep(0.05)
@@ -281,14 +339,62 @@ class VoiceInterviewAdapter:
                 await self._handle_completion()
                 return
             if not action.response:
-                if getattr(action, "should_transition", False):
+                # Audit fix (2026-08-27): PROCEED_TO_NEXT_SECTION's own
+                # StructuredAction always sets should_transition=False (see
+                # controller.py: "the handler already performed the
+                # transition itself... same 'don't transition twice'
+                # pattern as SKIP_QUESTION/MOVE_TO_TECHNICAL" — a bookkeeping
+                # flag about NOT re-applying _transition_to(), unrelated to
+                # whether a real section boundary was actually crossed). But
+                # crossing into a new section (e.g. CODING -> MCQ) via
+                # PROCEED_TO_NEXT_SECTION genuinely does load a brand new
+                # question with entirely different content, and the chain
+                # call below immediately asks the LLM to present it — with
+                # should_transition alone gating the clear, conversation_
+                # history still carried the ENTIRE previous section's
+                # back-and-forth into that turn's context. Reported symptom:
+                # opening a new section, the agent started speaking about
+                # content that didn't match the question actually on screen.
+                if getattr(action, "should_transition", False) or command == "PROCEED_TO_NEXT_SECTION":
                     self.controller.context.conversation_history.clear()
-                if command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "END_INTERVIEW", "PROCEED_TO_NEXT_SECTION"):
+
+                # Audit fix (2026-08-27): SUBMIT_MCQ_ANSWER's own response is
+                # now always empty (MCQ is 0-live-interaction by design — see
+                # controller.py's SUBMIT_MCQ_ANSWER handler), which means it
+                # always reaches this branch. Chaining unconditionally here
+                # (as SUBMIT_CODE legitimately still does — CODING stays
+                # conversational throughout) meant every MCQ submission
+                # generated ANOTHER LLM turn even for the routine "move to
+                # the next question in the same section" case — re-running
+                # CORE_MCQ_QUESTION_PROMPT's "announce this is MCQ" instruction
+                # on every question instead of only the section's first, and
+                # producing agent speech mid-section that MCQ's design never
+                # wanted in the first place. A chain is only genuinely needed
+                # here when this submission actually ended the interview
+                # (current_phase is now CLOSING, which needs the real
+                # goodbye turn) — moving to the next question within the
+                # section, or into the silent WAITING_ROOM phase (which
+                # carries no LLM generation of its own per WR-B), needs none.
+                mcq_no_chain_needed = (
+                    command == "SUBMIT_MCQ_ANSWER"
+                    and self.controller.context.current_phase != InterviewPhase.CLOSING
+                )
+
+                if mcq_no_chain_needed:
+                    await self._emit_ui_state()
+                elif command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "END_INTERVIEW", "PROCEED_TO_NEXT_SECTION"):
                     # WR-C: chains straight into the next section's opening
                     # ASK turn — no separate "welcome back" message is
                     # needed, the new section's own first turn carries it
                     # (same reasoning as WR-B's plan: this phase carries no
                     # LLM generation of its own).
+                    # Audit fix (2026-08-27): SUBMIT_MCQ_ANSWER was missing
+                    # here, same class of gap as SUBMIT_CODE already covers
+                    # — without it, an MCQ submission that completes the
+                    # last section transitions to CLOSING but never chains
+                    # into the CLOSING-phase LLM turn, leaving the session
+                    # permanently stuck (never reaches COMPLETED, no
+                    # final_result ever generated).
                     await self._handle_candidate_turn("", is_chain=True, _lock_held=True)
                 else:
                     await self._emit_ui_state()
@@ -315,8 +421,43 @@ class VoiceInterviewAdapter:
             if getattr(action, "should_transition", False):
                 self.controller.context.conversation_history.clear()
                 
+            # Audit fix (2026-08-27): SKIP_QUESTION/SKIP_SECTION/
+            # MOVE_TO_TECHNICAL can be REJECTED as a no-op (Issue 6's guard
+            # — core content is HR-approved and can't be skipped live; see
+            # _handle_candidate_control's SKIP_QUESTION/SKIP_SECTION and
+            # MOVE_TO_TECHNICAL branches in controller.py) as well as
+            # actually succeed (legacy flow). The chain below used to fire
+            # unconditionally on command name alone, with no way to tell
+            # those apart — so a rejected skip during BRIEFING (nothing
+            # actually changed: current_phase is still BRIEFING) still
+            # chained into ANOTHER LLM turn, which re-ran BRIEFING_PROMPT
+            # and produced the exact same greeting a second time right
+            # after the "let's stick with it" rejection. Reported symptom:
+            # the greeting repeating verbatim in the transcript after
+            # pressing Skip. Each command's own reject-vs-succeed shape is
+            # verified against controller.py's actual return values, not
+            # guessed: SKIP_QUESTION/SKIP_SECTION's rejection is the only
+            # path that returns action=ACKNOWLEDGE (success there always
+            # returns action=TRANSITION); MOVE_TO_TECHNICAL's rejection is
+            # the only path that returns should_transition=False (success
+            # there always returns should_transition=True). CHANGE_QUESTION
+            # deliberately left out of this check — its own success path
+            # also returns ACKNOWLEDGE + should_transition=False, identical
+            # in shape to its rejection, so there's no safe way to tell
+            # them apart here without risking breaking the working
+            # successful-change chain.
+            was_rejected_no_op = (
+                command in ("SKIP_QUESTION", "SKIP_SECTION") and action.action == ActionEnum.ACKNOWLEDGE
+            ) or (
+                command == "MOVE_TO_TECHNICAL" and not getattr(action, "should_transition", False)
+            )
+
             # Chain to the next turn to generate the new question
-            if command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "END_INTERVIEW"):
+            # Audit fix (2026-08-27): SUBMIT_MCQ_ANSWER added alongside
+            # SUBMIT_CODE — same reasoning as the tuple above.
+            if was_rejected_no_op:
+                await self._emit_ui_state()
+            elif command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "END_INTERVIEW"):
                 await self._handle_candidate_turn("", is_chain=True, _lock_held=True)
             else:
                 await self._emit_ui_state()
@@ -755,9 +896,31 @@ class VoiceInterviewAdapter:
                 )
             except Exception:
                 logger.exception("[COMPLETION] failed_to_persist_completion_event")
-            await self.persistence.save_completion(ctx)
-        self._completion_persisted = True
-            
+            persisted = await self.persistence.save_completion(ctx)
+            if persisted:
+                self._completion_persisted = True
+            else:
+                logger.error(
+                    "[COMPLETION] persistence_failed session_id=%s — will retry on teardown",
+                    ctx.session_id,
+                )
+
+            # Phase 8C: submit the normalized Evaluation/Score rows. Same
+            # distinctly-tagged, greppable pattern as the completion-
+            # persistence fix above -- independent target, independent
+            # tracking, independent teardown retry (main.py).
+            evaluation_submitted = await self.persistence.submit_evaluation(ctx)
+            if evaluation_submitted:
+                self._evaluation_submitted = True
+            else:
+                logger.error(
+                    "[EVALUATION_SUBMIT] persistence_failed session_id=%s — will retry on teardown",
+                    ctx.session_id,
+                )
+        else:
+            self._completion_persisted = True
+            self._evaluation_submitted = True
+
         await self._emit_ui_state()
 
     # ─── TTS Playback Loop ────────────────────────────────────────────
@@ -799,49 +962,182 @@ class VoiceInterviewAdapter:
             
         logger.info(f"[TTS-DIAG] Synthesizing response (Gen {gen_id}): {text[:40]}...")
 
-        try:
-            try:
-                # We rely on Groq directly and disable internal LiveKit retries so we can control rate-limit handling.
-                async for audio_chunk in self.tts_plugin.synthesize(text, conn_options=APIConnectOptions(max_retry=0)):
-                    if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
-                        logger.info("[TTS] Interrupted during playback")
-                        raise asyncio.CancelledError()
-                    # RT-B2: set on/before the first captured frame of this
-                    # generation -- the precise "audibly speaking" signal
-                    # _handle_interruption() snapshots.
-                    self._is_speaking = True
-                    await self._audio_source.capture_frame(audio_chunk.frame)
-
-                logger.info(f"[TTS-DIAG] Synthesis playback complete (Gen {gen_id})")
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                err_str = str(e)
-                status_code = getattr(e, "status_code", None)
-                response = getattr(e, "response", None)
-                headers = getattr(response, "headers", {}) if response else {}
-
-                is_429 = (status_code == 429) or ("429" in err_str) or ("Too Many Requests" in err_str)
-
-                if is_429:
-                    retry_after_str = headers.get("retry-after") or headers.get("x-ratelimit-reset-requests") or headers.get("x-ratelimit-reset-tokens")
-                    try:
-                        retry_after = float(retry_after_str) if retry_after_str else 0.0
-                    except (ValueError, TypeError):
-                        retry_after = 0.0
-
-                    logger.warning(
-                        f"[TTS-DIAG] Groq TTS rate limit (429) hit for Gen {gen_id}. "
-                        f"Headers: {dict(headers)}. Skipping TTS for this turn to prevent quota starvation."
+        # Audit fix (2026-08-27): cache fixed, non-personalized system
+        # messages (acks, skip/end-of-section lines, etc.) on disk, keyed by
+        # exactly the inputs that change the resulting audio -- provider,
+        # voice/model, language, and the text itself. Deliberately restricted
+        # to _FIXED_SYSTEM_MESSAGE_TEXTS: LLM-generated conversational text
+        # (greetings, question presentations, the CLOSING goodbye) is
+        # different content nearly every turn and must never be cached --
+        # replaying stale audio for genuinely new text would be a real bug,
+        # not an optimization. See tts_cache.py's own docstring for why this
+        # is disk-backed rather than an in-memory dict (each session is its
+        # own worker subprocess, so only a disk cache is actually shared
+        # across candidates/sessions, which is most of the real saving).
+        synth_cache_key = None
+        if text in _FIXED_SYSTEM_MESSAGE_TEXTS:
+            provider = getattr(self.tts_plugin, "provider_name", "unknown")
+            voice = getattr(self.tts_plugin, "model_name", "unknown")
+            language = getattr(self.controller.context, "language", "en")
+            synth_cache_key = tts_cache.cache_key(provider, voice, language, text)
+            cached_pcm = tts_cache.load(synth_cache_key)
+            if cached_pcm:
+                if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
+                    raise asyncio.CancelledError()
+                logger.info(
+                    f"[TTS-CACHE] Cache hit for Gen {gen_id} ({len(cached_pcm)} bytes) "
+                    "-- skipping the synthesis API call entirely."
+                )
+                self._is_speaking = True
+                try:
+                    num_channels = self.tts_plugin.num_channels
+                    samples_per_channel = len(cached_pcm) // (2 * num_channels)
+                    frame = rtc.AudioFrame(
+                        cached_pcm, self.tts_plugin.sample_rate, num_channels, samples_per_channel
                     )
+                    await self._audio_source.capture_frame(frame)
+                    logger.info(f"[TTS-DIAG] Synthesis playback complete (Gen {gen_id}) [cached]")
+                finally:
+                    self._is_speaking = False
+                return
 
-                    # If a reasonable reset time is provided, delay pulling the next item from the queue
-                    if 0 < retry_after <= 15.0:
-                        logger.info(f"[TTS-DIAG] Pausing TTS queue for {retry_after:.1f}s to respect provider reset window.")
-                        await asyncio.sleep(retry_after)
+        # Audit fix (2026-08-27): Groq's TTS 429 response never carries a
+        # usable retry-after/rate-limit-reset header through this SDK
+        # (Headers: {} every time this has been observed live) -- so
+        # retry_after always computed to 0.0 and the "pause the queue"
+        # branch below it never actually ran. The turn was just dropped
+        # outright, silently, every single time -- which is why entering a
+        # fresh section (a burst of back-to-back generations right after
+        # PROCEED_TO_NEXT_SECTION) reliably produced total silence: the one
+        # turn that mattered most (the section's opening line) was also the
+        # one most likely to land inside that burst. Groq's TTS rate limit
+        # in practice is a short per-minute burst, not a hard daily quota --
+        # a bounded retry with a fixed backoff clears most of these instead
+        # of abandoning the turn on the first hit.
+        # Audit fix (2026-08-27, follow-up): a live 429 burst was confirmed
+        # to still be in effect 3+ seconds later (both the first attempt AND
+        # both 1.5s-spaced retries all failed) -- direct probing right after
+        # showed the account was NOT actually near its quota (packets
+        # succeeded cleanly moments later with 70+/100 requests still
+        # available), so this is a short burst window, not exhaustion, but
+        # 1.5s wasn't long enough to reliably outlast it. Escalating backoff
+        # (2s/4s/8s, ~14s worst case across all 3 retries) trades a longer
+        # possible silence for a much better chance of actually catching the
+        # window's reset, instead of giving up while comfortably still
+        # inside it.
+        MAX_TTS_429_RETRIES = 3
+        TTS_429_RETRY_DELAYS_S = [2.0, 4.0, 8.0]
+
+        try:
+            attempt = 0
+            # Only populated when synth_cache_key is set (a real fixed-
+            # message cache miss) -- collects the raw PCM bytes actually
+            # captured so a successful synthesis can be saved for next time.
+            collected_pcm = [] if synth_cache_key else None
+            while True:
+                try:
+                    # We rely on Groq directly and disable internal LiveKit retries so we can control rate-limit handling.
+                    async for audio_chunk in self.tts_plugin.synthesize(text, conn_options=APIConnectOptions(max_retry=0)):
+                        if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
+                            logger.info("[TTS] Interrupted during playback")
+                            raise asyncio.CancelledError()
+                        # RT-B2: set on/before the first captured frame of this
+                        # generation -- the precise "audibly speaking" signal
+                        # _handle_interruption() snapshots.
+                        self._is_speaking = True
+                        if collected_pcm is not None:
+                            collected_pcm.append(bytes(audio_chunk.frame.data))
+                        await self._audio_source.capture_frame(audio_chunk.frame)
+
+                    logger.info(f"[TTS-DIAG] Synthesis playback complete (Gen {gen_id})")
+                    if synth_cache_key and collected_pcm:
+                        tts_cache.save(synth_cache_key, b"".join(collected_pcm))
+                    if attempt > 0:
+                        # Only clear the retry overlay if we actually showed
+                        # one — a normal, never-retried turn shouldn't fire
+                        # an "ok" broadcast for every single utterance.
+                        await self._broadcast_tts_status("ok")
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    err_str = str(e)
+                    status_code = getattr(e, "status_code", None)
+                    response = getattr(e, "response", None)
+                    headers = getattr(response, "headers", {}) if response else {}
+
+                    is_429 = (status_code == 429) or ("429" in err_str) or ("Too Many Requests" in err_str)
+
+                    # Audit fix (2026-08-27, follow-up): Groq's 429 is a
+                    # per-KEY daily quota, confirmed live -- waiting seconds
+                    # doesn't help the SAME key's quota reappear, but a
+                    # genuinely different key has its own independent quota.
+                    # When multi-key rotation is configured (key_rotator
+                    # attribute -- see groq_key_rotator.py), a 429 rotates to
+                    # the next key IMMEDIATELY, no backoff delay, and retries
+                    # the same text right away -- "once, not a counter and
+                    # trial" per the product ask. Only once every configured
+                    # key has been tried does this fall through to the give-
+                    # up path below. The escalating-backoff path underneath
+                    # stays exactly as before for anything WITHOUT a
+                    # key_rotator (Azure, or Groq with only the single legacy
+                    # GROQ_API_KEY configured) -- there, a genuinely transient
+                    # burst is still the more likely explanation.
+                    key_rotator = getattr(self.tts_plugin, "key_rotator", None)
+                    if is_429 and key_rotator is not None:
+                        new_key = key_rotator.rotate()
+                        if new_key is not None:
+                            attempt += 1
+                            logger.warning(
+                                f"[TTS-DIAG] Groq TTS rate limit (429) hit for Gen {gen_id} "
+                                f"-- switching to key {key_rotator.current_position}/{key_rotator.total_keys} immediately."
+                            )
+                            await self._broadcast_tts_status(
+                                "switching_key", key_rotator.current_position, key_rotator.total_keys
+                            )
+                            if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
+                                raise asyncio.CancelledError()
+                            self.tts_plugin = key_rotator.rebuild_plugin()
+                            continue
+                        else:
+                            logger.warning(
+                                f"[TTS-DIAG] Groq TTS rate limit (429) hit for Gen {gen_id} -- "
+                                f"all {key_rotator.total_keys} configured key(s) exhausted for today."
+                            )
+                            await self._broadcast_tts_status("gave_up", attempt, key_rotator.total_keys, text=text)
+                            return
+
+                    if is_429 and attempt < MAX_TTS_429_RETRIES:
+                        delay = TTS_429_RETRY_DELAYS_S[attempt]
+                        attempt += 1
+                        logger.warning(
+                            f"[TTS-DIAG] Groq TTS rate limit (429) hit for Gen {gen_id} "
+                            f"(retry {attempt}/{MAX_TTS_429_RETRIES} in {delay}s)."
+                        )
+                        await self._broadcast_tts_status("retrying", attempt, MAX_TTS_429_RETRIES)
+                        await asyncio.sleep(delay)
+                        # A real interruption/barge-in during the backoff wait
+                        # must still win -- don't retry into a stale turn.
+                        if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
+                            raise asyncio.CancelledError()
+                        continue
+
+                    if is_429:
+                        logger.warning(
+                            f"[TTS-DIAG] Groq TTS rate limit (429) hit for Gen {gen_id} "
+                            f"after {attempt} retries. Headers: {dict(headers)}. "
+                            "Skipping TTS for this turn to prevent quota starvation."
+                        )
+                        await self._broadcast_tts_status("gave_up", attempt, MAX_TTS_429_RETRIES, text=text)
+                        return
+
+                    logger.error(f"[TTS-DIAG] TTS provider failed for Gen {gen_id} ({type(e).__name__}): {err_str}")
+                    # Audit fix (2026-08-27): any non-429 TTS failure (Azure
+                    # outage, network error, etc.) also leaves this turn
+                    # unspoken -- same client-side fallback trigger as the
+                    # 429 give-up path, not just the rate-limit case.
+                    await self._broadcast_tts_status("gave_up", attempt, MAX_TTS_429_RETRIES, text=text)
                     return
-
-                logger.error(f"[TTS-DIAG] TTS provider failed for Gen {gen_id} ({type(e).__name__}): {err_str}")
         finally:
             # RT-B2: single reset point covering normal completion,
             # CancelledError, and the generic-Exception path uniformly --

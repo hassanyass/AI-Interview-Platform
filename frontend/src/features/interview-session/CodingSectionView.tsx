@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { Code2, Mic, Send, Timer, Volume2 } from "lucide-react";
-import { InterviewController } from "./InterviewController";
 import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../types/realtime";
 
 /**
@@ -67,7 +66,7 @@ export function CodingSectionView({
       {/* Consolidated header — one card, not four floating pieces. Title is
           the dominant element; badge + status are small supporting
           metadata beneath it, not equal-weight siblings. */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-foreground">{question.title}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -87,16 +86,6 @@ export function CodingSectionView({
             <Timer className="h-3.5 w-3.5 text-muted-foreground" />
             {formattedTime}
           </span>
-          <InterviewController
-            variant="compact"
-            isCompleted={isCompleted}
-            allowedControls={allowedControls}
-            isMicrophoneEnabled={isMicrophoneEnabled}
-            onToggleMicrophone={onToggleMicrophone}
-            onSendControl={onSendControl}
-            backendState={backendState}
-            hasNextSection={hasNextSection}
-          />
         </div>
       </div>
 

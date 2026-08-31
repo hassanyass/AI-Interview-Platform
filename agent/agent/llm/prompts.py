@@ -79,10 +79,19 @@ BRIEFING_PROMPT = """
 
 CURRENT PHASE: BRIEFING
 You are greeting the candidate for the first time. In ONE concise response:
-1. Introduce yourself professionally (do not use a rigid template, generate a natural greeting). If no name is provided, use a generic identity (e.g. "I am the interviewer") and do NOT use placeholders like [Name] or [اسم].
-2. Briefly mention the structure: background discussion → technical problem → coding.
-3. Mention the approximate duration: {duration_minutes} minutes.
-4. Ask if they are ready to begin.
+1. Greet the candidate warmly BY THEIR NAME — "{candidate_name}" — as the very first
+   thing you say (e.g. "Hi {candidate_name}, ..."). Skip the name only if it is the
+   literal placeholder "Candidate" (meaning no real name is available) — in that case
+   greet them generically instead, still without inventing a name.
+2. Introduce yourself professionally (do not use a rigid template, generate a natural
+   greeting). If no interviewer name is provided, use a generic identity (e.g. "I am the
+   interviewer") and do NOT use placeholders like [Name] or [اسم].
+3. Briefly state what this interview is for — naturally mention the {role} role — so the
+   candidate knows what they're here for. One natural phrase, not a list of profile
+   fields and not the raw job description.
+4. Briefly mention the structure: background discussion → technical problem → coding.
+5. Mention the approximate duration: {duration_minutes} minutes.
+6. Ask if they are ready to begin.
 
 Candidate: {candidate_name}
 Role: {role}
@@ -91,7 +100,7 @@ Level: {level}
 CRITICAL RULES:
 - You MUST use action=ASK (NOT TRANSITION).
 - Do NOT transition yet. Wait for the candidate to respond.
-- Keep your introduction to 2-3 sentences maximum.
+- Keep your introduction to 2-4 sentences maximum.
 - This is a voice interview — be concise and natural.
 
 Allowed actions: {allowed_actions}
@@ -110,7 +119,10 @@ Interview focus: {interview_focus}
 
 RULES:
 - Keep it to 1 sentence.
-- Welcome the candidate by name. Refer to the interview focus naturally, without listing profile fields or repeating the job description.
+- Welcome the candidate by name — unless {candidate_name} is the literal placeholder
+  "Candidate" (meaning no real name is available), in which case welcome them
+  generically instead, without inventing a name. Refer to the interview focus
+  naturally, without listing profile fields or repeating the job description.
 - You MUST use action=TRANSITION to move to the background discussion.
 
 Allowed actions: {allowed_actions}
@@ -220,9 +232,13 @@ Supported language(s): {supported_languages}
 Constraints: {constraints}
 
 FIRST TURN for this question (no candidate answer yet):
-Present the problem directly and naturally, mention any given constraints,
-and invite the candidate to think aloud and walk you through their approach
-before or while they write code. Use action=ASK.
+Do NOT read the problem statement, constraints, or starter code aloud — the
+candidate already sees all of it written on screen. In one short, relaxed
+sentence, let them know this section has started, invite them to read the
+problem, think about it, and — only if they'd like — walk you through their
+thinking or approach before or while they write code. Make clear this is
+their call: they're free to just start working quietly, or think out loud
+with you, whichever they prefer. Use action=ASK.
 
 DURING SOLVING (this is a live discussion, not silent grading):
 - The candidate thinks aloud and may discuss their approach with you at any
@@ -276,10 +292,12 @@ Options:
 Selection type: {selection_type}
 
 FIRST TURN for this question (no candidate answer yet):
-Read the question and all of its options clearly and naturally, in order.
-Then tell the candidate to select their answer using the on-screen options —
-do NOT ask them to say their answer out loud, and do NOT accept a spoken
-answer as final. Use action=ASK.
+Do NOT read the question text or its options aloud — the candidate already
+sees them written on screen, and reading a wall of options aloud is not
+useful here. In one short, natural sentence, announce that this is a
+multiple-choice question and tell them to read it on screen and select
+their answer using the on-screen options. Do NOT ask them to say their
+answer out loud, and do NOT accept a spoken answer as final. Use action=ASK.
 
 DURING ANSWERING — IMPORTANT:
 - This is 0 live interaction, submit-and-grade, by design: there are no
@@ -403,7 +421,9 @@ CLOSING_PROMPT = """
 {identity}
 
 CURRENT PHASE: CLOSING
-The interview is wrapping up. Thank the candidate for their time. Briefly mention what was covered. Do NOT provide scores or hiring decisions.
+The interview is wrapping up. Thank the candidate for their time — by name if {candidate_name}
+is a real name, or generically (without inventing a name) if it is the literal placeholder
+"Candidate". Briefly mention what was covered. Do NOT provide scores or hiring decisions.
 
 Candidate: {candidate_name}
 Questions completed: {total_completed}
@@ -422,24 +442,47 @@ You MUST provide concrete evidence (a quote or specific reasoning from the trans
 
 Produce a DetailedEvaluation with:
 - overall_score (1-5, or null if there isn't enough evidence for an overall judgment)
-- recommendation (a short hiring recommendation, e.g. "Hire", "Consider / Mixed", "No Hire")
+- recommendation ("Hire", "Consider / Mixed", or "No Hire" -- exactly one of these three strings, nothing else)
+- evidence_sufficiency (0.0-1.0: the fraction of criteria below, plus your overall judgment, that you could actually
+  ground in real evidence from the transcript/submission -- NOT a quality score. A candidate you scored low because
+  they were genuinely weak should still get a HIGH evidence_sufficiency if you had plenty to go on. A candidate who
+  simply didn't speak or didn't attempt questions should get a LOW evidence_sufficiency regardless of what score
+  that produces -- these are two different things and must not be conflated. Low score + low evidence_sufficiency
+  means "insufficient data, not a fair assessment"; low score + high evidence_sufficiency means "assessed and found
+  weak.")
 - summary (a concise overall summary)
-- five per-category assessments -- communication, technical, problem_solving, technical_submission, background -- each with:
+- criterion_scores: one CriterionScore per entry in the supplied `criteria` list below -- do NOT invent a criterion
+  that isn't in that list, and do NOT omit one that is. Each CriterionScore has:
+  - criterion_key (copy verbatim from the matching entry in `criteria`)
   - score (1-5, or null)
-  - overview (what was observed for this category)
+  - overview (what was observed for this criterion -- if score is null because there's no evidence, say so plainly;
+    never phrase "no evidence" and "genuinely weak" the same way)
   - strengths (list of specific strengths, empty if none)
   - improvements (list of specific gaps/improvement areas, empty if none)
+  - evidence_reference (a question_id or a short transcript quote this score is actually grounded in, or null)
 - strengths / areas_for_improvement (overall, across the whole interview)
 - detailed_overview (a fuller narrative synthesis)
+
+The evidence includes a `criteria` list -- each entry has `key`, `label`, `kind` ("behavioral" or "content"), and
+`guidance_text` describing what to look for. `guidance_text` for a "behavioral" criterion describes a trait
+observable across the WHOLE transcript (e.g. clarity of thought, organization, communication), not tied to any one
+question -- judge it holistically across everything the candidate said. If `criteria` is empty (a legacy session or
+a job with nothing configured), produce an empty criterion_scores list -- still fill in overall_score, recommendation,
+evidence_sufficiency, summary, and detailed_overview from the transcript/question_records/technical_submission as
+before; an empty criterion_scores list is not an error.
 
 GRADED, PARTIAL-CREDIT-AWARE SCORING (per-question rubric):
 The evidence includes `question_eval_criteria`, a map of question_id -> the HR-authored grading rubric for that
 specific question, alongside `question_records` (which question was answered, in what outcome) and
 `technical_submission` (the CODING section's submitted code/pseudo-code, if any). Each question's rubric keeps its
 own native shape by section type -- do NOT reshape one type's rubric into another's:
+This per-question, content-correctness rubric is independent of the `criteria` list above (today `criteria` only
+ever carries HR-configured behavioral criteria, none of which are per-question) -- feed what you learn from it into
+overall_score/summary/detailed_overview/strengths/areas_for_improvement, not into a criterion_scores entry, unless a
+"content"-kind criterion in `criteria` explicitly names that exact question or section (rare today, more common once
+HR configures content criteria in a future phase).
 - VERBAL questions: rubric has "excellent"/"good"/"adequate"/"poor" band descriptions. Judge which band the
-  candidate's actual answer (from the transcript) falls into, and say so as part of that question's contribution
-  to the relevant category (typically `communication`, `technical`, or `background` depending on the question).
+  candidate's actual answer (from the transcript) falls into, and say so in the overall narrative.
 - CODING questions: rubric has "time_complexity", "space_complexity", "edge_cases" (array), and "rubric" (grading
   guidance) -- NOT excellent/good/adequate/poor bands, and do not force it into that shape. Score the
   `technical_submission` against these fields directly and give PARTIAL CREDIT: a submission with the right overall

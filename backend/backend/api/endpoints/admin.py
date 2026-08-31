@@ -16,13 +16,18 @@ import secrets
 
 from backend.api.deps import get_current_admin
 from backend.db.session import get_db
+from backend.core.config import settings
 from backend.models.interview import (
     Job,
     InterviewDefinition,
     InterviewSection,
     InterviewQuestion,
     InterviewSession,
+    AssessmentCriterion,
+    Evaluation,
+    Score,
 )
+from backend.models.profile import CandidateProfile
 from backend.services.candidate_profile_service import get_or_create_candidate_profile
 from backend.services.guest_jwt_service import mint_guest_jwt
 from backend.api.endpoints.livekit import generate_livekit_token, TokenRequest
@@ -44,6 +49,15 @@ from backend.schemas.admin import (
     QuestionGenerateRequest,
     validate_question_config,
     validate_section_config,
+    CriterionScoreResponse,
+    EvaluationDetailResponse,
+    JobCandidateRow,
+    JobResultsResponse,
+    SuggestedOverrideRequest,
+    SuggestedOverrideResponse,
+    AssessmentCriterionResponse,
+    CriteriaToggleRequest,
+    JobStatusUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -243,16 +257,65 @@ async def delete_job(
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(get_current_admin),
 ):
-    """Delete a DRAFT job. PUBLISHED jobs cannot be deleted (409)."""
+    """Delete a job. Will cascade delete definitions, criteria, sessions, and evaluations."""
     job = await _get_job_or_404(db, job_id)
-    if job.status != "DRAFT":
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot delete a PUBLISHED job; it may have active invitations or sessions",
-        )
     await db.delete(job)
     await db.commit()
     return None
+
+
+@router.patch("/jobs/{job_id}/status", response_model=JobResponse)
+async def update_job_status(
+    job_id: UUID,
+    payload: JobStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Change job status (e.g. to PAUSED, DRAFT, PUBLISHED)."""
+    job = await _get_job_or_404(db, job_id)
+    
+    if payload.status.value == job.status:
+        return job
+        
+    if payload.status.value == "DRAFT":
+        # Only allow unpublishing if no sessions exist to protect schema integrity
+        from backend.models.session import InterviewSession
+        stmt = select(func.count(InterviewSession.id)).where(InterviewSession.job_id == job_id)
+        result = await db.execute(stmt)
+        if result.scalar() > 0:
+            raise HTTPException(
+                status_code=409, 
+                detail="Cannot unpublish a job that has active or completed candidates. Pause it instead."
+            )
+            
+    if payload.status.value == "PUBLISHED":
+        # Validate completeness before publishing (reusing publish_job rules)
+        sections_result = await db.execute(
+            select(InterviewSection)
+            .options(selectinload(InterviewSection.questions))
+            .where(InterviewSection.definition_id == job.definition.id)
+        )
+        sections = sections_result.scalars().all()
+        empty_sections = [s.section_type for s in sections if not s.questions]
+        if empty_sections:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot publish: section(s) with no questions: {', '.join(empty_sections)}",
+            )
+        unbudgeted_sections = [
+            s.section_type for s in sections
+            if not (s.config or {}).get("time_budget_minutes")
+        ]
+        if unbudgeted_sections:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot publish: section(s) with no time budget set: {', '.join(unbudgeted_sections)}",
+            )
+
+    job.status = payload.status.value
+    await db.commit()
+    await db.refresh(job)
+    return job
 
 
 @router.post("/jobs/{job_id}/publish", response_model=JobResponse)
@@ -739,3 +802,329 @@ async def regenerate_question(
     await db.commit()
     await db.refresh(question)
     return question
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# HR Results Dashboard (Phase 8D)
+# ══════════════════════════════════════════════════════════════════════════
+
+@router.get("/interviews/{session_id}/result", response_model=EvaluationDetailResponse)
+async def get_candidate_result(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Per-candidate detailed result: the legacy final_result JSONB's
+    transcript/question_records/technical_submission (read-only, unchanged)
+    combined with the normalized Evaluation/Score rows (Phase 8C) in one
+    response. Distinct from GET /api/v1/interviews/{id}/result (Plan 11B's
+    candidate-access lockdown) -- that endpoint and its access-control logic
+    are untouched by this one."""
+    result = await db.execute(
+        select(InterviewSession)
+        .options(selectinload(InterviewSession.profile))
+        .where(InterviewSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found.")
+
+    job_title = None
+    if session.job_id:
+        job_result = await db.execute(select(Job.title).where(Job.id == session.job_id))
+        job_title = job_result.scalar_one_or_none()
+
+    final_result = session.final_result or {}
+
+    eval_result = await db.execute(
+        select(Evaluation)
+        .options(selectinload(Evaluation.scores).selectinload(Score.criterion))
+        .where(Evaluation.session_id == session_id)
+    )
+    evaluation = eval_result.scalar_one_or_none()
+
+    if evaluation is None:
+        # Distinct from the 404 above -- the session is real, this is a
+        # genuine, non-hypothetical state (8A/8C found real examples): a
+        # COMPLETED session whose evaluation write hasn't landed yet, or
+        # failed independently of save_completion()'s own final_result write.
+        raise HTTPException(
+            status_code=409,
+            detail="This session has not been evaluated yet (no Evaluation row exists).",
+        )
+
+    scores = [
+        CriterionScoreResponse(
+            criterion_key=s.criterion_key,
+            criterion_label=s.criterion.label if s.criterion else None,
+            kind=s.criterion.kind if s.criterion else None,
+            score=s.score,
+            overview=s.overview,
+            strengths=s.strengths or [],
+            improvements=s.improvements or [],
+            evidence_reference=s.evidence_reference,
+        )
+        for s in evaluation.scores
+    ]
+
+    return EvaluationDetailResponse(
+        session_id=session.id,
+        status=session.status,
+        completed_at=session.completed_at,
+        candidate_name=session.profile.full_name if session.profile else None,
+        candidate_email=session.profile.email if session.profile else None,
+        job_title=job_title,
+        transcript=final_result.get("transcript") or [],
+        question_records=final_result.get("question_records") or [],
+        technical_submission=final_result.get("technical_submission") or {},
+        overall_score=evaluation.overall_score,
+        recommendation=evaluation.recommendation,
+        evidence_sufficiency=evaluation.evidence_sufficiency,
+        summary=evaluation.summary,
+        detailed_overview=evaluation.detailed_overview,
+        scores=scores,
+        override_suggested=evaluation.override_suggested,
+        override_reason=evaluation.override_reason,
+    )
+
+
+@router.get("/jobs/{job_id}/results", response_model=JobResultsResponse)
+async def get_job_results(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Per-job aggregate stats + candidate list. `suggested` is computed
+    per-request from evidence_sufficiency + recommendation (8B mechanism B),
+    unless override_suggested is set (Phase 8F — manual override takes
+    precedence over computed)."""
+    job = await _get_job_or_404(db, job_id)
+
+    result = await db.execute(
+        select(InterviewSession, CandidateProfile, Evaluation)
+        .outerjoin(CandidateProfile, InterviewSession.candidate_profile_id == CandidateProfile.id)
+        .outerjoin(Evaluation, Evaluation.session_id == InterviewSession.id)
+        .where(InterviewSession.job_id == job_id)
+        .order_by(InterviewSession.created_at.desc())
+    )
+    rows = result.all()
+
+    floor = settings.SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR
+    completed_count = 0
+    in_progress_count = 0
+    suggested_count = 0
+    candidates: list[JobCandidateRow] = []
+
+    for session, profile, evaluation in rows:
+        if session.status == "COMPLETED":
+            completed_count += 1
+        elif session.status != "TERMINATED":
+            in_progress_count += 1
+
+        computed_suggested = bool(
+            evaluation
+            and evaluation.recommendation == "Hire"
+            and evaluation.evidence_sufficiency is not None
+            and evaluation.evidence_sufficiency >= floor
+        )
+        # Phase 8F: manual override takes precedence when set.
+        override_val = evaluation.override_suggested if evaluation else None
+        suggested = override_val if override_val is not None else computed_suggested
+        if suggested:
+            suggested_count += 1
+
+        candidates.append(JobCandidateRow(
+            session_id=session.id,
+            candidate_name=profile.full_name if profile else None,
+            candidate_email=profile.email if profile else None,
+            status=session.status,
+            completed_at=session.completed_at,
+            overall_score=evaluation.overall_score if evaluation else None,
+            recommendation=evaluation.recommendation if evaluation else None,
+            evidence_sufficiency=evaluation.evidence_sufficiency if evaluation else None,
+            suggested=suggested,
+            override_suggested=override_val,
+        ))
+
+    return JobResultsResponse(
+        job_id=job.id,
+        job_title=job.title,
+        total_candidates=len(candidates),
+        completed_count=completed_count,
+        in_progress_count=in_progress_count,
+        suggested_count=suggested_count,
+        candidates=candidates,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Manual Override (Phase 8F — Part 1)
+# ══════════════════════════════════════════════════════════════════════════
+
+@router.patch("/interviews/{session_id}/suggested-override", response_model=SuggestedOverrideResponse)
+async def set_suggested_override(
+    session_id: UUID,
+    payload: SuggestedOverrideRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Manually override a candidate's computed 'suggested' status.
+    override_suggested=True/False sets an explicit override;
+    override_suggested=None clears it back to 'use computed value'.
+    Both the computed and overridden values remain visible/auditable."""
+    eval_result = await db.execute(
+        select(Evaluation).where(Evaluation.session_id == session_id)
+    )
+    evaluation = eval_result.scalar_one_or_none()
+    if evaluation is None:
+        # Check whether the session itself exists.
+        sess_result = await db.execute(
+            select(InterviewSession.id).where(InterviewSession.id == session_id)
+        )
+        if sess_result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Interview session not found.")
+        raise HTTPException(
+            status_code=409,
+            detail="This session has not been evaluated yet (no Evaluation row exists).",
+        )
+
+    evaluation.override_suggested = payload.override_suggested
+    evaluation.override_reason = payload.reason
+    await db.commit()
+    await db.refresh(evaluation)
+
+    # Compute the "would-be suggested" value so the UI can show both.
+    floor = settings.SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR
+    computed_suggested = bool(
+        evaluation.recommendation == "Hire"
+        and evaluation.evidence_sufficiency is not None
+        and evaluation.evidence_sufficiency >= floor
+    )
+
+    return SuggestedOverrideResponse(
+        session_id=session_id,
+        override_suggested=evaluation.override_suggested,
+        override_reason=evaluation.override_reason,
+        computed_suggested=computed_suggested,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Assessment Criteria Authoring (Phase 8E)
+# ══════════════════════════════════════════════════════════════════════════
+
+@router.get("/jobs/{job_id}/criteria", response_model=list[AssessmentCriterionResponse])
+async def get_job_criteria(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Returns the behavioral assessment criteria for this job.
+    If job-scoped rows exist, returns those. Otherwise derives the state
+    from the template tier (all templates enabled by default for display
+    purposes — this mirrors _resolve_criteria_for_job's fallback)."""
+    job = await _get_job_or_404(db, job_id)
+
+    # Check for job-scoped rows first.
+    result = await db.execute(
+        select(AssessmentCriterion).where(
+            AssessmentCriterion.job_id == job_id,
+            AssessmentCriterion.section_id.is_(None),
+        )
+    )
+    job_criteria = list(result.scalars().all())
+
+    if job_criteria:
+        return [
+            AssessmentCriterionResponse(
+                key=c.key, label=c.label, kind=c.kind,
+                enabled=c.enabled, guidance_text=c.guidance_text,
+                source=c.source,
+            )
+            for c in job_criteria
+        ]
+
+    # No job-scoped rows yet — return templates with enabled=True (the
+    # default state before any explicit configuration).
+    template_result = await db.execute(
+        select(AssessmentCriterion).where(
+            AssessmentCriterion.job_id.is_(None),
+            AssessmentCriterion.section_id.is_(None),
+        )
+    )
+    templates = list(template_result.scalars().all())
+    return [
+        AssessmentCriterionResponse(
+            key=t.key, label=t.label, kind=t.kind,
+            enabled=True, guidance_text=t.guidance_text,
+            source="TEMPLATE",
+        )
+        for t in templates
+    ]
+
+
+@router.put("/jobs/{job_id}/criteria", response_model=list[AssessmentCriterionResponse])
+async def update_job_criteria(
+    job_id: UUID,
+    payload: CriteriaToggleRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Set which behavioral criteria are enabled for this job.
+    Upserts job-scoped AssessmentCriterion rows cloned from templates.
+    DRAFT-only — 409 on a published job, matching every other mutation
+    endpoint's existing _require_draft() pattern."""
+    job = await _get_job_or_404(db, job_id)
+    if job.status != "DRAFT":
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot modify assessment criteria on a published job.",
+        )
+
+    # Load all behavioral templates.
+    template_result = await db.execute(
+        select(AssessmentCriterion).where(
+            AssessmentCriterion.job_id.is_(None),
+            AssessmentCriterion.section_id.is_(None),
+            AssessmentCriterion.kind == "behavioral",
+        )
+    )
+    templates = list(template_result.scalars().all())
+
+    # Delete existing job-scoped behavioral criteria and re-insert.
+    # (Simpler and safer than per-row upserts for a small, bounded set.)
+    from sqlalchemy import delete
+    await db.execute(
+        delete(AssessmentCriterion).where(
+            AssessmentCriterion.job_id == job_id,
+            AssessmentCriterion.section_id.is_(None),
+            AssessmentCriterion.kind == "behavioral",
+        )
+    )
+
+    # Clone from templates, respecting the enabled_keys list.
+    new_rows = []
+    for t in templates:
+        row = AssessmentCriterion(
+            job_id=job_id,
+            section_id=None,
+            key=t.key,
+            label=t.label,
+            kind=t.kind,
+            enabled=(t.key in payload.enabled_keys),
+            guidance_text=t.guidance_text,
+            source="TEMPLATE",
+        )
+        db.add(row)
+        new_rows.append(row)
+
+    await db.commit()
+
+    return [
+        AssessmentCriterionResponse(
+            key=r.key, label=r.label, kind=r.kind,
+            enabled=r.enabled, guidance_text=r.guidance_text,
+            source=r.source,
+        )
+        for r in new_rows
+    ]

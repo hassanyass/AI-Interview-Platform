@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { InterviewProvider } from '../stores/InterviewContext'
 import { InterviewWorkspace } from '../features/interview-session/InterviewWorkspace'
 import { IntroScreen } from '../features/interview-session/IntroScreen'
+import { SessionEndedScreen } from '../features/interview-session/SessionEndedScreen'
 import { getInterviewSession, getLiveKitToken, terminateInterview } from '../services/api/interviews'
 import type { InterviewSessionResponse } from '../types/api'
 import '@livekit/components-styles'
@@ -32,6 +33,14 @@ export default function InterviewSession() {
   // and context are still visible), not bounce to the full-page Connection
   // Error screen the way the initial-load failure does.
   const [introError, setIntroError] = useState('')
+  // Set only by init()'s initial-load branch below, for a session that was
+  // ALREADY COMPLETED before this page ever connected to LiveKit. Kept
+  // separate from session.status itself because markCompleted() (passed to
+  // InterviewWorkspace as onCompleted) also flips session.status to
+  // COMPLETED once a LIVE session finishes — that path must keep rendering
+  // InterviewWorkspace (which shows the same closing screen internally,
+  // still mounted inside LiveKitRoom) unchanged, not get redirected here.
+  const [loadedAlreadyCompleted, setLoadedAlreadyCompleted] = useState(false)
   const markCompleted = useCallback(() => {
     setSession((current) => current && current.status !== "COMPLETED" ? { ...current, status: "COMPLETED" } : current)
   }, [])
@@ -44,13 +53,36 @@ export default function InterviewSession() {
         // Fetch session status
         const sess = await getInterviewSession(id);
 
-        // If it's already COMPLETED, go to results
+        setSession(sess);
+
+        // Audit fix (2026-08-27): a session that's already COMPLETED on
+        // initial load (candidate reloads/reconnects after the interview
+        // finished) used to navigate to `/interviews/${id}/result` — a
+        // route that was never registered in App.tsx, so it fell through
+        // the catch-all into /admin, which then bounced a guest (no
+        // Supabase `user`) to /login. Render Plan 11's real closing screen
+        // directly instead (same component the live-completion path
+        // renders via InterviewWorkspace's `isCompleted` branch — see
+        // SessionEndedScreen's own docstring), and stop here: deliberately
+        // skip getLiveKitToken/LiveKitRoom entirely for this case, rather
+        // than falling through to the normal "resume" branch below and
+        // reconnecting to a finished room. That reconnect would still work
+        // for the phase-COMPLETED short-circuit inside InterviewWorkspace's
+        // `isCompleted` (which already includes `session.status ===
+        // "COMPLETED"` as one of its OR terms, before any live state ever
+        // arrives), but it would also cause a real, separate side effect:
+        // voice_adapter.py's start(resume=True) branch unconditionally
+        // speaks "Welcome back! We're continuing from the {phase} phase.
+        // Please go ahead." with no COMPLETED-phase exclusion — nonsensical
+        // for a session that's actually finished, and audible via the still-
+        // mounted RoomAudioRenderer even though nothing renders it. Not
+        // fixing that here (out of today's scope, and voice_adapter.py is
+        // frozen) — avoiding the reconnect path entirely sidesteps it.
         if (sess.status === "COMPLETED") {
-          navigate(`/interviews/${id}/result`);
+          setLoadedAlreadyCompleted(true);
+          setLoading(false);
           return;
         }
-
-        setSession(sess);
 
         if (sess.status === "CREATED") {
           // Fresh session — show the intro screen and defer the actual
@@ -175,6 +207,10 @@ export default function InterviewSession() {
     );
   }
 
+  if (loadedAlreadyCompleted && session) {
+    return <SessionEndedScreen session={session} />;
+  }
+
   if (!session || !livekitToken || !livekitUrl) {
     return null;
   }
@@ -182,7 +218,15 @@ export default function InterviewSession() {
   return (
     <LiveKitRoom
       video={false}
-      audio={true}
+      // Audit fix (2026-08-27): was `audio={true}` — the mic started LIVE
+      // the instant the room connected, before the candidate had any
+      // chance to react. If the agent was slow to join/greet, STT was
+      // already processing whatever ambient sound was present in that
+      // window, and a misheard/hallucinated "answer" could get treated as
+      // real candidate speech before the interview had genuinely begun.
+      // Starting muted (candidate explicitly unmutes via the existing mic
+      // button once they're ready) closes that window entirely.
+      audio={false}
       token={livekitToken}
       serverUrl={livekitUrl}
       connect={true}

@@ -3,13 +3,15 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { RoleProvider } from './context/RoleContext'
 import AuthPage from './pages/Auth'
 import InterviewSession from './pages/InterviewSession'
-import FinalResult from './features/results/FinalResult'
+
 import InvitePage from './pages/InvitePage'
 import ApplyPage from './pages/ApplyPage'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
 import JobCreatePage from './routes/admin/JobCreatePage'
 import JobDetailPage from './routes/admin/JobDetailPage'
+import JobResultsPage from './routes/admin/JobResultsPage'
+import CandidateResultPage from './routes/admin/CandidateResultPage'
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -56,13 +58,14 @@ function App() {
                 <Route path="jobs" element={<JobsListPage />} />
                 <Route path="jobs/new" element={<JobCreatePage />} />
                 <Route path="jobs/:id" element={<JobDetailPage />} />
+                <Route path="jobs/:id/results" element={<JobResultsPage />} />
+                <Route path="jobs/:jobId/results/:sessionId" element={<CandidateResultPage />} />
                 <Route path="settings" element={<div>Settings Placeholder</div>} />
               </Route>
 
               {/* Protected Routes (Candidate Facing) */}
               <Route path="/" element={<Navigate to="/admin" replace />} />
               <Route path="/interviews/:id" element={<GuestOrAuthRoute><InterviewSession /></GuestOrAuthRoute>} />
-              <Route path="/interviews/:id/result" element={<GuestOrAuthRoute><FinalResult /></GuestOrAuthRoute>} />
               
               {/* Catch all */}
               <Route path="*" element={<Navigate to="/admin" replace />} />
