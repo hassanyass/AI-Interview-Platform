@@ -12,5 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source
 COPY . .
 
+COPY start.sh .
+RUN chmod +x start.sh
+
 # Run Agent
-CMD ["python", "-m", "app.main"]
+CMD ["./start.sh"]
