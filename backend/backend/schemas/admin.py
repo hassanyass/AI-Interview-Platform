@@ -334,6 +334,42 @@ class CriterionScoreResponse(BaseModel):
     strengths: List[str] = []
     improvements: List[str] = []
     evidence_reference: Optional[str] = None
+    # Scoring-mechanism upgrade: the weight this criterion carried when
+    # weighted_score was computed (resolved via the same criterion join as
+    # criterion_label/kind above) -- lets the dashboard show the arithmetic
+    # behind the weighted score, not just its result. None under the same
+    # circumstances criterion_label is None (criterion row later deleted).
+    weight: Optional[int] = None
+
+
+class QuestionRecordDetail(BaseModel):
+    """One question_record from the legacy final_result JSONB, enriched
+    with the actual question text resolved from InterviewQuestion -- the
+    raw record only ever carried question_id, which is useless for an HR
+    reviewer trying to see what was actually asked. title/text/competency
+    are None for a question_id the join couldn't resolve (e.g. a legacy
+    pre-Phase-7 session using ephemeral, never-persisted questions)."""
+    question_id: str
+    title: Optional[str] = None
+    text: Optional[str] = None
+    competency: Optional[str] = None
+    order_index: Optional[int] = None
+    outcome: str
+    hints_used: int = 0
+    followups_used: int = 0
+    clarifications_used: int = 0
+
+
+class IntegrityEventResponse(BaseModel):
+    """One flagged moment from the integrity timeline -- see admin.py's
+    _get_integrity_events for the exact 5-type allowlist and the
+    video_offset_seconds approximation this carries."""
+    event_type: str  # "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED"
+    phase: Optional[str] = None
+    metadata: dict = {}
+    # Approximate seconds into the session recording -- None if the
+    # session never recorded a started_at (legacy/never-started).
+    video_offset_seconds: Optional[float] = None
 
 
 class EvaluationDetailResponse(BaseModel):
@@ -346,7 +382,7 @@ class EvaluationDetailResponse(BaseModel):
 
     # From the legacy final_result JSONB -- read-only, unchanged.
     transcript: List[dict] = []
-    question_records: List[dict] = []
+    question_records: List[QuestionRecordDetail] = []
     technical_submission: dict = {}
 
     # From the normalized Evaluation/Score tables (Phase 8C).
@@ -356,10 +392,29 @@ class EvaluationDetailResponse(BaseModel):
     summary: Optional[str] = None
     detailed_overview: Optional[str] = None
     scores: List[CriterionScoreResponse] = []
+    # Scoring-mechanism upgrade: the code-computed weighted aggregate of
+    # `scores` above, deliberately separate from overall_score (the LLM's
+    # own independent holistic judgment) -- see CURRENT_DECISIONS.md's
+    # "Scoring mechanism upgrade" entry. None when no enabled criterion had
+    # a scoreable result to average, same convention as overall_score.
+    weighted_score: Optional[float] = None
 
     # Phase 8F: manual override (None = no override, use computed).
     override_suggested: Optional[bool] = None
     override_reason: Optional[str] = None
+
+    # PR-C/PR-F (docs/proctoring-architecture.md): short-lived signed R2 GET
+    # URL for the session's recording, computed fresh on every request
+    # (never stored) -- None if no recording exists for this session
+    # (R2 not configured when the interview ran, camera denied, or Egress
+    # never started/failed). See admin.py's get_candidate_result.
+    recording_url: Optional[str] = None
+
+    # Aggregation/dashboard pass (2026-09-02): every flagged moment for this
+    # session -- fullscreen/tab/focus events (PR-B) and face-presence events
+    # (PR-D). Empty list is a legitimate, common state (nothing was ever
+    # flagged), not an error.
+    integrity_events: List[IntegrityEventResponse] = []
 
 
 class JobCandidateRow(BaseModel):
@@ -376,6 +431,11 @@ class JobCandidateRow(BaseModel):
     # override_suggested is not None, it takes precedence over computed.
     suggested: bool = False
     override_suggested: Optional[bool] = None
+    # Aggregation/dashboard pass: option A per the confirmed decision --
+    # ANY integrity event at all (no severity/count threshold) means
+    # flagged. Surfaces evidence for HR to judge, same philosophy as the
+    # scoring override rather than a system pre-judging via a threshold.
+    flagged_for_review: bool = False
 
 
 class JobResultsResponse(BaseModel):
@@ -385,6 +445,7 @@ class JobResultsResponse(BaseModel):
     completed_count: int
     in_progress_count: int
     suggested_count: int
+    flagged_count: int = 0
     candidates: List[JobCandidateRow] = []
 
 
@@ -415,10 +476,25 @@ class AssessmentCriterionResponse(BaseModel):
     enabled: bool
     guidance_text: Optional[str] = None
     source: str  # "TEMPLATE" | "CUSTOM"
+    # Scoring-mechanism upgrade: 1-10, default 5 (equal weighting).
+    weight: int = 5
+
+
+class CriterionWeightSetting(BaseModel):
+    """One criterion's configured state for a job -- replaces the previous
+    bare enabled_keys list now that weight needs to travel alongside
+    enabled/disabled in the same save."""
+    key: str
+    enabled: bool
+    weight: int = Field(5, ge=1, le=10)
 
 
 class CriteriaToggleRequest(BaseModel):
-    """The set of behavioral template keys to enable for this job.
-    Any template key NOT in this list is disabled."""
-    enabled_keys: List[str]
+    """Per-criterion enabled/weight settings for this job's behavioral
+    criteria. Any template key NOT present in this list is disabled.
+    Independent per-criterion weights, renormalized at compute time
+    (submit_evaluation) -- deliberately NOT required to sum to any fixed
+    total, so enabling/disabling a criterion never forces re-balancing
+    the others."""
+    criteria: List[CriterionWeightSetting]
 

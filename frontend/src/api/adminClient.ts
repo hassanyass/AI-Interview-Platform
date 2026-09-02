@@ -90,6 +90,16 @@ export interface AssessmentCriterion {
   enabled: boolean;
   guidance_text?: string;
   source: string;
+  /** Scoring-mechanism upgrade: 1-10, default 5 (equal weighting). */
+  weight: number;
+}
+
+/** Payload shape for PUT /jobs/{id}/criteria -- one entry per criterion the
+ * editor is saving. A key not present in this list is treated as disabled. */
+export interface CriterionWeightSetting {
+  key: string;
+  enabled: boolean;
+  weight: number;
 }
 
 export interface CriterionScore {
@@ -101,6 +111,25 @@ export interface CriterionScore {
   strengths: string[];
   improvements: string[];
   evidence_reference?: string;
+  /** The weight this criterion carried when weighted_score was computed. */
+  weight?: number;
+}
+
+export interface TranscriptMessage {
+  speaker: "agent" | "candidate";
+  text: string;
+}
+
+export interface QuestionRecordDetail {
+  question_id: string;
+  title?: string;
+  text?: string;
+  competency?: string;
+  order_index?: number;
+  outcome: string;
+  hints_used: number;
+  followups_used: number;
+  clarifications_used: number;
 }
 
 export interface EvaluationDetail {
@@ -110,17 +139,40 @@ export interface EvaluationDetail {
   candidate_name?: string;
   candidate_email?: string;
   job_title?: string;
-  transcript: any[];
-  question_records: any[];
-  technical_submission: any;
+  transcript: TranscriptMessage[];
+  question_records: QuestionRecordDetail[];
+  technical_submission: { code?: string; language?: string } & Record<string, unknown>;
   overall_score?: number;
   recommendation?: string;
   evidence_sufficiency?: number;
   summary?: string;
   detailed_overview?: string;
   scores: CriterionScore[];
+  /** Scoring-mechanism upgrade: code-computed weighted aggregate of
+   *  `scores`, deliberately separate from overall_score (the LLM's own
+   *  independent holistic judgment). undefined/null when no enabled
+   *  criterion had a scoreable result to average. */
+  weighted_score?: number;
   override_suggested?: boolean;
   override_reason?: string;
+  /** Short-lived presigned R2 GET URL, computed fresh on every fetch —
+   *  never cache/store this beyond the current page load. undefined/null
+   *  if no recording exists for this session (R2 not configured when the
+   *  interview ran, camera denied, or Egress never started/failed). */
+  recording_url?: string;
+  /** Aggregation/dashboard pass: every flagged moment for this session
+   *  (PR-B fullscreen/tab/focus events + PR-D face-presence events).
+   *  Empty is a legitimate, common state, not an error. */
+  integrity_events: IntegrityEvent[];
+}
+
+export interface IntegrityEvent {
+  event_type: "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED";
+  phase?: string;
+  metadata: Record<string, unknown>;
+  /** Approximate seconds into the recording -- see backend's
+   *  _get_integrity_events docstring for why this isn't frame-exact. */
+  video_offset_seconds?: number;
 }
 
 export interface JobCandidateRow {
@@ -134,6 +186,8 @@ export interface JobCandidateRow {
   evidence_sufficiency?: number;
   suggested: boolean;
   override_suggested?: boolean;
+  /** Option A (confirmed): any integrity event at all, no threshold. */
+  flagged_for_review: boolean;
 }
 
 export interface JobResultsResponse {
@@ -143,6 +197,7 @@ export interface JobResultsResponse {
   completed_count: number;
   in_progress_count: number;
   suggested_count: number;
+  flagged_count: number;
   candidates: JobCandidateRow[];
 }
 
@@ -272,10 +327,10 @@ export const adminClient = {
     return fetchApi<AssessmentCriterion[]>(`/api/v1/admin/jobs/${jobId}/criteria`);
   },
 
-  updateJobCriteria: async (jobId: string, enabledKeys: string[]): Promise<AssessmentCriterion[]> => {
+  updateJobCriteria: async (jobId: string, settings: CriterionWeightSetting[]): Promise<AssessmentCriterion[]> => {
     return fetchApi<AssessmentCriterion[]>(`/api/v1/admin/jobs/${jobId}/criteria`, {
       method: "PUT",
-      data: { enabled_keys: enabledKeys },
+      data: { criteria: settings },
     });
   },
 

@@ -183,9 +183,10 @@ This document captures the exact schema and endpoints at the start of Phase 0, b
 - `enabled` (Boolean, default True)
 - `guidance_text` (Text, Nullable)
 - `source` (String, default "CUSTOM") # "TEMPLATE" | "CUSTOM"
+- `weight` (Integer, default 5) — scoring-mechanism upgrade (2026-09-01): relative importance used to compute `evaluations.weighted_score`; 1-10, independent per-criterion values renormalized at compute time (not required to sum to any fixed total)
 - `created_at` (DateTime)
 - Unique: `(job_id, section_id, key)`; partial unique index on `key` where `job_id IS NULL AND section_id IS NULL` (the template tier)
-- Seeded with 5 TEMPLATE rows (behavioral): `clarity_of_thought`, `organization_structure`, `communication`, `confidence_composure`, `professionalism`
+- Seeded with 8 TEMPLATE rows (behavioral): `clarity_of_thought`, `organization_structure`, `communication`, `confidence_composure`, `professionalism` (Phase 8C) + `problem_solving_approach`, `adaptability_to_feedback`, `collaboration_teamwork` (scoring-mechanism upgrade, 2026-09-01)
 
 ### `evaluations`
 - `id` (UUID, PK)
@@ -195,9 +196,11 @@ This document captures the exact schema and endpoints at the start of Phase 0, b
 - `evidence_sufficiency` (Float, Nullable)
 - `summary` (Text, Nullable)
 - `detailed_overview` (Text, Nullable)
+- `weighted_score` (Float, Nullable) — scoring-mechanism upgrade (2026-09-01): code-computed weighted aggregate of this evaluation's `scores`, deliberately separate from `overall_score` (the LLM's own independent holistic judgment). Computed once by `submit_evaluation` using the criterion weights in effect at that moment, then frozen — never live-recomputed. Null when no enabled criterion had a non-null score to average.
 - `created_at` (DateTime)
 - `updated_at` (DateTime, Nullable)
 - Additive only — `interview_sessions.final_result` (JSONB) is untouched and stays the sole record for every pre-8C session (no backfill).
+- **Doc debt, not part of this change:** this section doesn't yet list `override_suggested`/`override_reason` (Phase 8F) either — flagging rather than silently backfilling unrelated history in this same edit.
 
 ### `scores`
 - `id` (UUID, PK)

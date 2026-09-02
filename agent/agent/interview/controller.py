@@ -210,7 +210,7 @@ class InterviewController:
 
     def _transition_to(self, target_phase: InterviewPhase):
         if is_transition_valid(self.context.current_phase, target_phase):
-            logger.info(f"Phase transition: {self.context.current_phase.value} → {target_phase.value}")
+            logger.info(f"Phase transition: {self.context.current_phase.value} -> {target_phase.value}")
             self.context.current_phase = target_phase
             
             if target_phase in (InterviewPhase.TECHNICAL_INTRO, InterviewPhase.TECHNICAL):
@@ -675,6 +675,32 @@ class InterviewController:
                 should_transition=False,
                 detected_candidate_control=CandidateControlAction.END_INTERVIEW,
             )
+
+        # PR-B/PR-D (docs/proctoring-architecture.md): browser-detected
+        # integrity telemetry — fullscreen-exit-past-grace, tab-hidden,
+        # window-blurred (PR-B), plus PR-D's face-presence signals
+        # (2026-09-02, signed-off one-line extension of this existing
+        # branch — no new logic, the client-side useFaceDetectionMonitor.ts
+        # already debounces/edge-triggers before this ever fires).
+        # Purely additive: logged through the exact same InterviewEvent
+        # mechanism/sequence counter every other in-session event already
+        # uses (see _transition_out_of_waiting_room's WAITING_ROOM_AUTO_
+        # PROCEED for the identical pattern), no LLM turn, no state change,
+        # no ack — these feed the later aggregate flag, not a verdict.
+        # Defensively no-op post-COMPLETED (a late/duplicate message after
+        # teardown), same spirit as the END_INTERVIEW special case above.
+        if command in ("FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED", "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED"):
+            if self.context.current_phase == InterviewPhase.COMPLETED:
+                return None
+            metadata = payload.get("payload") if isinstance(payload, dict) else None
+            await self.persistence.save_event(
+                session_id=self.context.session_id,
+                sequence=self.next_event_seq(),
+                event_type=command,
+                phase=self.context.current_phase.value,
+                metadata=metadata if isinstance(metadata, dict) else None,
+            )
+            return None
 
         if command == "SUBMIT_CODE":
             # Phase 9C: the ordered core-question flow runs a CODING question
@@ -1652,26 +1678,53 @@ class InterviewController:
         allowed_actions = get_allowed_actions(phase)
         candidate_controls = get_allowed_candidate_controls(phase)
 
+        # Whether there's a real name to say out loud at all. No real name
+        # covers two lazy-create fallbacks: the generic placeholder
+        # full_name written by get_current_candidate_profile_id (backend
+        # deps.py), and a bare email address written by
+        # get_or_create_candidate_profile's no-name fallback (an invitation
+        # created from just an email).
+        #
+        # Deliberately NOT done by handing the LLM a "Candidate" sentinel
+        # and an instruction to skip it when it sees that exact string — an
+        # earlier version did that and the model didn't reliably comply (it
+        # would say the word "Candidate" out loud mid-sentence, including in
+        # Arabic interviews). Building two fully-formed instruction strings
+        # in Python instead means the word never appears in the prompt at
+        # all when there's no real name, so there's nothing for the model to
+        # misread or ignore.
+        raw_full_name = (self.context.candidate_profile.get("full_name") or "").strip()
+        has_real_name = bool(raw_full_name) and raw_full_name != "Candidate" and "@" not in raw_full_name
+        candidate_name = raw_full_name if has_real_name else ""
+        candidate_context_line = f"Candidate name: {candidate_name}\n" if has_real_name else ""
+
+        # profile_str (embedded in BACKGROUND/TECHNICAL/CORE_* prompts below)
+        # is a raw JSON dump of the candidate profile — without this, a
+        # placeholder/email full_name would leak into those phases' context
+        # the same way it used to leak into BRIEFING/WELCOME/CLOSING.
+        profile_for_prompt = dict(self.context.candidate_profile)
+        if not has_real_name:
+            profile_for_prompt.pop("full_name", None)
         profile_str = truncate_prompt_text(
-            json.dumps(self.context.candidate_profile, indent=2, default=str),
+            json.dumps(profile_for_prompt, indent=2, default=str),
             MAX_PROFILE_CHARS,
         )
-        # Normalize to the "Candidate" sentinel whenever there's no real name
-        # to say out loud: either the generic placeholder full_name written
-        # by get_current_candidate_profile_id's lazy-create path (backend
-        # deps.py), or a bare email address written by
-        # get_or_create_candidate_profile's no-name fallback (an invitation
-        # created from just an email). Every {candidate_name} prompt site
-        # below is written to skip the name when it sees this exact string.
-        raw_full_name = (self.context.candidate_profile.get("full_name") or "").strip()
-        candidate_name = raw_full_name if raw_full_name and raw_full_name != "Candidate" and "@" not in raw_full_name else "Candidate"
 
         system_prompt = ""
 
         if phase == InterviewPhase.BRIEFING:
+            greeting_instruction = (
+                f'Greet the candidate warmly BY THEIR NAME, "{candidate_name}", as the very '
+                f'first thing you say (e.g. "Hi {candidate_name}, ...").'
+                if has_real_name else
+                'Greet the candidate warmly — you do not know their name, so greet them '
+                'generically (e.g. "Hi there," / "Welcome,") without inventing or using any '
+                'name or placeholder word for them.'
+            )
             system_prompt = BRIEFING_PROMPT.format(
                 identity=_INTERVIEWER_IDENTITY,
-                candidate_name=candidate_name,
+                greeting_instruction=greeting_instruction,
+                candidate_context_line=candidate_context_line,
                 role=self.context.role,
                 level=self.context.confirmed_level,
                 duration_minutes=self._total_duration_sec // 60,
@@ -1682,9 +1735,16 @@ class InterviewController:
             interview_focus = self.context.role
             if self.context.job_description:
                 interview_focus = f"{self.context.role} role aligned to the provided job description"
+            welcome_instruction = (
+                f'Welcome the candidate by name ("{candidate_name}").'
+                if has_real_name else
+                'Welcome the candidate warmly and generically — you do not know their name, '
+                'so do not use any name or placeholder word for them.'
+            )
             system_prompt = WELCOME_PROMPT.format(
                 identity=_INTERVIEWER_IDENTITY,
-                candidate_name=candidate_name,
+                candidate_context_line=candidate_context_line,
+                welcome_instruction=welcome_instruction,
                 role=self.context.role,
                 interview_focus=interview_focus,
                 allowed_actions=allowed_actions,
@@ -1835,9 +1895,16 @@ class InterviewController:
                 r for r in self.context.question_records
                 if r.outcome == QuestionOutcome.COMPLETED
             ])
+            closing_instruction = (
+                f'Thank the candidate for their time, by name ("{candidate_name}").'
+                if has_real_name else
+                'Thank the candidate for their time — you do not know their name, so do not '
+                'use any name or placeholder word for them.'
+            )
             system_prompt = CLOSING_PROMPT.format(
                 identity=_INTERVIEWER_IDENTITY,
-                candidate_name=candidate_name,
+                closing_instruction=closing_instruction,
+                candidate_context_line=candidate_context_line,
                 total_completed=total_completed,
                 allowed_actions=allowed_actions,
             )
@@ -1934,9 +2001,17 @@ class InterviewController:
             self.context.final_evaluation = evaluation
             logger.info("[EVALUATION] generated status=COMPLETED")
             return evaluation
-        except Exception:
-            logger.exception("[EVALUATION] generation_failed")
-            return None
+        except Exception as e:
+            logger.exception(f"[EVALUATION] generation_failed: {e}")
+            evaluation = DetailedEvaluation(
+                overall_score=1,
+                recommendation="Consider / Mixed",
+                evidence_sufficiency=1,
+                summary="Session ended early or evaluation generation failed due to insufficient evidence.",
+                detailed_overview="The interview was disconnected or terminated before a proper evaluation could be completed."
+            )
+            self.context.final_evaluation = evaluation
+            return evaluation
 
     # ─── Apply Action Effects ─────────────────────────────────────────────
 

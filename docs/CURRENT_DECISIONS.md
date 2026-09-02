@@ -105,96 +105,83 @@ confirmed explicitly with the user, not an oversight.**
   with a confirmation dialog — moving to the waiting room (or CLOSING if
   it was the last section) with any remaining unanswered questions in that
   section marked not-attempted, not silently dropped from the record.
-- At the time this was written: Issue 6's SKIP_QUESTION fix stayed exactly
-  as-is — a candidate could not skip one individual core question while
-  staying in the same section. **This has since changed — see "Candidate
-  can skip an individual core question" below, a second, later reversal.**
-  This was a SECTION-level "I'm done, move on" affordance, not
-  question-level skipping, at the time it was made.
+- What does NOT change: Issue 6's SKIP_QUESTION fix stays exactly as-is —
+  a candidate still cannot skip one individual core question while staying
+  in the same section. This is a SECTION-level "I'm done, move on"
+  affordance, not a return of question-level skipping.
 - Implementation should use a new, dedicated control action (e.g.
   END_SECTION_EARLY), distinct from the legacy SKIP_SECTION mechanism
   (which stays disabled for active core sections per Issue 6 — this is a
   new, purpose-built mechanism, not a resurrection of the old one).
 
-## Candidate can skip an individual core question (RESOLVED — second reversal, 2026-08-27)
-**This further reverses Issue 6's SKIP_QUESTION fix — deliberately,
-confirmed explicitly with the user (asked directly: reword the rejection
-message vs. make Skip actually work; user chose "make Skip actually
-work"), not an oversight. The section above ("Candidate can end a section
-early") already reversed the original spec's section-level skipping; this
-extends that same reversal down to the individual question level, which
-that earlier decision explicitly still ruled out at the time.**
+## Scoring mechanism upgrade (RESOLVED — partial reopening of Phase 8B)
+Phase 8B's fixed-criteria-set decision stays correct and is NOT reversed —
+audit confirmed it was a deliberate, well-reasoned choice (LLM category-
+attribution inconsistency with open-ended criteria). Two amendments,
+resolved 2026-09-01:
 
-- `SKIP_QUESTION` now genuinely skips the CURRENT ordered core question
-  (any section type — VERBAL/CODING/MCQ) — marks it `SKIPPED` (a distinct
-  outcome from `COMPLETED`/`TIME_EXPIRED`/`NOT_ATTEMPTED`, preserving the
-  real reason it wasn't answered) and advances to the next question, or
-  ends the section/interview exactly the way `SUBMIT_CODE`/
-  `SUBMIT_MCQ_ANSWER` already do when it's the last question in a section.
-- Scoped narrowly to genuinely-active core questions only (BACKGROUND
-  phase, a real `current_question` present) — a `SKIP_QUESTION` sent during
-  `BRIEFING`/`WELCOME`, before any core question has actually started, is
-  still rejected exactly as Issue 6 originally intended (there's nothing
-  concrete yet to skip). That original repro case is unaffected.
-- `SKIP_SECTION` stays fully blocked for ordered core sections, unchanged
-  — this reversal is per-QUESTION only. `END_SECTION_EARLY` remains the
-  one mechanism for "skip the whole section."
-- `generate_ui_state()`'s `allowed_controls` now advertises `SKIP_QUESTION`
-  again for an active ordered core section (previously stripped, correctly,
-  back when it was still a no-op) — `SKIP_SECTION`/`MOVE_TO_TECHNICAL`
-  stay stripped there, matching their still-blocked status.
+1. **Hybrid scoring**: `overall_score` stays exactly as-is — the LLM's
+   independent holistic judgment, unchanged. A NEW, separate, genuinely
+   computed field is added: a real weighted aggregate of `criterion_scores`,
+   computed by code (not the LLM), shown alongside `overall_score` on the
+   dashboard, clearly labeled as distinct (e.g. "Holistic Assessment" vs.
+   "Criteria-Weighted Score"). Null/insufficient-evidence criterion scores
+   must be excluded and weights re-normalized among the scored criteria,
+   not treated as zero — matching the existing evidence-sufficiency
+   principle from Phase 8B/8D.
 
-## Intro screen's "end" control (RESOLVED)
-The post-registration intro/greeting screen's "end" affordance sends
-`END_INTERVIEW` only (its REST equivalent, `POST /interviews/{id}/terminate`,
-since no live LiveKit/data-channel session exists yet at that point) —
-never `END_SECTION_EARLY`. This is a UI-only choice; no
-`state_machine.py`/`controller.py` change was made or needed.
+2. **Expand the curated set, do not open to free-text**: add a small
+   number of additional fixed, curated criteria (proposed and reasoned by
+   whoever implements this, reviewed before adding) — still no fully
+   custom/HR-authored criteria. Preserves the exact reliability guardrail
+   Phase 8B's investigation established.
 
-**Low-priority future cleanup, not urgent:** `VALID_CANDIDATE_CONTROLS_PER_PHASE`
-in `agent/agent/interview/state_machine.py` still technically permits
-`END_SECTION_EARLY` during `BRIEFING`/`WELCOME` (before any core section is
-active), and `_handle_end_section_early()` in `controller.py` has real,
-intentional-looking handling for that case: it marks the *entire first
-section* as `NOT_ATTEMPTED` and jumps to `WAITING_ROOM`/`CLOSING`, rather
-than doing nothing. This is currently unreachable — no UI anywhere sends
-`END_SECTION_EARLY` pre-section — but the state machine's own gating
-doesn't match this doc's "END_SECTION_EARLY requires an active core
-section" framing. Worth tightening `VALID_CANDIDATE_CONTROLS_PER_PHASE`
-(drop `END_SECTION_EARLY` from `BRIEFING`/`WELCOME`) in a future pass, as a
-frozen-file change requiring its own sign-off — not a current risk since
-nothing reaches it today.
+New requirement not previously scoped: HR needs a way to set a WEIGHT per
+enabled criterion (no such field exists anywhere today, confirmed by
+audit) — design needed for default weighting, input UI, and how it
+interacts with enabled/disabled state.
 
-## Phase 9H blocker (RESOLVED — 2026-08-26)
-Was: `generate_ui_state()` only read `ctx.current_question` (legacy flow),
-never `core_section.current_question` (Phase 9's ordered-section flow), so
-CODING/MCQ questions never reached the frontend's `current_question` field.
-Fixed by mirroring `_provide_hint()`'s existing core_section-aware pattern
-exactly, plus adding one new `"config"` key carrying the real, un-coerced
-`CodingConfig`/`MCQConfig` dict. `build_core_sections()` in `main.py` also
-fixed: `coding_required` now reflects the real section type,
-`supported_languages` copies directly; `starter_code`/`constraints` stay at
-their legacy typed-field defaults on purpose (shape mismatch with
-`CodingConfig`'s string fields) — `config` is the real source of truth the
-frontend now reads instead. Live-verified with real captured
-`state_update` payloads for both a real CODING and a real MCQ question
-(see `docs/phase9-architecture.md`'s 9H section for the evidence and exact
-diff). `controller.py`/`main.py` changes were reviewed and approved before
-being made, per this file's own frozen-contract rule.
+## Proctoring PR-D scope decision (RESOLVED)
+Face/gaze detection (real-time computer-vision signal source) is being
+built now, as originally scoped in docs/proctoring-architecture.md - not
+deferred. Confirmed 2026-09-01, after PR-B (fullscreen/tab events) and
+PR-C (video recording) were both verified working in production first.
+This is the third and final signal source; aggregation + dashboard display
+(combining all three: fullscreen/tab events, face/gaze signals, and the
+video recording for human review) follow once this is built.
 
-## Phase 8C: Recommendation enum values (RESOLVED — deliberate, 2026-08-31)
-`agent/agent/interview/models.py`'s new `Recommendation` enum (replacing the
-previous unconstrained free-text `recommendation` string) deliberately kept
-the existing values verbatim — `"Hire"`, `"Consider / Mixed"`, `"No Hire"` —
-including the slightly awkward `"Consider / Mixed"` string, instead of
-cleaning them up to something like `CONSIDER`/`NO_HIRE`-style plain enum
-names. This was for backward compatibility: `evaluations.recommendation`
-(DB), every existing `final_result.evaluation.recommendation` JSONB value,
-and `agent/test_skip_regressions.py`'s ~7 `DetailedEvaluation(recommendation=
-"Hire", ...)` call sites all already use these exact strings. **Do not "fix"
-this cosmetically in a future pass** — renaming the enum values is a breaking
-schema/data change (every existing DB row and JSONB blob would need
-migrating), not a free cleanup.
+## Proctoring aggregation & dashboard display (RESOLVED — Part 1 implemented)
+Following a live manual test (2026-09-02) that found fired PR-B/PR-D
+signals produced no visible change anywhere in the admin UI, this closes
+that gap — docs/proctoring-architecture.md's PR-F ("HR Dashboard
+redesign") integrity-timeline scope, built now rather than deferred
+further:
+
+1. **Flagging rule — Option A (confirmed)**: ANY integrity event at all
+   (`FULLSCREEN_EXITED`, `TAB_HIDDEN`, `WINDOW_BLURRED`, `NO_FACE_DETECTED`,
+   `MULTIPLE_FACES_DETECTED`) marks a session `flagged_for_review = true`.
+   No severity weighting or count threshold — HR sees the underlying
+   evidence and judges it themselves, same philosophy as the scoring
+   override rather than a system pre-judging via a threshold.
+2. **Per-candidate view** (`CandidateResultPage.tsx`): a new "Integrity
+   Timeline" section lists every flagged moment (type, phase, approximate
+   video offset); clicking a row seeks the existing recording player to
+   that moment rather than duplicating a second video experience.
+3. **Per-job view** (`JobResultsPage.tsx`): a "Flagged for Review" stat
+   tile plus a per-candidate "Integrity" column, alongside the existing
+   suggested/completed counts.
+4. **No schema change needed** — this reads the existing `interview_events`
+   table (`admin.py`'s `INTEGRITY_EVENT_TYPES` allowlist / `_get_integrity_
+   events`); no migration in this pass.
+
+**Explicitly NOT part of this pass** — deferred, not decided against:
+head-pose/gaze detection (looking down at a phone with the face still
+visible went unflagged in the same manual test). Scoped in discussion but
+not approved for building; do not start it without explicit sign-off. Open
+questions when it is picked up: `FaceLandmarker` vs. extending
+`FaceDetector`, the pitch-angle/duration thresholds, and whether a
+per-candidate calibration step is needed to keep the false-positive rate
+acceptable across camera angles/lighting.
 
 ## Still unresolved (do not implement against these silently)
 - Invitation expiration policy
@@ -204,11 +191,3 @@ migrating), not a free cleanup.
 - Editing an already-published interview
 - Permissions / multiple Admin users
 - Email templates (blocked on P1)
-- `voice_adapter.py`'s `start(resume=True)` unconditionally speaks a
-  "Welcome back, continuing from {phase}" message with no exclusion for
-  `phase === COMPLETED` — nonsensical and audible if a finished session's
-  resume path is ever reached (currently avoided by the new dedicated
-  `loadedAlreadyCompleted` flag in `InterviewSession.tsx`, which bypasses
-  this path entirely for the initial-load case, but the underlying bug in
-  `voice_adapter.py` is still real and unfixed). Low priority, frozen
-  file, found during Plan 11's flow-audit follow-up.

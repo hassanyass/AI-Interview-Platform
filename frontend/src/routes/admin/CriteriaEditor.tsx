@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { adminClient, type AssessmentCriterion } from "../../api/adminClient";
+import { adminClient, type AssessmentCriterion, type CriterionWeightSetting } from "../../api/adminClient";
 import { Card, CardContent } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Loader2, CheckSquare, Square, Save } from "lucide-react";
@@ -11,6 +11,21 @@ interface CriteriaEditorProps {
   onRefresh?: () => Promise<void>;
 }
 
+/** Local per-criterion editable state: enabled + weight together, since the
+ * scoring-mechanism upgrade needs both to travel through the same save. */
+interface CriterionState {
+  enabled: boolean;
+  weight: number;
+}
+
+function stateMapFrom(data: AssessmentCriterion[]): Record<string, CriterionState> {
+  const map: Record<string, CriterionState> = {};
+  for (const c of data) {
+    map[c.key] = { enabled: c.enabled, weight: c.weight };
+  }
+  return map;
+}
+
 export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEditorProps) {
   const { t } = useTranslation();
   const [criteria, setCriteria] = useState<AssessmentCriterion[]>([]);
@@ -18,7 +33,16 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [localEnabledKeys, setLocalEnabledKeys] = useState<Set<string>>(new Set());
+  const [localState, setLocalState] = useState<Record<string, CriterionState>>({});
+
+  // Computed up front (not after the isLoading early-return below) so
+  // handleSave's closure never reads a binding declared later in this
+  // function -- works fine as originally written too (TS/React don't
+  // actually invoke handleSave until well after this render completes),
+  // but this ordering is the safer one to refactor around later.
+  const behavioralCriteria = criteria.filter(c => c.kind === "behavioral");
+  const otherCriteria = criteria.filter(c => c.kind !== "behavioral");
+  const isDraft = status === "DRAFT";
 
   const fetchCriteria = async () => {
     setIsLoading(true);
@@ -26,7 +50,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
     try {
       const data = await adminClient.getJobCriteria(jobId);
       setCriteria(data);
-      setLocalEnabledKeys(new Set(data.filter(c => c.enabled).map(c => c.key)));
+      setLocalState(stateMapFrom(data));
     } catch (err: any) {
       setError(err.message || "Failed to load criteria");
     } finally {
@@ -42,15 +66,19 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
   const handleToggle = (key: string) => {
     if (status !== "DRAFT") return;
     setSaveSuccess(false);
-    setLocalEnabledKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+    setLocalState(prev => ({
+      ...prev,
+      [key]: { ...prev[key], enabled: !prev[key]?.enabled },
+    }));
+  };
+
+  const handleWeightChange = (key: string, weight: number) => {
+    if (status !== "DRAFT") return;
+    setSaveSuccess(false);
+    setLocalState(prev => ({
+      ...prev,
+      [key]: { ...prev[key], weight },
+    }));
   };
 
   const handleSave = async () => {
@@ -59,9 +87,17 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
     setError("");
     setSaveSuccess(false);
     try {
-      const updated = await adminClient.updateJobCriteria(jobId, Array.from(localEnabledKeys));
+      // Only behavioral criteria go through this save -- "otherCriteria"
+      // (kind !== "behavioral") are auto-managed and never toggled here,
+      // matching update_job_criteria's own behavioral-only scope.
+      const settings: CriterionWeightSetting[] = behavioralCriteria.map(c => ({
+        key: c.key,
+        enabled: localState[c.key]?.enabled ?? false,
+        weight: localState[c.key]?.weight ?? 5,
+      }));
+      const updated = await adminClient.updateJobCriteria(jobId, settings);
       setCriteria(updated);
-      setLocalEnabledKeys(new Set(updated.filter(c => c.enabled).map(c => c.key)));
+      setLocalState(stateMapFrom(updated));
       setSaveSuccess(true);
       if (onRefresh) {
         await onRefresh();
@@ -88,15 +124,11 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
     );
   }
 
-  const behavioralCriteria = criteria.filter(c => c.kind === "behavioral");
-  const otherCriteria = criteria.filter(c => c.kind !== "behavioral");
-  const isDraft = status === "DRAFT";
-
-  // Check if current local state differs from server state
-  const serverEnabledKeys = new Set(criteria.filter(c => c.enabled).map(c => c.key));
-  const hasChanges = 
-    localEnabledKeys.size !== serverEnabledKeys.size || 
-    Array.from(localEnabledKeys).some(k => !serverEnabledKeys.has(k));
+  // Check if current local state differs from server state (enabled OR weight).
+  const hasChanges = behavioralCriteria.some(c => {
+    const local = localState[c.key];
+    return !local || local.enabled !== c.enabled || local.weight !== c.weight;
+  });
 
   return (
     <Card className="border-border shadow-sm mt-6">
@@ -104,12 +136,12 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
         <div className="flex flex-col">
           <h3 className="font-semibold text-lg text-foreground">Assessment Criteria</h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure the behavioral dimensions the AI will evaluate.
+            Configure the behavioral dimensions the AI will evaluate, and how much each counts toward the criteria-weighted score.
           </p>
         </div>
         {isDraft && (
-          <Button 
-            onClick={handleSave} 
+          <Button
+            onClick={handleSave}
             disabled={isSaving || !hasChanges}
             size="sm"
             className="flex items-center gap-2"
@@ -119,14 +151,14 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
           </Button>
         )}
       </div>
-      
+
       <CardContent className="p-0">
         {error && (
           <div className="p-4 bg-red-500/10 border-b border-red-500/20 text-red-500 text-sm">
             {error}
           </div>
         )}
-        
+
         {saveSuccess && !hasChanges && (
           <div className="p-3 bg-green-500/10 border-b border-green-500/20 text-green-600 text-sm flex items-center justify-center">
             Criteria saved successfully.
@@ -136,16 +168,19 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {behavioralCriteria.map(criterion => {
-              const isEnabled = localEnabledKeys.has(criterion.key);
+              const local = localState[criterion.key] ?? { enabled: criterion.enabled, weight: criterion.weight };
+              const isEnabled = local.enabled;
               return (
-                <div 
+                <div
                   key={criterion.key}
                   className={`border rounded-lg p-4 transition-colors ${
-                    isDraft ? 'cursor-pointer hover:border-primary/50' : 'opacity-80'
+                    isDraft ? 'hover:border-primary/50' : 'opacity-80'
                   } ${isEnabled ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
-                  onClick={() => handleToggle(criterion.key)}
                 >
-                  <div className="flex items-start gap-3">
+                  <div
+                    className={`flex items-start gap-3 ${isDraft ? 'cursor-pointer' : ''}`}
+                    onClick={() => handleToggle(criterion.key)}
+                  >
                     <div className="mt-0.5 text-primary shrink-0">
                       {isEnabled ? (
                         <CheckSquare className="h-5 w-5" />
@@ -153,7 +188,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
                         <Square className="h-5 w-5 text-muted-foreground" />
                       )}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <h4 className="font-medium text-foreground">{criterion.label}</h4>
                       {criterion.guidance_text && (
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
@@ -162,6 +197,36 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
                       )}
                     </div>
                   </div>
+
+                  {/* Scoring-mechanism upgrade: weight only shown/meaningful
+                      once a criterion is enabled -- moot when off. Integer
+                      steps only (matches the DB's INTEGER column), and the
+                      actual number is always shown, not left to be inferred
+                      from the slider's fill level. */}
+                  {isEnabled && (
+                    <div
+                      className="mt-3 pt-3 border-t border-border/60 flex items-center gap-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <label htmlFor={`weight-${criterion.key}`} className="text-xs font-medium text-muted-foreground shrink-0">
+                        Weight
+                      </label>
+                      <input
+                        id={`weight-${criterion.key}`}
+                        type="range"
+                        min={1}
+                        max={10}
+                        step={1}
+                        value={local.weight}
+                        disabled={!isDraft}
+                        onChange={(e) => handleWeightChange(criterion.key, parseInt(e.target.value, 10))}
+                        className="flex-1 accent-primary disabled:opacity-50"
+                      />
+                      <span className="text-sm font-semibold text-foreground tabular-nums w-6 text-end shrink-0">
+                        {local.weight}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}

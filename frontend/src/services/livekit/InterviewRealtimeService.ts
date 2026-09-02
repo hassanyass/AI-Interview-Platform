@@ -1,5 +1,5 @@
 import { Room, DataPacket_Kind, RemoteParticipant } from "livekit-client";
-import type { StateUpdatePayload, AllowedControl, TranscriptionPayload, TtsStatusPayload } from "../../types/realtime";
+import type { StateUpdatePayload, AllowedControl, ProctoringEventCommand, TranscriptionPayload, TtsStatusPayload } from "../../types/realtime";
 
 type StateUpdateCallback = (state: StateUpdatePayload) => void;
 type TranscriptionCallback = (transcript: TranscriptionPayload) => void;
@@ -59,6 +59,28 @@ export class InterviewRealtimeService {
     this.room.localParticipant.publishData(data, {
       reliable: true,
       topic: "ui_command"
+    });
+  }
+
+  /** PR-B: browser-detected integrity telemetry (fullscreen-exit-past-
+   *  grace, tab-hidden, window-blurred). Same wire shape/transport as
+   *  sendControlIntent (controller.py's process_ui_command dispatches on
+   *  the same "command" string either way), but a distinct method so
+   *  these always-on, never-gated events don't get typed against
+   *  AllowedControl, which specifically means "server-permitted UI
+   *  buttons" — a different thing than automatic browser telemetry. */
+  public sendIntegrityEvent(command: ProctoringEventCommand, payload?: Record<string, unknown>) {
+    const msg = {
+      command,
+      ...(payload && { payload }),
+    };
+
+    const encoder = new TextEncoder();
+    const data = encoder.encode(JSON.stringify(msg));
+
+    this.room.localParticipant.publishData(data, {
+      reliable: true,
+      topic: "ui_command",
     });
   }
 

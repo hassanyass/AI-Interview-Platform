@@ -89,6 +89,30 @@ class PublicRegistrationResponse(BaseModel):
     token_type: str = "bearer"
     job_id: str
 
+class ConsentCreate(BaseModel):
+    disclosure_language: str
+    disclosure_text: str
+
+    @validator('disclosure_language')
+    def validate_disclosure_language(cls, v):
+        if v not in ['en', 'ar']:
+            raise ValueError("disclosure_language must be 'en' or 'ar'")
+        return v
+
+    @validator('disclosure_text')
+    def validate_disclosure_text(cls, v):
+        if not v or not v.strip():
+            raise ValueError("disclosure_text must not be empty")
+        return v
+
+class ConsentResponse(BaseModel):
+    id: UUID
+    session_id: UUID
+    disclosure_language: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class InterviewResultResponse(BaseModel):
     session_id: UUID
     status: str

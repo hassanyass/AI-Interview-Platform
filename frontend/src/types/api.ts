@@ -107,6 +107,14 @@ export interface InterviewSessionResponse {
   candidate_name?: string | null;
 }
 
+/** PR-A: recording/monitoring consent, recorded before Start Session. */
+export interface ConsentResponse {
+  id: string;
+  session_id: string;
+  disclosure_language: string;
+  created_at: string;
+}
+
 export interface InterviewResultResponse {
   session_id: string;
   status: InterviewStatus;

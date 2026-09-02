@@ -13,8 +13,14 @@ export function Badge({ className, variant = "default", ...props }: BadgeProps) 
         {
           "bg-primary/10 text-primary border-primary/20": variant === "default",
           "bg-secondary text-secondary-foreground border-transparent": variant === "secondary",
-          "bg-green-500/10 text-green-500 border-transparent": variant === "success",
-          "bg-yellow-500/10 text-yellow-500 border-transparent": variant === "warning",
+          // Design audit (2026-09-01): was raw green-500/yellow-500 -- off-
+          // system colors with no relationship to the app's own success/
+          // warning tokens (index.css), so a future token change (like the
+          // WCAG-contrast fix that motivated this pass) silently wouldn't
+          // apply here. success/warning are now the corrected, AA-passing
+          // values -- see index.css's own comment for the computation.
+          "bg-success/10 text-success border-transparent": variant === "success",
+          "bg-warning/10 text-warning border-transparent": variant === "warning",
           "bg-destructive/10 text-destructive border-destructive/20": variant === "destructive",
           "text-foreground border-border bg-transparent": variant === "outline",
         },

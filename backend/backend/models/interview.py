@@ -146,11 +146,26 @@ class InterviewSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    # Session-finalization-contract fix (2026-09-01): set only when status
+    # transitions to DISCONNECTED, cleared on a resume back to IN_PROGRESS.
+    # Lets the idle-disconnect auto-finalize sweep (internal.py) know
+    # precisely how long a session has been abandoned, instead of
+    # reverse-engineering it from the agent lease's rolling expiry.
+    disconnected_at = Column(DateTime(timezone=True), nullable=True)
     
     # Agent lease fields for ownership/reconnect safety
     active_agent_id = Column(String, nullable=True)
     agent_lease_expires_at = Column(DateTime(timezone=True), nullable=True)
-    
+
+    # PR-C (docs/proctoring-architecture.md): LiveKit Egress full audio+
+    # video recording reference. Plain nullable columns, not a dedicated
+    # table -- same 1:1/operational shape as active_agent_id above, no
+    # audit-trail need the way InterviewConsent had. recording_storage_path
+    # is the R2 object key we choose ourselves at egress-start time (known
+    # immediately, not dependent on a completion webhook).
+    recording_egress_id = Column(String, nullable=True)
+    recording_storage_path = Column(String, nullable=True)
+
     # Final aggregated result (populated when status reaches COMPLETED)
     final_result = Column(JSONB, nullable=True)
     
@@ -160,6 +175,7 @@ class InterviewSession(Base):
     events = relationship("InterviewEvent", back_populates="session", cascade="all, delete-orphan", order_by="InterviewEvent.sequence_number")
     checkpoints = relationship("InterviewCheckpoint", back_populates="session", cascade="all, delete-orphan", order_by="InterviewCheckpoint.created_at.desc()")
     evaluation = relationship("Evaluation", back_populates="session", uselist=False, cascade="all, delete-orphan")
+    consent = relationship("InterviewConsent", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
 
 class InterviewConfiguration(Base):
@@ -221,6 +237,36 @@ class InterviewEvent(Base):
     __table_args__ = (
         UniqueConstraint("session_id", "sequence_number", name="uq_event_session_seq"),
     )
+
+
+class InterviewConsent(Base):
+    """PR-A: recording/monitoring consent disclosure, one per session.
+
+    Deliberately NOT modeled as an InterviewEvent row: InterviewEvent.
+    sequence_number is a per-session counter owned exclusively by the agent
+    runtime (seeded from checkpoint's last_event_sequence, incremented only
+    inside controller.py/voice_adapter.py). Consent is recorded pre-agent,
+    from the candidate-facing REST API, so a backend-inserted event row
+    here would be invisible to that counter and could collide with the
+    agent's own first event on the same session. This table sidesteps that
+    entirely -- additive, standalone, no interaction with agent sequencing.
+
+    disclosure_text stores the literal copy shown to the candidate (not a
+    version pointer) since this repo has no versioning scheme for i18n
+    strings to hang a pointer off -- this is the durable evidence of
+    exactly what was disclosed, per docs/proctoring-architecture.md's PR-A.
+    """
+    __tablename__ = "interview_consents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(UUID(as_uuid=True), ForeignKey("interview_sessions.id", ondelete="CASCADE"), nullable=False, unique=True)
+
+    disclosure_language = Column(String, nullable=False)
+    disclosure_text = Column(Text, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    session = relationship("InterviewSession", back_populates="consent")
 
 
 class InterviewCheckpoint(Base):
@@ -287,6 +333,16 @@ class AssessmentCriterion(Base):
     enabled = Column(Boolean, nullable=False, default=True, server_default="true")
     guidance_text = Column(Text, nullable=True)
     source = Column(String, nullable=False, default="CUSTOM", server_default="CUSTOM")  # "TEMPLATE" | "CUSTOM"
+    # Scoring-mechanism upgrade (2026-09-01, see CURRENT_DECISIONS.md's
+    # "Scoring mechanism upgrade" entry): relative importance of this
+    # criterion when computing Evaluation.weighted_score. 1-10, defaults to
+    # 5 (equal weighting) so a job that never touches weighting behaves as
+    # if every enabled criterion counted equally -- no silent skew.
+    # Independent per-criterion values, renormalized at compute time
+    # (submit_evaluation) -- deliberately NOT required to sum to any fixed
+    # total, so toggling a criterion on/off never forces HR to rebalance
+    # the others.
+    weight = Column(Integer, nullable=False, default=5, server_default="5")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -322,6 +378,19 @@ class Evaluation(Base):
     evidence_sufficiency = Column(Float, nullable=True)
     summary = Column(Text, nullable=True)
     detailed_overview = Column(Text, nullable=True)
+
+    # Scoring-mechanism upgrade (2026-09-01): a real, code-computed weighted
+    # aggregate of this evaluation's criterion_scores (Score rows), using
+    # each criterion's AssessmentCriterion.weight -- deliberately separate
+    # from overall_score, which stays the LLM's own independent holistic
+    # judgment, unchanged. Computed once by submit_evaluation (POST
+    # /internal/interviews/{id}/evaluation) using the weights in effect at
+    # that moment, then frozen -- matches overall_score/evidence_sufficiency's
+    # existing "recorded fact about this evaluation event" precedent, not
+    # live-recomputed on every dashboard read. Null when no enabled
+    # criterion had a non-null score (nothing to average), same
+    # insufficient-evidence convention as overall_score itself -- never 0.
+    weighted_score = Column(Float, nullable=True)
 
     # Phase 8F: admin manual override of the computed "suggested" status.
     # None = no override (use computed evidence_sufficiency + recommendation),

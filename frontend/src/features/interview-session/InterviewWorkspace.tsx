@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocalParticipant, useRoomContext, useTracks } from "@livekit/components-react";
 import { Track, type RemoteAudioTrack } from "livekit-client";
-import { Loader2, Timer, LogOut } from "lucide-react";
+import { Loader2, Timer, LogOut, Video, VideoOff, Maximize2, Minimize2 } from "lucide-react";
 import { InterviewRealtimeService } from "../../services/livekit/InterviewRealtimeService";
 import { useInterviewStore } from "../../stores/InterviewContext";
 import type { InterviewSessionResponse } from "../../types/api";
@@ -13,8 +13,12 @@ import { CodingSectionView } from "./CodingSectionView";
 import { McqSectionView } from "./McqSectionView";
 import { SessionEndedScreen } from "./SessionEndedScreen";
 import { TtsRetryOverlay } from "./TtsRetryOverlay";
+import { FullscreenGraceOverlay } from "./FullscreenGraceOverlay";
 import { InterviewController } from "./InterviewController";
 import { EndInterviewDialog } from "./EndInterviewDialog";
+import { isFullscreenActive, requestFullscreen } from "../../lib/fullscreen";
+import { terminateInterview } from "../../services/api/interviews";
+import { useFaceDetectionMonitor } from "./useFaceDetectionMonitor";
 
 const AgentConnectingScreen = () => {
   const { t } = useTranslation();
@@ -93,7 +97,14 @@ const ReportLoadingState = () => {
   );
 };
 
-interface InterviewWorkspaceProps { session: InterviewSessionResponse; onCompleted?: () => void; }
+interface InterviewWorkspaceProps {
+  session: InterviewSessionResponse;
+  onCompleted?: () => void;
+  /** PR-B: called when the 10s fullscreen grace expires and the session is
+   *  auto-terminated so the parent can swap to the FullscreenTerminatedScreen
+   *  rather than showing the normal "thank you" completion screen. */
+  onFullscreenTerminated?: () => void;
+}
 
 const PHASE_LABELS: Record<string, string> = {
   CREATED: "preparation", BRIEFING: "intro", WELCOME: "intro", BACKGROUND: "background",
@@ -106,10 +117,10 @@ function formatTime(seconds = 0) {
   return `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${Math.max(0, seconds % 60).toString().padStart(2, "0")}`;
 }
 
-export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceProps) {
+export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminated }: InterviewWorkspaceProps) {
   const { t } = useTranslation();
   const room = useRoomContext();
-  const { isMicrophoneEnabled } = useLocalParticipant();
+  const { isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   // The agent's live mic track, handed straight to BlobCharacter (see its
   // audioTrack prop) so IT can sample the waveform inside its own animation
   // loop. useTracks only re-renders on track/room events, not per-frame —
@@ -133,8 +144,29 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
   const [displaySeconds, setDisplaySeconds] = useState(0);
   const [isEndDialogOpen, setIsEndDialogOpen] = useState(false);
   const [isEndingSession, setIsEndingSession] = useState(false);
+  // PR-B: visible 10s grace countdown after a fullscreen exit — null means
+  // no countdown active. After grace expires, the interview is terminated.
+  // isFullscreenBlockedRef survives effect re-runs (realtimeService changes)
+  // so clearGrace() in effect cleanup never wipes an in-progress countdown.
+  const [fullscreenGraceSeconds, setFullscreenGraceSeconds] = useState<number | null>(null);
+  const [isFullscreenBlocked, setIsFullscreenBlocked] = useState(false);
+  const isFullscreenBlockedRef = useRef(false);  // survives effect re-runs
+  // Track current fullscreen state for the toggle button in the header.
+  const [isFullscreenNow, setIsFullscreenNow] = useState(false);
   const timerDeadlineRef = useRef<number | null>(null);
+  const fullscreenGraceDeadlineRef = useRef<number | null>(null);
+  const fullscreenGraceTimeoutRef = useRef<number | null>(null);
+  const fullscreenGraceIntervalRef = useRef<number | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  // Session-finalization-contract fix (2026-09-01): sendControlIntent's
+  // reliable data channel has no application-level ack -- if the agent
+  // never replies (crashed, lost its lease, message dropped), isCompleted
+  // would never flip and "Ending session..." would spin forever while the
+  // room/recording kept running. endFallbackTimeoutRef backs that with a
+  // REST fallback (see handleConfirmEnd); isCompletedRef lets that
+  // timeout's closure read the latest value instead of a stale one.
+  const isCompletedRef = useRef(false);
+  const endFallbackTimeoutRef = useRef<number | null>(null);
   const question = state?.current_question;
   const isCompleted = state?.phase === "COMPLETED" || state?.phase === "TERMINATED" || state?.phase === "CLOSING" || session.status === "COMPLETED" || session.status === "TERMINATED";
   // Rebrand pass (2026-08-26): Phase 9's ordered CODING/MCQ questions run
@@ -261,6 +293,145 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
     return () => { room.off("activeSpeakersChanged", onSpeakersChanged); service.cleanup(); };
   }, [room, updateState, updateTranscript, updateTtsStatus, setIsAgentSpeaking]);
 
+  // PR-B (docs/proctoring-architecture.md): fullscreen-exit / tab-hidden /
+  // window-blurred detection, mounted once at this top level so it covers
+  // every section view (Verbal/Coding/MCQ) and WaitingRoomScreen uniformly
+  // rather than being duplicated per view. Paused during WAITING_ROOM (and
+  // once completed) — mirrors the existing clock-pause precedent above
+  // (time_remaining_seconds == null there): waiting-room time is explicitly
+  // FREE/UNCLOCKED per CURRENT_DECISIONS.md, so a candidate leaving
+  // fullscreen on that intentional break should not be flagged.
+  const monitoringActive = !isCompleted && state?.phase !== "WAITING_ROOM";
+  useEffect(() => {
+    const clearGrace = () => {
+      // Only wipe the visual countdown — do NOT clear isFullscreenBlocked
+      // here, because clearGrace() is called in effect cleanup on every
+      // realtimeService re-mount, which would kill an in-progress countdown.
+      setFullscreenGraceSeconds(null);
+      fullscreenGraceDeadlineRef.current = null;
+      if (fullscreenGraceTimeoutRef.current != null) {
+        window.clearTimeout(fullscreenGraceTimeoutRef.current);
+        fullscreenGraceTimeoutRef.current = null;
+      }
+      if (fullscreenGraceIntervalRef.current != null) {
+        window.clearInterval(fullscreenGraceIntervalRef.current);
+        fullscreenGraceIntervalRef.current = null;
+      }
+    };
+
+    if (!monitoringActive) {
+      // Only clear if we weren't already blocked — avoids wiping a
+      // persistent block when the phase briefly flickers.
+      if (!isFullscreenBlockedRef.current) {
+        clearGrace();
+      }
+      return;
+    }
+
+    const onFullscreenChange = () => {
+      if (isFullscreenActive()) {
+        // Returned to fullscreen — cancel grace and unblock.
+        clearGrace();
+        isFullscreenBlockedRef.current = false;
+        setIsFullscreenBlocked(false);
+        return;
+      }
+      // Already counting down — don't restart.
+      if (fullscreenGraceDeadlineRef.current != null) return;
+      // Exited fullscreen — start the visible 10s countdown.
+      const GRACE_MS = 10000;
+      const deadline = Date.now() + GRACE_MS;
+      fullscreenGraceDeadlineRef.current = deadline;
+      setFullscreenGraceSeconds(10);
+      fullscreenGraceIntervalRef.current = window.setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        setFullscreenGraceSeconds(remaining);
+      }, 250);
+      fullscreenGraceTimeoutRef.current = window.setTimeout(() => {
+        realtimeService?.sendIntegrityEvent("FULLSCREEN_EXITED", {
+          severity: "high",
+          grace_period_seconds: 10,
+        });
+        clearGrace();
+        // Mute the candidate's mic immediately so the agent gets no more
+        // audio input and stops speaking / processing.
+        room?.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
+        // Grace expired — terminate the interview.
+        isFullscreenBlockedRef.current = true;
+        setIsFullscreenBlocked(true);
+        // Send the termination signal to the agent.
+        realtimeService?.sendControlIntent("END_INTERVIEW" as never);
+        // Session-finalization-contract fix (2026-09-01): onFullscreenTerminated
+        // below unmounts <LiveKitRoom>, which disconnects the CANDIDATE's
+        // own connection -- it does not disconnect the agent or end the
+        // room, so without this the recording/room could keep running
+        // indefinitely waiting on an agent that may never process the
+        // data-channel message above. This is a policy-driven forced end
+        // (not a "wait and see" like handleConfirmEnd), so finalize
+        // server-side immediately rather than racing/timing out first.
+        if (session.id) terminateInterview(session.id).catch(() => {});
+        // Notify the parent so it can swap to FullscreenTerminatedScreen.
+        onFullscreenTerminated?.();
+      }, GRACE_MS);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        realtimeService?.sendIntegrityEvent("TAB_HIDDEN", { severity: "low" });
+      }
+    };
+
+    const onWindowBlur = () => {
+      realtimeService?.sendIntegrityEvent("WINDOW_BLURRED", { severity: "low" });
+    };
+
+    // PR-C manual-test finding (2026-09-01): a real fullscreen exit
+    // produced no grace overlay at all — this handler was reading the
+    // unprefixed document.fullscreenElement directly (fixed above to use
+    // isFullscreenActive(), which already correctly checks every vendor
+    // prefix — lib/fullscreen.ts's requestFullscreen() already did this
+    // for entering, this file just never matched it for reading state
+    // back out) and only listening for the unprefixed "fullscreenchange"
+    // event. On any browser that fires a prefixed variant instead, this
+    // handler never ran at all. Listening for all four is harmless on
+    // browsers that only ever fire the unprefixed one.
+    const fullscreenChangeEvents = ["fullscreenchange", "webkitfullscreenchange", "mozfullscreenchange", "MSFullscreenChange"];
+    fullscreenChangeEvents.forEach((evt) => document.addEventListener(evt, onFullscreenChange));
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onWindowBlur);
+    // Sync the header fullscreen-toggle button state.
+    const syncFullscreenState = () => setIsFullscreenNow(isFullscreenActive());
+    fullscreenChangeEvents.forEach((evt) => document.addEventListener(evt, syncFullscreenState));
+    // Set initial state in case we're already in fullscreen when mounted.
+    syncFullscreenState();
+    return () => {
+      fullscreenChangeEvents.forEach((evt) => document.removeEventListener(evt, onFullscreenChange));
+      fullscreenChangeEvents.forEach((evt) => document.removeEventListener(evt, syncFullscreenState));
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onWindowBlur);
+      // NOTE: deliberately do NOT call clearGrace() here — that would wipe
+      // the countdown every time realtimeService re-mounts. The refs
+      // (fullscreenGraceTimeoutRef/IntervalRef) are long-lived and survive
+      // the effect re-run, so the timers keep firing correctly.
+    };
+  }, [monitoringActive, realtimeService]);
+
+  // PR-D (docs/proctoring-architecture.md): face-presence monitoring.
+  // cameraTrackRefs mirrors the exact micTrackRefs pattern above, filtered
+  // to the LOCAL participant instead of the agent -- this is the same
+  // published camera track @livekit/components-react already created for
+  // `video={true}` on <LiveKitRoom> (InterviewSession.tsx), never a second
+  // getUserMedia call. undefined whenever no camera is published (denied,
+  // or toggled off), which is exactly when useFaceDetectionMonitor must
+  // (and does) stay inactive.
+  const cameraTrackRefs = useTracks([Track.Source.Camera], { onlySubscribed: false });
+  const localCameraTrack = cameraTrackRefs.find((ref) => ref.participant.isLocal)?.publication?.track?.mediaStreamTrack;
+  useFaceDetectionMonitor({
+    active: monitoringActive,
+    cameraTrack: localCameraTrack,
+    onFlag: (event, payload) => realtimeService?.sendIntegrityEvent(event, payload),
+  });
+
   useEffect(() => {
     const languages = question?.supported_languages || Object.keys(question?.starter_code || {});
     setSelectedLanguage(languages[0] || "");
@@ -285,9 +456,22 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
   }, [question?.id]);
 
   useEffect(() => {
+    isCompletedRef.current = isCompleted;
+    if (isCompleted && endFallbackTimeoutRef.current) {
+      // The graceful path won the race -- the REST fallback below is no
+      // longer needed.
+      window.clearTimeout(endFallbackTimeoutRef.current);
+      endFallbackTimeoutRef.current = null;
+    }
     if (!isCompleted || !session.id) return;
     onCompleted?.();
   }, [isCompleted, session.id, onCompleted]);
+
+  useEffect(() => {
+    return () => {
+      if (endFallbackTimeoutRef.current) window.clearTimeout(endFallbackTimeoutRef.current);
+    };
+  }, []);
 
   // Audit fix (2026-08-27): client-side Web Speech API fallback. Fires only
   // on ttsStatus.status === "gave_up" — the point voice_adapter.py has
@@ -318,10 +502,40 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
     realtimeService?.sendControlIntent("SUBMIT_CODE", { code, language: selectedLanguage });
   };
 
+  // Session-finalization-contract fix (2026-09-01): how long to wait for
+  // the agent's own state_update acknowledging END_INTERVIEW before
+  // assuming the round trip failed and forcing it server-side instead.
+  // Generous enough to cover a real in-flight LLM turn, short enough that
+  // a genuinely stuck session doesn't leave the candidate staring at
+  // "Ending session..." for long.
+  const END_SESSION_FALLBACK_MS = 6000;
+
   const handleConfirmEnd = () => {
     setIsEndingSession(true);
     setIsEndDialogOpen(false);
+    room?.localParticipant?.setCameraEnabled(false).catch(() => {});
+    room?.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
     handleControl("END_INTERVIEW");
+
+    if (endFallbackTimeoutRef.current) window.clearTimeout(endFallbackTimeoutRef.current);
+    endFallbackTimeoutRef.current = window.setTimeout(() => {
+      endFallbackTimeoutRef.current = null;
+      if (isCompletedRef.current || !session.id) return;
+      // The agent never acknowledged -- force-finalize server-side so the
+      // room/recording actually stop and an Evaluation row is guaranteed,
+      // instead of leaving the interview live with the candidate's camera
+      // only LOOKING off. terminateInterview is idempotent (no-op if the
+      // session already reached a terminal status by the time this fires).
+      terminateInterview(session.id)
+        .then(() => onCompleted?.())
+        .catch(() => {
+          // Best-effort: even if the REST call itself fails (network
+          // blip), still flip the local UI so the candidate isn't stuck
+          // on this screen forever -- the idle-disconnect sweep is the
+          // last-resort backstop for the server-side state in that case.
+          onCompleted?.();
+        });
+    }, END_SESSION_FALLBACK_MS);
   };
 
   // 9H: MCQ selection + submission. Matches controller.py's SUBMIT_MCQ_ANSWER
@@ -367,6 +581,22 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
           </div>
           <div className="flex items-center gap-4 text-xs text-muted-foreground sm:gap-6">
             <LanguageToggle />
+            {/* PR-C: transparency indicator, same principle as PR-B's grace
+                banner — the candidate should always be able to see at a
+                glance whether their camera is actually on, not just have
+                consented to it once at Start. Shown whenever the session
+                isn't over; distinguishes "recording" from "camera denied/
+                unavailable, proceeding audio-only" (per CURRENT_DECISIONS.md's
+                graceful-degradation decision) rather than hiding that gap. */}
+            {!isCompleted && (
+              <span className="hidden items-center gap-1.5 sm:flex" title={isCameraEnabled ? t('workspace.cameraOn') : t('workspace.cameraOff')}>
+                {isCameraEnabled ? (
+                  <Video className="h-3.5 w-3.5 text-success" />
+                ) : (
+                  <VideoOff className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
+              </span>
+            )}
             <span className="hidden items-center gap-2 sm:flex">
               <span className={`h-2 w-2 rounded-full ${isCompleted ? "bg-muted-foreground" : state?.phase === "WAITING_ROOM" ? "bg-blue-400" : "bg-success"}`} />
               {isCompleted ? t('workspace.sessionEnded') : state?.phase === "WAITING_ROOM" ? t('workspace.phase.waitingRoom') : t('workspace.liveConnection')}
@@ -378,6 +608,23 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
                 {formatTime(displaySeconds)}
               </span>
             )}
+            
+            <button
+                onClick={async () => {
+                  if (isFullscreenNow) {
+                    await document.exitFullscreen?.();
+                  } else {
+                    await requestFullscreen();
+                  }
+                }}
+                className="hidden sm:flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-semibold text-foreground/80 transition hover:bg-muted"
+                title={isFullscreenNow ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {isFullscreenNow
+                  ? <><Minimize2 className="h-3.5 w-3.5" />Exit Fullscreen</>
+                  : <><Maximize2 className="h-3.5 w-3.5" />Fullscreen</>
+                }
+              </button>
             
             <button
               onClick={() => setIsEndDialogOpen(true)}
@@ -495,6 +742,7 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
           <div className="mx-auto max-w-[1440px]">
             <InterviewController
               isCompleted={isCompleted}
+              isLocked={isFullscreenBlocked}
               allowedControls={state?.allowed_controls || []}
               isMicrophoneEnabled={isMicrophoneEnabled}
               onToggleMicrophone={() => room?.localParticipant?.setMicrophoneEnabled(!isMicrophoneEnabled)}
@@ -507,6 +755,7 @@ export function InterviewWorkspace({ session, onCompleted }: InterviewWorkspaceP
       )}
 
       <TtsRetryOverlay ttsStatus={ttsStatus} />
+      <FullscreenGraceOverlay secondsRemaining={fullscreenGraceSeconds} isBlocked={isFullscreenBlocked} />
       </div>
 
       <EndInterviewDialog

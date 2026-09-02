@@ -1,5 +1,5 @@
 import { fetchApi } from "../../lib/api";
-import type { InterviewResultResponse, InterviewSessionResponse } from "../../types/api";
+import type { ConsentResponse, InterviewResultResponse, InterviewSessionResponse } from "../../types/api";
 
 // guestSessionId: id is passed through on every call below so a guest's own
 // session-scoped token wins over an unrelated concurrent Supabase session
@@ -24,9 +24,30 @@ export async function getInterviewResult(id: string): Promise<InterviewResultRes
   return fetchApi<InterviewResultResponse>(`/api/v1/interviews/${id}/result`, { guestSessionId: id });
 }
 
-/** Used by the intro screen's "End interview" action — a candidate leaving
- *  before Start Session, when no LiveKit/agent session exists yet to send
- *  END_INTERVIEW over. Marks the still-CREATED session TERMINATED. */
+/** PR-A: records the candidate's recording/monitoring consent, tied to
+ *  their session. Called from the intro screen's Start Session handler
+ *  before the LiveKit token request — see InterviewSession.tsx's
+ *  handleStart. Idempotent server-side, so a retry after a partial
+ *  failure is always safe. */
+export async function recordConsent(
+  id: string,
+  disclosure: { disclosure_language: string; disclosure_text: string }
+): Promise<ConsentResponse> {
+  return fetchApi<ConsentResponse>(`/api/v1/interviews/${id}/consent`, {
+    method: "POST",
+    data: disclosure,
+    guestSessionId: id,
+  });
+}
+
+/** Originally just the intro screen's "End interview" action (a candidate
+ *  leaving before Start Session, when no LiveKit/agent session exists yet
+ *  to send END_INTERVIEW over). Session-finalization-contract fix
+ *  (2026-09-01): also used as the REST fallback for a LIVE session when
+ *  the data-channel END_INTERVIEW round trip to the agent stalls or is
+ *  never acknowledged (see InterviewWorkspace.tsx's handleConfirmEnd/
+ *  fullscreen-grace-expiry) — the backend now force-disconnects the
+ *  LiveKit room and guarantees an Evaluation row for either case. */
 export async function terminateInterview(id: string): Promise<InterviewSessionResponse> {
   return fetchApi<InterviewSessionResponse>(`/api/v1/interviews/${id}/terminate`, {
     method: "POST",

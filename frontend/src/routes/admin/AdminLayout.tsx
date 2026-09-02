@@ -29,13 +29,13 @@ export default function AdminLayout() {
   return (
     <div className="flex h-screen w-full bg-background text-foreground">
       {/* Sidebar */}
-      <aside className="w-64 border-e border-border bg-card flex flex-col">
-        <div className="p-6 border-b border-border">
+      <aside className="w-64 border-e border-secondary-foreground/10 bg-secondary text-secondary-foreground flex flex-col">
+        <div className="h-24 px-6 flex flex-col justify-center border-b border-secondary-foreground/10 shrink-0">
           <div className="flex flex-col">
-            <span className="text-xl font-bold tracking-tight text-primary">
-              <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
+            <span className="text-xl font-bold tracking-tight text-white">
+              <span dir="ltr" className="inline-block">e&</span> <span className="text-white/50 font-normal">|</span> هِمّة
             </span>
-            <span className="text-xs text-muted-foreground mt-0.5">{t('adminLayout.adminPortal')}</span>
+            <span className="text-xs text-white/70 mt-0.5">{t('adminLayout.adminPortal')}</span>
           </div>
         </div>
         <nav className="flex-1 p-4 space-y-2">
@@ -43,8 +43,8 @@ export default function AdminLayout() {
             to="/admin/jobs"
             className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
               location.pathname.startsWith("/admin/jobs")
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-white/15 text-white"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
             }`}
           >
             <Briefcase className="h-5 w-5" />
@@ -54,19 +54,18 @@ export default function AdminLayout() {
             to="/admin/settings"
             className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
               location.pathname.startsWith("/admin/settings")
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                ? "bg-white/15 text-white"
+                : "text-white/70 hover:bg-white/10 hover:text-white"
             }`}
           >
             <Settings className="h-5 w-5" />
             <span>{t('adminLayout.settings')}</span>
           </Link>
         </nav>
-        <div className="p-4 border-t border-border space-y-2">
-
+        <div className="p-4 border-t border-secondary-foreground/10 space-y-2">
           <button
             onClick={() => signOut()}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-red-500 hover:bg-red-500/10 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-white/70 hover:bg-red-500/20 hover:text-white transition-colors"
           >
             <LogOut className="h-5 w-5" />
             <span>{t('adminLayout.signOut')}</span>
@@ -76,7 +75,7 @@ export default function AdminLayout() {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto bg-background flex flex-col">
-        <header className="flex justify-end p-4 border-b border-border bg-card">
+        <header className="h-24 px-8 flex items-center justify-end border-b border-border bg-card shrink-0">
           <LanguageToggle />
         </header>
         <div className="p-8">

@@ -23,6 +23,7 @@ from backend.models.interview import (
     InterviewSection,
     InterviewQuestion,
     InterviewSession,
+    InterviewEvent,
     AssessmentCriterion,
     Evaluation,
     Score,
@@ -51,6 +52,8 @@ from backend.schemas.admin import (
     validate_section_config,
     CriterionScoreResponse,
     EvaluationDetailResponse,
+    IntegrityEventResponse,
+    QuestionRecordDetail,
     JobCandidateRow,
     JobResultsResponse,
     SuggestedOverrideRequest,
@@ -144,6 +147,113 @@ def _require_draft(job: Job):
             status_code=409,
             detail=f"Job is {job.status}; edits are only allowed while DRAFT",
         )
+
+
+def _presign_recording_url(storage_path: str | None) -> str | None:
+    """PR-C/PR-F (docs/proctoring-architecture.md): the R2 object a
+    session's recording lives at is private (the same R2 credentials used
+    to upload it during Egress) -- there was no endpoint anywhere that
+    could actually serve it back, which is why HR's result view had no way
+    to play a recording at all, not just a missing player. A short-lived
+    presigned GET URL (never stored, computed fresh per request) is the
+    standard pattern for this: HR's browser gets a working <video> src
+    without the raw R2 credentials, storage bucket, or a permanent public
+    URL ever being exposed. Returns None (not an error) if there's no
+    recording, or if R2 isn't configured -- both real, existing states
+    this codebase already tolerates (see CURRENT_DECISIONS.md's
+    camera-denial/R2-not-configured handling)."""
+    if not storage_path:
+        return None
+    if not all([settings.R2_ACCOUNT_ID, settings.R2_ACCESS_KEY_ID, settings.R2_SECRET_ACCESS_KEY,
+                settings.R2_BUCKET_NAME, settings.R2_ENDPOINT]):
+        return None
+    try:
+        # Import (and every step below) wrapped in the same try/except --
+        # boto3 being missing/broken in a given environment must degrade to
+        # "no recording available" on this one field, never 500 the entire
+        # candidate result page. Same "a proctoring-feature failure must
+        # never block the core flow" principle CURRENT_DECISIONS.md already
+        # applies to camera denial.
+        import boto3
+        from botocore.config import Config
+
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.R2_ENDPOINT,
+            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+            # force_path_style, matching how livekit.py's _start_recording_egress
+            # writes the object (api.S3Upload(force_path_style=True)) -- both
+            # ends of this need to agree on addressing style against R2.
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        )
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": settings.R2_BUCKET_NAME, "Key": storage_path},
+            ExpiresIn=3600,
+        )
+    except Exception:
+        logger.exception("Failed to presign recording URL for %s", storage_path)
+        return None
+
+
+# Explicit allowlist, not a blocklist -- a real query against interview_events
+# today returns 15 distinct event_type values (SESSION_STARTED,
+# QUESTION_SKIPPED, PHASE_STARTED, HINT_REQUESTED, WAITING_ROOM_*, etc.),
+# only 3 of which are genuine integrity signals; the rest are ordinary
+# lifecycle bookkeeping that must never show up on an "integrity timeline".
+# Matches process_ui_command's own explicit tuple in controller.py exactly
+# -- same 5 strings, not derived from it (no shared import between the
+# agent and backend packages) so keep these two lists in sync by hand if
+# either changes.
+INTEGRITY_EVENT_TYPES = (
+    "FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED",
+    "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED",
+)
+
+
+async def _get_integrity_events(db: AsyncSession, session: InterviewSession) -> list[IntegrityEventResponse]:
+    """Session-finalization/proctoring aggregation (2026-09-02, see
+    CURRENT_DECISIONS.md's "Proctoring PR-D scope decision" and the
+    aggregation/dashboard plan that followed it): resolves the 5 known
+    integrity signal types for one session, in order.
+
+    video_offset_seconds is computed as event.created_at - session.started_at
+    -- a real, named approximation, not a frame-exact seek: the Egress
+    recording actually starts as soon as the candidate's browser connects to
+    the room (livekit.py's _start_recording_egress), while started_at is set
+    separately, later, when the agent finishes joining and calls
+    update_status("IN_PROGRESS") (agent/main.py) -- two different processes
+    writing two different clocks with real, variable latency between them.
+    Close enough to jump a video player near the right moment; not exact
+    enough to promise frame accuracy. None when started_at is missing
+    entirely (a legacy/never-started session)."""
+    result = await db.execute(
+        select(InterviewEvent)
+        .where(
+            InterviewEvent.session_id == session.id,
+            InterviewEvent.event_type.in_(INTEGRITY_EVENT_TYPES),
+        )
+        .order_by(InterviewEvent.sequence_number)
+    )
+    events = result.scalars().all()
+    return [
+        IntegrityEventResponse(
+            event_type=e.event_type,
+            phase=e.phase,
+            metadata=e.metadata_ or {},
+            video_offset_seconds=(
+                # Clamped to >=0: the clock-skew this docstring describes can
+                # occasionally put an early event fractionally before
+                # started_at was written -- a negative seek target makes no
+                # sense to a <video> player, so floor it at the start.
+                max(0.0, (e.created_at - session.started_at).total_seconds())
+                if session.started_at and e.created_at else None
+            ),
+        )
+        for e in events
+    ]
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -863,9 +973,45 @@ async def get_candidate_result(
             strengths=s.strengths or [],
             improvements=s.improvements or [],
             evidence_reference=s.evidence_reference,
+            weight=s.criterion.weight if s.criterion else None,
         )
         for s in evaluation.scores
     ]
+
+    # Enrich each raw question_record (question_id + outcome only -- useless
+    # to an HR reviewer with no idea what was actually asked) with the real
+    # question text, resolved from InterviewQuestion. A record whose
+    # question_id doesn't resolve (legacy pre-Phase-7 session using
+    # ephemeral, never-persisted questions) still comes through with
+    # title/text/competency left None rather than being dropped.
+    raw_question_records = final_result.get("question_records") or []
+    question_uuids = []
+    for r in raw_question_records:
+        try:
+            question_uuids.append(UUID(r["question_id"]))
+        except (KeyError, ValueError, TypeError):
+            continue
+    questions_by_id = {}
+    if question_uuids:
+        q_result = await db.execute(
+            select(InterviewQuestion).where(InterviewQuestion.id.in_(question_uuids))
+        )
+        questions_by_id = {str(q.id): q for q in q_result.scalars().all()}
+
+    question_records = []
+    for r in raw_question_records:
+        q = questions_by_id.get(r.get("question_id"))
+        question_records.append(QuestionRecordDetail(
+            question_id=r.get("question_id", ""),
+            title=q.title if q else None,
+            text=q.text if q else None,
+            competency=q.competency if q else None,
+            order_index=q.order_index if q else None,
+            outcome=r.get("outcome", "UNKNOWN"),
+            hints_used=r.get("hints_used", 0),
+            followups_used=r.get("followups_used", 0),
+            clarifications_used=r.get("clarifications_used", 0),
+        ))
 
     return EvaluationDetailResponse(
         session_id=session.id,
@@ -875,7 +1021,7 @@ async def get_candidate_result(
         candidate_email=session.profile.email if session.profile else None,
         job_title=job_title,
         transcript=final_result.get("transcript") or [],
-        question_records=final_result.get("question_records") or [],
+        question_records=question_records,
         technical_submission=final_result.get("technical_submission") or {},
         overall_score=evaluation.overall_score,
         recommendation=evaluation.recommendation,
@@ -883,8 +1029,11 @@ async def get_candidate_result(
         summary=evaluation.summary,
         detailed_overview=evaluation.detailed_overview,
         scores=scores,
+        weighted_score=evaluation.weighted_score,
         override_suggested=evaluation.override_suggested,
         override_reason=evaluation.override_reason,
+        recording_url=_presign_recording_url(session.recording_storage_path),
+        integrity_events=await _get_integrity_events(db, session),
     )
 
 
@@ -909,10 +1058,30 @@ async def get_job_results(
     )
     rows = result.all()
 
+    # One extra query for the whole job, not one per candidate: which of
+    # these sessions have at least one integrity event at all (option A --
+    # any event flags the candidate, no severity/count threshold, per the
+    # confirmed decision). Avoids an N+1 -- this list endpoint can list
+    # dozens of candidates and should stay cheap column reads plus this one
+    # aggregate, not a per-row query.
+    session_ids = [session.id for session, _, _ in rows]
+    flagged_session_ids: set = set()
+    if session_ids:
+        flagged_result = await db.execute(
+            select(InterviewEvent.session_id)
+            .where(
+                InterviewEvent.session_id.in_(session_ids),
+                InterviewEvent.event_type.in_(INTEGRITY_EVENT_TYPES),
+            )
+            .distinct()
+        )
+        flagged_session_ids = set(flagged_result.scalars().all())
+
     floor = settings.SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR
     completed_count = 0
     in_progress_count = 0
     suggested_count = 0
+    flagged_count = 0
     candidates: list[JobCandidateRow] = []
 
     for session, profile, evaluation in rows:
@@ -933,6 +1102,10 @@ async def get_job_results(
         if suggested:
             suggested_count += 1
 
+        is_flagged = session.id in flagged_session_ids
+        if is_flagged:
+            flagged_count += 1
+
         candidates.append(JobCandidateRow(
             session_id=session.id,
             candidate_name=profile.full_name if profile else None,
@@ -944,6 +1117,7 @@ async def get_job_results(
             evidence_sufficiency=evaluation.evidence_sufficiency if evaluation else None,
             suggested=suggested,
             override_suggested=override_val,
+            flagged_for_review=is_flagged,
         ))
 
     return JobResultsResponse(
@@ -953,6 +1127,7 @@ async def get_job_results(
         completed_count=completed_count,
         in_progress_count=in_progress_count,
         suggested_count=suggested_count,
+        flagged_count=flagged_count,
         candidates=candidates,
     )
 
@@ -1039,7 +1214,7 @@ async def get_job_criteria(
             AssessmentCriterionResponse(
                 key=c.key, label=c.label, kind=c.kind,
                 enabled=c.enabled, guidance_text=c.guidance_text,
-                source=c.source,
+                source=c.source, weight=c.weight,
             )
             for c in job_criteria
         ]
@@ -1057,7 +1232,7 @@ async def get_job_criteria(
         AssessmentCriterionResponse(
             key=t.key, label=t.label, kind=t.kind,
             enabled=True, guidance_text=t.guidance_text,
-            source="TEMPLATE",
+            source="TEMPLATE", weight=t.weight,
         )
         for t in templates
     ]
@@ -1102,18 +1277,24 @@ async def update_job_criteria(
         )
     )
 
-    # Clone from templates, respecting the enabled_keys list.
+    # Clone from templates, respecting each entry's enabled/weight setting.
+    # A template key not present in payload.criteria at all stays disabled
+    # at the default weight (5) -- matches the old enabled_keys behavior's
+    # "not in the list = disabled" convention.
+    settings_by_key = {c.key: c for c in payload.criteria}
     new_rows = []
     for t in templates:
+        setting = settings_by_key.get(t.key)
         row = AssessmentCriterion(
             job_id=job_id,
             section_id=None,
             key=t.key,
             label=t.label,
             kind=t.kind,
-            enabled=(t.key in payload.enabled_keys),
+            enabled=(setting.enabled if setting else False),
             guidance_text=t.guidance_text,
             source="TEMPLATE",
+            weight=(setting.weight if setting else 5),
         )
         db.add(row)
         new_rows.append(row)
@@ -1124,7 +1305,7 @@ async def update_job_criteria(
         AssessmentCriterionResponse(
             key=r.key, label=r.label, kind=r.kind,
             enabled=r.enabled, guidance_text=r.guidance_text,
-            source=r.source,
+            source=r.source, weight=r.weight,
         )
         for r in new_rows
     ]

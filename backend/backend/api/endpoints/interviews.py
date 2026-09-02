@@ -4,17 +4,19 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from backend.api.deps import db_dependency, current_user_dependency, get_current_admin
 from backend.models.profile import CandidateProfile
-from backend.models.interview import InterviewSession, InterviewConfiguration, InterviewDefinition, Job
+from backend.models.interview import InterviewSession, InterviewConfiguration, InterviewDefinition, Job, InterviewConsent
 from backend.schemas.interview import (
-    InterviewSessionResponse, 
-    InterviewResultResponse
+    InterviewSessionResponse,
+    InterviewResultResponse,
+    ConsentCreate,
+    ConsentResponse,
 )
 from backend.core.config import settings
 from backend.services.guest_jwt_service import mint_guest_jwt
 import logging
 from uuid import UUID
 import uuid
-from datetime import datetime, timezone
+from backend.api.endpoints.internal import _finalize_live_session
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +116,16 @@ async def terminate_interview(
     db: AsyncSession = db_dependency,
     user_id: str = current_user_dependency,
 ):
-    """Close an abandoned user-owned session so a fresh interview can start."""
+    """Close a candidate-owned session, whether abandoned before it ever
+    connected (the original, still-supported case: the intro screen's
+    "end" button, per docs/CURRENT_DECISIONS.md's "Intro screen's end
+    control") or ended by the candidate while LIVE (session-finalization-
+    contract fix, 2026-09-01: this endpoint used to only flip DB state for
+    the pre-connect case and silently do nothing useful for a live
+    session -- it now goes through the same _finalize_live_session used by
+    the idle-disconnect sweep, which also force-disconnects the LiveKit
+    room so a live candidate's audio/video actually stops instead of the
+    room and its recording continuing to run with no one home)."""
     try:
         user_uuid = UUID(user_id)
     except ValueError:
@@ -128,16 +139,60 @@ async def terminate_interview(
     session = result.scalars().first()
     if not session:
         raise HTTPException(status_code=404, detail="Interview session not found")
-    if session.status in ("COMPLETED", "TERMINATED"):
-        return session
 
-    session.status = "TERMINATED"
-    session.completed_at = datetime.now(timezone.utc)
-    session.active_agent_id = None
-    session.agent_lease_expires_at = None
-    await db.commit()
+    await _finalize_live_session(db, session, target_status="TERMINATED")
     await db.refresh(session)
     return session
+
+
+@router.post("/{session_id}/consent", response_model=ConsentResponse, status_code=status.HTTP_201_CREATED)
+async def record_consent(
+    session_id: UUID,
+    body: ConsentCreate,
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency,
+):
+    """PR-A: record the candidate's recording/monitoring consent, tied to
+    their session. Same ownership-check pattern as terminate_interview.
+    Idempotent: a session that already has a consent row returns that
+    existing row (200-equivalent data, still 201 the first time) rather
+    than erroring or creating a duplicate -- mirrors internal.py's
+    create_event/create_message unique-constraint-catch pattern.
+    """
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid User ID format")
+
+    result = await db.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    session = result.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.candidate_profile_id != user_uuid:
+        raise HTTPException(status_code=403, detail="Not authorized to access this interview session")
+
+    consent = InterviewConsent(
+        session_id=session_id,
+        disclosure_language=body.disclosure_language,
+        disclosure_text=body.disclosure_text,
+    )
+    db.add(consent)
+    try:
+        await db.commit()
+        await db.refresh(consent)
+    except Exception:
+        await db.rollback()
+        existing_result = await db.execute(
+            select(InterviewConsent).where(InterviewConsent.session_id == session_id)
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing:
+            return existing
+        raise
+
+    return consent
 
 
 @router.get("/{session_id}/transcript")

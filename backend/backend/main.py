@@ -12,6 +12,7 @@ if sys.platform == "win32":
 from backend.core.config import settings
 from backend.db.session import engine, get_db
 from backend.api.endpoints import profiles, resumes, interviews, livekit, internal, admin, invitations, public_invitations, public_apply
+from backend.api.endpoints.internal import disconnect_auto_finalize_sweep_loop
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,13 +38,23 @@ app.include_router(invitations.router, prefix="/api/v1/admin", tags=["admin-invi
 app.include_router(public_invitations.router, prefix="/api/v1/invitations", tags=["public-invitations"])
 app.include_router(public_apply.router, prefix="/api/v1/apply", tags=["public-apply"])
 
+_disconnect_sweep_task: asyncio.Task | None = None
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Application starting up...")
+    global _disconnect_sweep_task
+    # Session-finalization-contract fix (2026-09-01, see
+    # docs/CURRENT_DECISIONS.md): backend-owned safety net for candidates
+    # who disconnect and never resume -- see disconnect_auto_finalize_
+    # sweep_loop's own docstring in internal.py.
+    _disconnect_sweep_task = asyncio.create_task(disconnect_auto_finalize_sweep_loop())
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("Application shutting down...")
+    if _disconnect_sweep_task:
+        _disconnect_sweep_task.cancel()
     if engine:
         await engine.dispose()
 

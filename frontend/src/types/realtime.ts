@@ -2,6 +2,15 @@ import type { InterviewPhase } from "./api";
 
 export type AllowedControl = "REQUEST_HINT" | "CHANGE_QUESTION" | "SKIP_QUESTION" | "END_INTERVIEW" | "SUBMIT_CODE" | "SUBMIT_MCQ_ANSWER" | "END_SECTION_EARLY" | "PROCEED_TO_NEXT_SECTION";
 
+/** PR-B/PR-D: browser-detected integrity telemetry — always-on, never
+ *  gated by allowed_controls (unlike AllowedControl above, which is
+ *  server-permitted UI buttons). Kept as a separate type so that
+ *  distinction stays explicit. NO_FACE_DETECTED/MULTIPLE_FACES_DETECTED
+ *  (PR-D, 2026-09-02) are the client-side face-presence signals, debounced
+ *  and edge-triggered by useFaceDetectionMonitor.ts before ever reaching
+ *  this transport — see that file for the full reasoning. */
+export type ProctoringEventCommand = "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED";
+
 export interface ActiveQuestion {
   id: string;
   title: string;

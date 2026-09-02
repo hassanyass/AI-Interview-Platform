@@ -35,22 +35,45 @@
     --accent: 60 17% 88%;
     --accent-foreground: 0 0% 11%;
 
-    /* Semantics */
-    --success: 150 40% 45%;
+    /* Semantics (2026-09-01 contrast fix -- design audit found the
+       previous values failing WCAG AA as text/strokes on white:
+       success 3.19:1, warning 2.29:1, both below the 4.5:1 minimum for
+       normal text (warning even failed the 3:1 minimum for large text/
+       graphics, e.g. the result page's score-gauge stroke). These
+       corrected values (success 5.02:1, warning 7.09:1 against white)
+       keep the same hue family -- still reads as "green"/"amber" -- just
+       darker/more saturated so it holds as foreground color, not just a
+       light background tint. See the candidate-result-page design audit,
+       2026-09-01, for the full computation. */
+    --success: 142 72% 29%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 35 80% 55%;
+    --warning: 23 82% 31%;
     --warning-foreground: 0 0% 100%;
 
     --destructive: 0 60% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Radius System from e& */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 20px;
-    --radius-xl: 32px;
+    /* Refined Radius System - Sleeker, professional */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
     --radius: var(--radius-md);
+  }
+}
+
+@layer components {
+  .ai-button {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.3);
+    transition: all 0.2s ease;
+  }
+  .ai-button:hover:not(:disabled) {
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.45);
+    transform: translateY(-1px);
   }
 }
 

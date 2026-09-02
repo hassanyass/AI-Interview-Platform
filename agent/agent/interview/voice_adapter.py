@@ -382,7 +382,7 @@ class VoiceInterviewAdapter:
 
                 if mcq_no_chain_needed:
                     await self._emit_ui_state()
-                elif command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "END_INTERVIEW", "PROCEED_TO_NEXT_SECTION"):
+                elif command in ("SKIP_QUESTION", "SKIP_SECTION", "MOVE_TO_TECHNICAL", "CHANGE_QUESTION", "SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "END_INTERVIEW", "PROCEED_TO_NEXT_SECTION", "END_SECTION_EARLY"):
                     # WR-C: chains straight into the next section's opening
                     # ASK turn — no separate "welcome back" message is
                     # needed, the new section's own first turn carries it
@@ -395,6 +395,13 @@ class VoiceInterviewAdapter:
                     # into the CLOSING-phase LLM turn, leaving the session
                     # permanently stuck (never reaches COMPLETED, no
                     # final_result ever generated).
+                    # PR-C manual-test finding (2026-09-01): END_SECTION_EARLY
+                    # had the exact same gap — ending your last/only section
+                    # early transitions straight to CLOSING (controller.py's
+                    # _handle_end_section_early), but with an empty response
+                    # it fell through to the else-branch below and never got
+                    # the CLOSING-phase goodbye turn (or _handle_completion())
+                    # at all. Same fix, same reasoning, extended to cover it.
                     await self._handle_candidate_turn("", is_chain=True, _lock_held=True)
                 else:
                     await self._emit_ui_state()

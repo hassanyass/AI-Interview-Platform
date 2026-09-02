@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { adminClient, type JobResultsResponse } from "../../api/adminClient";
-import { ArrowLeft, Users, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { ArrowLeft, Users, CheckCircle, Clock, AlertCircle, ShieldAlert } from "lucide-react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/Card";
@@ -77,7 +77,7 @@ export default function JobResultsPage() {
       </div>
 
       {/* Aggregate Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
         <Card className="border-border shadow-sm">
           <CardContent className="p-6 flex items-center gap-4">
             <div className="p-3 bg-primary/10 text-primary rounded-full">
@@ -92,7 +92,7 @@ export default function JobResultsPage() {
         
         <Card className="border-border shadow-sm">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-green-500/10 text-green-500 rounded-full">
+            <div className="p-3 bg-success/10 text-success rounded-full">
               <CheckCircle className="h-6 w-6" />
             </div>
             <div>
@@ -104,7 +104,7 @@ export default function JobResultsPage() {
 
         <Card className="border-border shadow-sm">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-yellow-500/10 text-yellow-500 rounded-full">
+            <div className="p-3 bg-warning/10 text-warning rounded-full">
               <Clock className="h-6 w-6" />
             </div>
             <div>
@@ -114,14 +114,37 @@ export default function JobResultsPage() {
           </CardContent>
         </Card>
 
+        {/* Design audit (2026-09-01): was raw blue-500, unrelated to the e&
+            palette entirely. Maroon (--secondary) is exactly what the brand
+            guide names it for -- "high-value summary areas" -- which fits
+            "candidates worth a second look" far better than an arbitrary
+            info-blue that has no other meaning in this system. */}
         <Card className="border-border shadow-sm">
           <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-blue-500/10 text-blue-500 rounded-full">
+            <div className="p-3 bg-secondary/10 text-secondary rounded-full">
               <AlertCircle className="h-6 w-6" />
             </div>
             <div>
               <p className="text-sm font-medium text-muted-foreground">Suggested for Next Step</p>
               <h4 className="text-2xl font-bold">{results.suggested_count}</h4>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Aggregation/dashboard pass: Option A (confirmed) -- any
+            integrity event at all flags a session, no severity/count
+            threshold. Destructive tone, not warning: this is meant to
+            stand out from the neutral status tiles above it as something
+            that specifically warrants a second look, not just a workflow
+            state. */}
+        <Card className="border-border shadow-sm">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="p-3 bg-destructive/10 text-destructive rounded-full">
+              <ShieldAlert className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Flagged for Review</p>
+              <h4 className="text-2xl font-bold">{results.flagged_count}</h4>
             </div>
           </CardContent>
         </Card>
@@ -147,6 +170,7 @@ export default function JobResultsPage() {
                     <th className="px-6 py-3">Score</th>
                     <th className="px-6 py-3">Evidence</th>
                     <th className="px-6 py-3">Suggested</th>
+                    <th className="px-6 py-3">Integrity</th>
                     <th className="px-6 py-3 text-right">Action</th>
                   </tr>
                 </thead>
@@ -170,7 +194,14 @@ export default function JobResultsPage() {
                         {cand.overall_score !== undefined && cand.overall_score !== null ? (
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{cand.overall_score}/5</span>
-                            <Badge variant={cand.recommendation === "Hire" ? "success" : cand.recommendation === "Strong Hire" ? "success" : "secondary"}>
+                            {/* Design audit (2026-09-01): the "Strong Hire" branch below was
+                                dead code -- Recommendation only ever contains "Hire" /
+                                "Consider / Mixed" / "No Hire" per CURRENT_DECISIONS.md's
+                                explicit enum. "Consider / Mixed" now maps to the (now-
+                                corrected, AA-passing) warning tone instead of maroon --
+                                maroon signals "premium/high-value" per the brand guide,
+                                the wrong read for a mixed/uncertain recommendation. */}
+                            <Badge variant={cand.recommendation === "Hire" ? "success" : cand.recommendation === "No Hire" ? "destructive" : "warning"}>
                               {cand.recommendation}
                             </Badge>
                           </div>
@@ -186,13 +217,17 @@ export default function JobResultsPage() {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {cand.status === "COMPLETED" ? (
+                        {cand.status === "COMPLETED" || cand.status === "TERMINATED" ? (
                           <div className="flex items-center gap-2">
-                            <Badge variant={cand.suggested ? "success" : "secondary"}>
+                            {/* "No" used to render in solid maroon (Badge's "secondary"
+                                variant) -- maroon means "high-value" in this system, the
+                                opposite of what a "not suggested" pill should signal.
+                                "outline" is the correct neutral weight for this. */}
+                            <Badge variant={cand.suggested ? "success" : "outline"}>
                               {cand.suggested ? "Yes" : "No"}
                             </Badge>
                             {cand.override_suggested !== undefined && cand.override_suggested !== null && (
-                              <span className="text-xs px-1.5 py-0.5 rounded-sm bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 font-medium tracking-wide">
+                              <span className="text-xs px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary font-medium tracking-wide">
                                 OVERRIDE
                               </span>
                             )}
@@ -201,8 +236,25 @@ export default function JobResultsPage() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </td>
+                      <td className="px-6 py-4">
+                        {cand.flagged_for_review ? (
+                          <Badge variant="destructive" className="inline-flex items-center gap-1">
+                            <ShieldAlert className="h-3 w-3" /> Flagged
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-right">
-                        {cand.status === "COMPLETED" ? (
+                        {/* Design audit (2026-09-01): this used to gate on
+                            status === "COMPLETED" only. The session-finalization-
+                            contract fix now guarantees an Evaluation row (real or a
+                            clearly-labeled placeholder) for TERMINATED sessions too --
+                            this was the highest-severity finding in the audit: a real,
+                            viewable result that the UI made unreachable. DISCONNECTED
+                            stays "Pending" -- it may still resume, and forcing a link
+                            into a not-yet-finalized state isn't accurate. */}
+                        {cand.status === "COMPLETED" || cand.status === "TERMINATED" ? (
                           <Link to={`/admin/jobs/${id}/results/${cand.session_id}`}>
                             <Button size="sm" variant="outline">
                               View Result

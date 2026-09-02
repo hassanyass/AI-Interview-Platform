@@ -66,6 +66,8 @@
                       "connectingShort":  "Connecting...",
                       "problemStatement":  "Problem statement",
                       "liveConnection":  "Live connection",
+                      "cameraOn":  "Camera on — being recorded",
+                      "cameraOff":  "Camera unavailable — audio-only",
                       "starting":  "Starting Interview",
                       "conversationWillAppear":  "Your conversation will appear here.",
                       "finalizing":  "Finalizing interview session...",
@@ -86,6 +88,8 @@
                       "submitAnswer":  "Submit answer",
                       "interview":  "Interview",
                       "liveTranscript":  "Live transcript",
+                      "showTranscript":  "Transcript",
+                      "hideTranscript":  "Hide transcript",
                       "example":  "Example {{num}}",
                       "initializing":  "Initializing AI interviewer...",
                       "speaking":  "Speaking",
@@ -97,6 +101,10 @@
                       "ttsSwitchingKeyDesc":  "Just switching things over behind the scenes — this only takes a second. You can still end the session anytime from the button above.",
                       "ttsGaveUpTitle":  "Switched to a backup voice for this line",
                       "ttsGaveUpDesc":  "The interviewer's main voice is temporarily unavailable, so your browser is reading this line instead. The interview is still running normally — you can keep going, or end the session anytime from the button above.",
+                      "fullscreenGrace":  {
+                                              "body":  "You've left fullscreen — return within {{seconds}}s to avoid this being flagged for review.",
+                                              "returnButton":  "Return to fullscreen"
+                                          },
                       "youHaveFloor":  "You have the floor. Take your time and explain your thinking.",
                       "answerSubmitted":  "Answer submitted",
                       "selectOne":  "Select one answer",
@@ -276,7 +284,8 @@
         "timeNote": "This break is free time — the interview clock is paused.",
         "autoAdvance": "You'll be advanced automatically if you don't continue within 5 minutes.",
         "continueButton": "Continue to next section",
-        "progressLabel": "Section {{current}} of {{total}} complete"
+        "progressLabel": "Section {{current}} of {{total}} complete",
+        "fullscreenRequired": "Fullscreen is required to continue. Please allow fullscreen and try again."
     },
     "endSectionEarly": {
         "title": "End this section early?",
@@ -311,6 +320,13 @@
         "endedTitle": "Interview ended",
         "endedDesc": "You've left before starting. Nothing was recorded, and you're free to close this window.",
         "startFailed": "Failed to start the interview session. Please try again.",
-        "endFailed": "Failed to end the interview. Please try again."
+        "endFailed": "Failed to end the interview. Please try again.",
+        "consent": {
+            "title": "Recording & monitoring",
+            "body": "To help our hiring team review this interview fairly, we may record video and monitor certain in-app activity while you're in session, including: fullscreen-exit events (if you leave fullscreen) and focus-loss events (if you switch away from this tab or window). This is used only to support our hiring team's review — nothing about you is judged or decided automatically.",
+            "checkboxLabel": "I understand and consent to this recording and monitoring.",
+            "recordFailed": "Failed to record your consent. Please try again."
+        },
+        "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
     }
 }

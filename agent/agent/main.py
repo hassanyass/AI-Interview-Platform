@@ -381,7 +381,13 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Initialize Voice Plugins ──────────────────────────────────────
     language = session_data.get("language", "en")
-    stt_plugin = groq.STT(model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"))
+    # Bug fix: groq.STT defaults to language="en" (forcing Whisper to
+    # transcribe as English regardless of what's actually spoken) when not
+    # given explicitly — an Arabic interview was getting its candidate audio
+    # transcribed as English gibberish/mistranslation as a result. Whisper's
+    # `language` param takes the same ISO-639-1 codes session_data already
+    # uses ("en"/"ar"), so just pass the interview's own language through.
+    stt_plugin = groq.STT(model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"), language=language)
 
     # Audit fix (2026-08-27): Groq's TTS free tier is a hard 3.6K-tokens/day
     # (TPD) ceiling per model (confirmed live against the real account — see
@@ -517,6 +523,13 @@ async def entrypoint(ctx: JobContext):
         context.event_sequence += 1
         await persistence.save_checkpoint(context)
         await persistence.update_status(session_id, "DISCONNECTED")
+        
+        try:
+            logger.info("Generating partial evaluation for disconnected session...")
+            await controller.generate_final_evaluation()
+            await persistence.submit_evaluation(context)
+        except Exception:
+            logger.exception("Failed to generate partial evaluation during shutdown")
     else:
         logger.info("Interview completed.")
         try:

@@ -361,15 +361,15 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
             className="w-16 bg-background border border-input rounded-md px-2 py-1.5 text-sm"
           />
           <Button
-            variant="secondary"
+            variant="default"
             onClick={handleGenerate}
             disabled={loadingAction !== null}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 text-xs"
+            className="ai-button inline-flex items-center gap-1.5 px-4 py-1.5 h-9 text-xs font-medium"
           >
             {loadingAction === "generate" ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Sparkles className="h-3.5 w-3.5" />
+              <Sparkles className="h-4 w-4" />
             )}
             <span>{t('questionEditor.generateQuestions')}</span>
           </Button>
@@ -491,7 +491,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                     <div className="space-y-1 min-w-0">
                       <h4 className="text-sm font-medium text-foreground">{q.title}</h4>
                       {q.competency && (
-                        <Badge variant="secondary" className="text-[10px] uppercase">
+                        <Badge variant="default" className="text-[10px] uppercase font-semibold">
                           {q.competency}
                         </Badge>
                       )}

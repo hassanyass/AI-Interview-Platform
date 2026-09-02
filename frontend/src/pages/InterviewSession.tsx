@@ -6,14 +6,16 @@ import { InterviewProvider } from '../stores/InterviewContext'
 import { InterviewWorkspace } from '../features/interview-session/InterviewWorkspace'
 import { IntroScreen } from '../features/interview-session/IntroScreen'
 import { SessionEndedScreen } from '../features/interview-session/SessionEndedScreen'
-import { getInterviewSession, getLiveKitToken, terminateInterview } from '../services/api/interviews'
+import { FullscreenTerminatedScreen } from '../features/interview-session/FullscreenTerminatedScreen'
+import { getInterviewSession, getLiveKitToken, recordConsent, terminateInterview } from '../services/api/interviews'
+import { requestFullscreen } from '../lib/fullscreen'
 import type { InterviewSessionResponse } from '../types/api'
 import '@livekit/components-styles'
 
 export default function InterviewSession() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   const [session, setSession] = useState<InterviewSessionResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -41,6 +43,11 @@ export default function InterviewSession() {
   // InterviewWorkspace (which shows the same closing screen internally,
   // still mounted inside LiveKitRoom) unchanged, not get redirected here.
   const [loadedAlreadyCompleted, setLoadedAlreadyCompleted] = useState(false)
+  // PR-B: set to true when the 10s fullscreen grace expires — causes the
+  // FullscreenTerminatedScreen to render instead of SessionEndedScreen so
+  // the "thank you, successfully submitted" copy never appears for a
+  // proctoring-terminated session.
+  const [fullscreenTerminated, setFullscreenTerminated] = useState(false)
   const markCompleted = useCallback(() => {
     setSession((current) => current && current.status !== "COMPLETED" ? { ...current, status: "COMPLETED" } : current)
   }, [])
@@ -113,7 +120,37 @@ export default function InterviewSession() {
     if (!id) return;
     setConnecting(true);
     setIntroError('');
+    // PR-B: requestFullscreen() must be the very first thing this handler
+    // does, before any `await` — Fullscreen API's "transient activation"
+    // is tied to the user gesture that triggered this click, and an
+    // awaited network call ahead of it risks the browser rejecting the
+    // request as no longer gesture-triggered. Blocks Start entirely on
+    // failure/no-support (per proctoring-architecture.md's "require
+    // fullscreen to start the interview").
+    const fullscreenOk = await requestFullscreen();
+    if (!fullscreenOk) {
+      setIntroError(t('intro.fullscreenRequired'));
+      setConnecting(false);
+      return;
+    }
     try {
+      // PR-A: record consent before requesting the LiveKit token, so the
+      // consent timestamp always precedes any connection attempt. The
+      // checkbox on IntroScreen already gates this handler from firing
+      // uncensented; this call persists exactly what was shown as
+      // evidence. Idempotent server-side, so it's safe to call again if a
+      // prior attempt got this far but failed on the token step below.
+      const language = i18n.language?.startsWith('ar') ? 'ar' : 'en';
+      try {
+        await recordConsent(id, {
+          disclosure_language: language,
+          disclosure_text: t('intro.consent.body', { lng: language }),
+        });
+      } catch (consentErr: any) {
+        setIntroError(consentErr.message || t('intro.consent.recordFailed'));
+        return;
+      }
+
       const { token, url } = await getLiveKitToken(id);
       setLivekitToken(token);
       setLivekitUrl(url);
@@ -123,7 +160,7 @@ export default function InterviewSession() {
     } finally {
       setConnecting(false);
     }
-  }, [id, t]);
+  }, [id, t, i18n.language]);
 
   const handleEndFromIntro = useCallback(async () => {
     if (!id) return;
@@ -211,13 +248,26 @@ export default function InterviewSession() {
     return <SessionEndedScreen session={session} />;
   }
 
+  // PR-B: fullscreen-terminated sessions get their own screen, never the
+  // normal "thank you" completion page.
+  if (fullscreenTerminated && session) {
+    return <FullscreenTerminatedScreen session={session} />;
+  }
+
   if (!session || !livekitToken || !livekitUrl) {
     return null;
   }
 
   return (
     <LiveKitRoom
-      video={false}
+      // PR-C (docs/proctoring-architecture.md): camera publishes
+      // immediately on connect, as part of the same Start Session
+      // gesture that already passed the consent + fullscreen gates —
+      // this is what the consent text's "we may record video" actually
+      // becomes real. Unlike the audio fix below, there's no equivalent
+      // "captured a false answer before ready" risk for video, so no
+      // extra delay/explicit-unmute step is needed here.
+      video={true}
       // Audit fix (2026-08-27): was `audio={true}` — the mic started LIVE
       // the instant the room connected, before the candidate had any
       // chance to react. If the agent was slow to join/greet, STT was
@@ -227,9 +277,36 @@ export default function InterviewSession() {
       // Starting muted (candidate explicitly unmutes via the existing mic
       // button once they're ready) closes that window entirely.
       audio={false}
+      // PR-C: camera-permission denial must degrade gracefully (the
+      // interview proceeds audio-only, per CURRENT_DECISIONS.md) rather
+      // than break the room connection. onMediaDeviceFailure is exactly
+      // the library's documented hook for this — video={true} above
+      // internally catches a rejected/unavailable getUserMedia call and
+      // reports it here instead of throwing, so this handler only needs
+      // to make sure that failure is visible (not silently swallowed),
+      // not recover from it — there's nothing to recover, the interview
+      // already keeps going.
+      onMediaDeviceFailure={(failure, kind) => {
+        if (kind === 'videoinput') {
+          console.warn('[PR-C] Camera unavailable, proceeding audio-only:', failure);
+        }
+      }}
       token={livekitToken}
       serverUrl={livekitUrl}
-      connect={true}
+      // PR-C manual-test finding (2026-09-01): this was hardcoded `true`,
+      // meaning the room (and the candidate's live camera/mic) never
+      // actually disconnected just because InterviewWorkspace's own
+      // isCompleted branch swapped to rendering SessionEndedScreen —
+      // that's an internal render decision of a CHILD of this component,
+      // not something that touches the room connection itself. connect
+      // is a reactive prop (per @livekit/components-react's own docs:
+      // toggling it triggers a real connect/disconnect), and
+      // session.status flips to "COMPLETED" via markCompleted exactly
+      // when InterviewWorkspace's own isCompleted (which already covers
+      // the CLOSING phase, not just a real backend COMPLETED) fires — so
+      // this is the same signal, just also used to actually tear down
+      // the connection instead of only changing what renders on top of it.
+      connect={session.status !== "COMPLETED"}
       className="h-full w-full"
     >
       <RoomAudioRenderer />
@@ -237,6 +314,7 @@ export default function InterviewSession() {
         <InterviewWorkspace
           session={session}
           onCompleted={markCompleted}
+          onFullscreenTerminated={() => setFullscreenTerminated(true)}
         />
       </InterviewProvider>
     </LiveKitRoom>

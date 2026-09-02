@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { requestFullscreen } from "../../lib/fullscreen";
 
 interface WaitingRoomScreenProps {
   /** 1-based index of the section that just finished */
@@ -20,10 +21,22 @@ export function WaitingRoomScreen({
 }: WaitingRoomScreenProps) {
   const { t } = useTranslation();
   const [isContinuing, setIsContinuing] = useState(false);
+  // PR-B: re-enforced fullscreen gate — the candidate may have left
+  // fullscreen freely during this unclocked break (monitoring is paused
+  // here on purpose), so it's re-required before resuming into the next
+  // monitored section, symmetric with IntroScreen's Start Session gate.
+  const [fullscreenError, setFullscreenError] = useState("");
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (isContinuing) return;
     setIsContinuing(true);
+    setFullscreenError("");
+    const ok = await requestFullscreen();
+    if (!ok) {
+      setFullscreenError(t("waitingRoom.fullscreenRequired"));
+      setIsContinuing(false);
+      return;
+    }
     onContinue();
   };
 
@@ -70,6 +83,12 @@ export function WaitingRoomScreen({
             <span className="text-muted-foreground/90">{t("waitingRoom.autoAdvance")}</span>
           </p>
         </div>
+
+        {fullscreenError && (
+          <p className="text-sm font-medium text-destructive" role="alert">
+            {fullscreenError}
+          </p>
+        )}
 
         {/* Primary CTA */}
         {!isLastSection && (

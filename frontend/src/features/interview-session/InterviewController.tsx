@@ -13,6 +13,8 @@ interface InterviewControllerProps {
   backendState: any; // Used to trigger reset from processing
   /** Whether another section follows the current one (for dialog copy) */
   hasNextSection?: boolean;
+  /** PR-B: when true, all controls are frozen (fullscreen termination in progress). */
+  isLocked?: boolean;
 }
 
 export function InterviewController({
@@ -23,6 +25,7 @@ export function InterviewController({
   onSendControl,
   backendState,
   hasNextSection = true,
+  isLocked = false,
 }: InterviewControllerProps) {
   const [controlState, setControlState] = useState<ControlState>(isCompleted ? "ENDED" : "IDLE");
   const [processingAction, setProcessingAction] = useState<string | null>(null);
@@ -55,7 +58,7 @@ export function InterviewController({
   }, [backendState?.phase, controlState, isCompleted]);
 
   const handleAction = (action: string) => {
-    if (controlState !== "IDLE" || isCompleted) return;
+    if (controlState !== "IDLE" || isCompleted || isLocked) return;
     
     if (action === "END_SECTION_EARLY") {
       setIsEndSectionDialogOpen(true);
@@ -91,12 +94,19 @@ export function InterviewController({
   };
 
   const isProcessing = controlState === "PROCESSING" || controlState === "ENDING";
-  // The user requested buttons to be permanently visible but disabled if not allowed.
-  // This provides a stable UI layout for Verbal, Coding, and MCQ.
+  // When isLocked (fullscreen terminated), freeze everything with a visible
+  // explanation banner — the session has been terminated and the overlay
+  // will momentarily swap to the FullscreenTerminatedScreen page.
+  const allDisabled = isCompleted || isLocked;
 
   return (
     <div className="w-full flex flex-col items-center gap-4 relative">
-      {errorMsg && (
+      {isLocked && (
+        <div className="absolute -top-12 left-0 right-0 mx-auto max-w-sm px-4 py-2.5 bg-red-950/80 text-red-300 text-xs font-medium rounded-lg border border-red-800/60 text-center shadow-sm animate-in fade-in slide-in-from-bottom-2">
+          Session terminated — controls disabled
+        </div>
+      )}
+      {!isLocked && errorMsg && (
         <div className="absolute -top-12 px-4 py-2 bg-destructive/10 text-destructive text-sm rounded-md border border-destructive/20 shadow-sm animate-in fade-in slide-in-from-bottom-2">
           {errorMsg}
         </div>
@@ -109,7 +119,7 @@ export function InterviewController({
           <SecondaryButton 
             icon={<RefreshCcw className="h-4 w-4" />}
             label={processingAction === "REPEAT_QUESTION" ? "Repeating..." : "Repeat"}
-            disabled={isCompleted || isProcessing || !allowedControls.includes("REPEAT_QUESTION")}
+            disabled={allDisabled || isProcessing || !allowedControls.includes("REPEAT_QUESTION")}
             onClick={() => handleAction("REPEAT_QUESTION")}
             isLoading={processingAction === "REPEAT_QUESTION"}
             tooltip="Repeat the last interviewer message"
@@ -117,7 +127,7 @@ export function InterviewController({
           <SecondaryButton 
             icon={<HelpCircle className="h-4 w-4" />}
             label={processingAction === "REQUEST_HINT" ? "Thinking..." : "Hint"}
-            disabled={isCompleted || isProcessing || !allowedControls.includes("REQUEST_HINT")}
+            disabled={allDisabled || isProcessing || !allowedControls.includes("REQUEST_HINT")}
             onClick={() => handleAction("REQUEST_HINT")}
             isLoading={processingAction === "REQUEST_HINT"}
             tooltip="Available during technical questions"
@@ -127,10 +137,10 @@ export function InterviewController({
         {/* Center: Microphone */}
         <div className="flex flex-col items-center shrink-0 mx-2 sm:mx-6">
           <button
-            disabled={isCompleted}
+            disabled={allDisabled}
             onClick={onToggleMicrophone}
             className={`relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-300 shadow-sm
-              ${isCompleted ? "bg-muted text-muted-foreground opacity-50 cursor-not-allowed" :
+              ${allDisabled ? "bg-muted text-muted-foreground opacity-50 cursor-not-allowed" :
                 isMicrophoneEnabled 
                 ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 hover:shadow-md" 
                 : "bg-muted text-muted-foreground border border-border hover:bg-muted/80 hover:scale-105"
@@ -155,7 +165,7 @@ export function InterviewController({
           <SecondaryButton 
             icon={<SkipForward className="h-4 w-4" />}
             label={processingAction === "SKIP_QUESTION" ? "Skipping..." : "Skip"}
-            disabled={isCompleted || isProcessing || !allowedControls.includes("SKIP_QUESTION")}
+            disabled={allDisabled || isProcessing || !allowedControls.includes("SKIP_QUESTION")}
             onClick={() => handleAction("SKIP_QUESTION")}
             isLoading={processingAction === "SKIP_QUESTION"}
             tooltip="Skip this question"
@@ -164,7 +174,7 @@ export function InterviewController({
           <SecondaryButton
             icon={<LogOut className="h-4 w-4" />}
             label={processingAction === "END_SECTION_EARLY" ? "Ending section..." : "End Section"}
-            disabled={isCompleted || isProcessing || !allowedControls.includes("END_SECTION_EARLY")}
+            disabled={allDisabled || isProcessing || !allowedControls.includes("END_SECTION_EARLY")}
             onClick={() => handleAction("END_SECTION_EARLY")}
             isLoading={processingAction === "END_SECTION_EARLY"}
             tooltip="End this section early"
