@@ -153,6 +153,12 @@ export interface EvaluationDetail {
    *  independent holistic judgment). undefined/null when no enabled
    *  criterion had a scoreable result to average. */
   weighted_score?: number;
+  /** Evaluation regeneration (2026-09-03): true when this is still the
+   *  generic placeholder (_ensure_evaluation_placeholder) -- the session
+   *  never got a real AI evaluation (crashed, lost its lease, or ended
+   *  via a path that never talks to the agent, e.g. TERMINATED). Drives
+   *  the "Regenerate Evaluation" button. */
+  is_placeholder: boolean;
   override_suggested?: boolean;
   override_reason?: string;
   /** Short-lived presigned R2 GET URL, computed fresh on every fetch —
@@ -167,7 +173,7 @@ export interface EvaluationDetail {
 }
 
 export interface IntegrityEvent {
-  event_type: "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED";
+  event_type: "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED" | "HEAD_DOWN_SUSPECTED";
   phase?: string;
   metadata: Record<string, unknown>;
   /** Approximate seconds into the recording -- see backend's
@@ -340,6 +346,17 @@ export const adminClient = {
 
   getCandidateResult: async (sessionId: string): Promise<EvaluationDetail> => {
     return fetchApi<EvaluationDetail>(`/api/v1/admin/interviews/${sessionId}/result`);
+  },
+
+  /** Evaluation regeneration (2026-09-03): HR-triggered, on-demand --
+   *  generates a real evaluation from whatever transcript/question_records
+   *  exist (live DB sources, not the legacy final_result snapshot), for a
+   *  session currently showing the generic placeholder. Can take a real
+   *  several-second Groq call; the caller should show a loading state. */
+  regenerateEvaluation: async (sessionId: string): Promise<EvaluationDetail> => {
+    return fetchApi<EvaluationDetail>(`/api/v1/admin/interviews/${sessionId}/regenerate-evaluation`, {
+      method: "POST",
+    });
   },
 
   setSuggestedOverride: async (sessionId: string, overrideSuggested: boolean | null, reason?: string): Promise<any> => {

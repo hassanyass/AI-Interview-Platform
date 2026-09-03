@@ -117,6 +117,11 @@ async def _ensure_evaluation_placeholder(db: AsyncSession, session_id: UUID) -> 
             "evaluation could run. Review the transcript and recording "
             "directly to assess this candidate."
         ),
+        # Evaluation regeneration (2026-09-03): explicit flag, not a
+        # string-match on the summary above -- see Evaluation.is_placeholder's
+        # own docstring in models/interview.py and CURRENT_DECISIONS.md's
+        # "Evaluation regeneration for placeholder sessions" entry.
+        is_placeholder=True,
     ))
 
 
@@ -160,13 +165,25 @@ async def _finalize_live_session(db: AsyncSession, session: InterviewSession, ta
     session.active_agent_id = None
     session.agent_lease_expires_at = None
     session.disconnected_at = None
+    # Bug fix (2026-09-02): captured before commit, deliberately. Reading
+    # session.recording_egress_id AFTER db.commit() (as this used to do)
+    # hits the exact same async-SQLAlchemy pitfall as admin.py's
+    # update_job_criteria fix earlier today: commit() expires every
+    # attribute on `session` by default, so that later read silently
+    # became a lazy-load -- which async SQLAlchemy can't do outside an
+    # active greenlet context, raising `MissingGreenlet:
+    # greenlet_spawn has not been called` and aborting the whole
+    # terminate/finalize call (candidate-initiated terminate, and the
+    # idle-disconnect sweep both call this function).
+    session_id = session.id
+    recording_egress_id = session.recording_egress_id
 
-    await _ensure_evaluation_placeholder(db, session.id)
+    await _ensure_evaluation_placeholder(db, session_id)
     await db.commit()
 
-    if session.recording_egress_id:
-        await _stop_recording_egress(session.recording_egress_id)
-    await _delete_livekit_room(session.id)
+    if recording_egress_id:
+        await _stop_recording_egress(recording_egress_id)
+    await _delete_livekit_room(session_id)
     return True
 
 
@@ -694,40 +711,51 @@ async def create_checkpoint(
 
 # ─── Evaluation Submission (Phase 8C) ───────────────────────────────────────────
 
-@router.post(
-    "/{session_id}/evaluation",
-    dependencies=[agent_auth],
-)
-async def submit_evaluation(
-    session_id: UUID,
-    body: EvaluationSubmit,
-    db: AsyncSession = db_dependency,
-):
-    """Upserts the normalized Evaluation + Score rows for this session.
-    Idempotent on session_id -- the agent's own mid-session attempt and its
-    teardown-time retry (both call this) can both succeed without creating
-    duplicate rows. A resubmission replaces (not accumulates) prior scores,
-    matching build_final_result()'s existing single-envelope-per-session
-    semantics for the legacy final_result JSONB."""
-    session = await _get_session(db, session_id)
-
+async def _upsert_evaluation(
+    db: AsyncSession,
+    session: InterviewSession,
+    *,
+    overall_score,
+    recommendation,
+    evidence_sufficiency,
+    summary,
+    detailed_overview,
+    criterion_scores,
+) -> UUID:
+    """Shared upsert for the normalized Evaluation + Score rows -- the one
+    place both the agent's own submission (submit_evaluation below) and
+    the HR-triggered regeneration (admin.py's regenerate_evaluation, added
+    2026-09-03 -- see CURRENT_DECISIONS.md's "Evaluation regeneration for
+    placeholder sessions" entry) write a real evaluation, so the
+    weighted-score formula and Score-row handling exist in exactly one
+    place. Idempotent on session_id -- a second call (retry, or an
+    explicit regeneration) replaces rather than accumulates prior scores.
+    Marks is_placeholder=False unconditionally: reaching this function at
+    all means a real evaluation (initial or regenerated) was produced, not
+    the generic fallback. `criterion_scores` items need only
+    `.criterion_key`/`.score`/`.overview`/`.strengths`/`.improvements`/
+    `.evidence_reference` attributes -- CriterionScoreSubmit instances
+    from either caller satisfy this. Caller commits; returns the
+    evaluation id (captured before commit -- see the comment below on
+    why)."""
     result = await db.execute(
-        select(Evaluation).where(Evaluation.session_id == session_id)
+        select(Evaluation).where(Evaluation.session_id == session.id)
     )
     evaluation = result.scalar_one_or_none()
 
     if evaluation is None:
-        evaluation = Evaluation(session_id=session_id)
+        evaluation = Evaluation(session_id=session.id)
         db.add(evaluation)
         await db.flush()  # assigns evaluation.id before Score rows reference it
     else:
         await db.execute(delete(Score).where(Score.evaluation_id == evaluation.id))
 
-    evaluation.overall_score = body.overall_score
-    evaluation.recommendation = body.recommendation
-    evaluation.evidence_sufficiency = body.evidence_sufficiency
-    evaluation.summary = body.summary
-    evaluation.detailed_overview = body.detailed_overview
+    evaluation.overall_score = overall_score
+    evaluation.recommendation = recommendation
+    evaluation.evidence_sufficiency = evidence_sufficiency
+    evaluation.summary = summary
+    evaluation.detailed_overview = detailed_overview
+    evaluation.is_placeholder = False
 
     # Scoring-mechanism upgrade (2026-09-01, signed-off frozen-file touch,
     # see CURRENT_DECISIONS.md's "Scoring mechanism upgrade" entry): a
@@ -750,7 +778,7 @@ async def submit_evaluation(
     # zero", matching overall_score's own null convention.
     weighted_sum = 0.0
     total_weight = 0
-    if body.criterion_scores:
+    if criterion_scores:
         # Best-effort criterion_id resolution, scoped to this exact job's
         # resolved criteria set (not a bare global key lookup — a key is
         # only unique within one job/template scope, not across all of them).
@@ -761,7 +789,7 @@ async def submit_evaluation(
         resolved = await _resolve_criteria_for_job(db, session.job_id)
         key_to_id = {c.key: c.id for c in resolved}
         key_to_weight = {c.key: c.weight for c in resolved}
-        for cs in body.criterion_scores:
+        for cs in criterion_scores:
             db.add(Score(
                 evaluation_id=evaluation.id,
                 criterion_id=key_to_id.get(cs.criterion_key),
@@ -784,6 +812,33 @@ async def submit_evaluation(
     # commit forces a lazy-refresh outside an async-safe context ->
     # sqlalchemy.exc.MissingGreenlet. Capture the value BEFORE commit, return
     # that local, never the (now-expired) ORM attribute.
-    evaluation_id = evaluation.id
+    return evaluation.id
+
+
+@router.post(
+    "/{session_id}/evaluation",
+    dependencies=[agent_auth],
+)
+async def submit_evaluation(
+    session_id: UUID,
+    body: EvaluationSubmit,
+    db: AsyncSession = db_dependency,
+):
+    """Upserts the normalized Evaluation + Score rows for this session.
+    Idempotent on session_id -- the agent's own mid-session attempt and its
+    teardown-time retry (both call this) can both succeed without creating
+    duplicate rows. A resubmission replaces (not accumulates) prior scores,
+    matching build_final_result()'s existing single-envelope-per-session
+    semantics for the legacy final_result JSONB."""
+    session = await _get_session(db, session_id)
+    evaluation_id = await _upsert_evaluation(
+        db, session,
+        overall_score=body.overall_score,
+        recommendation=body.recommendation,
+        evidence_sufficiency=body.evidence_sufficiency,
+        summary=body.summary,
+        detailed_overview=body.detailed_overview,
+        criterion_scores=body.criterion_scores,
+    )
     await db.commit()
     return {"session_id": str(session_id), "evaluation_id": str(evaluation_id)}

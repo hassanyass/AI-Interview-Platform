@@ -410,6 +410,33 @@ class InterviewController:
             )
             action.action = ActionEnum.ACKNOWLEDGE
 
+        # Bug fix (2026-09-03, real-evidence report): a 1-question VERBAL
+        # section produced 6 questions in a live test before a human had to
+        # manually end the session. Root cause -- an ASK past the first turn
+        # of a core question is functionally a follow-up, but the follow-up
+        # cap below only ever checked action.action == FOLLOW_UP. A model
+        # that drifts into tagging a deep-dive as "another question" (ASK,
+        # which has no count-based limit of its own -- valid throughout all
+        # of BACKGROUND per state_machine.py) sails straight past the cap
+        # entirely, and _must_force_transition() offers no backstop for the
+        # ordered core-question flow either (purely time-tier-based, so a
+        # section with a comfortable time budget never forces a move on).
+        # Reclassifying here, before the existing cap check, means a
+        # mislabeled ASK gets caught by that same already-proven enforcement
+        # rather than needing a second, parallel cap. Scoped to the ordered
+        # core-question flow specifically (core_section is not None) --
+        # the legacy free-form BACKGROUND path has no per-question
+        # first-turn/subsequent-turn tracking to key this off of.
+        if action.action == ActionEnum.ASK:
+            core_section = self._active_core_section()
+            if core_section is not None and core_section.current_question_asked:
+                logger.info(
+                    "ASK past the first turn of core question id=%s -- "
+                    "reclassifying as FOLLOW_UP so the cap below applies.",
+                    core_section.current_question.id if core_section.current_question else None,
+                )
+                action.action = ActionEnum.FOLLOW_UP
+
         # Enforce the follow-up cap deterministically (Phase 7C). Previously
         # advisory-only: the LLM was only ever told the current count and max
         # via prompt text and could exceed it. This now hard-blocks a further
@@ -676,12 +703,13 @@ class InterviewController:
                 detected_candidate_control=CandidateControlAction.END_INTERVIEW,
             )
 
-        # PR-B/PR-D (docs/proctoring-architecture.md): browser-detected
+        # PR-B/PR-D/Part 2 (docs/proctoring-architecture.md): browser-detected
         # integrity telemetry — fullscreen-exit-past-grace, tab-hidden,
-        # window-blurred (PR-B), plus PR-D's face-presence signals
-        # (2026-09-02, signed-off one-line extension of this existing
-        # branch — no new logic, the client-side useFaceDetectionMonitor.ts
-        # already debounces/edge-triggers before this ever fires).
+        # window-blurred (PR-B), PR-D's face-presence signals, plus Part 2's
+        # head-pose signal HEAD_DOWN_SUSPECTED (2026-09-02, signed-off
+        # one-line extension of this existing branch — no new logic, the
+        # client-side useFaceDetectionMonitor.ts already debounces/
+        # edge-triggers before this ever fires).
         # Purely additive: logged through the exact same InterviewEvent
         # mechanism/sequence counter every other in-session event already
         # uses (see _transition_out_of_waiting_room's WAITING_ROOM_AUTO_
@@ -689,7 +717,7 @@ class InterviewController:
         # no ack — these feed the later aggregate flag, not a verdict.
         # Defensively no-op post-COMPLETED (a late/duplicate message after
         # teardown), same spirit as the END_INTERVIEW special case above.
-        if command in ("FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED", "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED"):
+        if command in ("FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED", "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED", "HEAD_DOWN_SUSPECTED"):
             if self.context.current_phase == InterviewPhase.COMPLETED:
                 return None
             metadata = payload.get("payload") if isinstance(payload, dict) else None

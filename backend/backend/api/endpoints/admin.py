@@ -24,6 +24,8 @@ from backend.models.interview import (
     InterviewQuestion,
     InterviewSession,
     InterviewEvent,
+    InterviewMessage,
+    InterviewCheckpoint,
     AssessmentCriterion,
     Evaluation,
     Score,
@@ -199,25 +201,27 @@ def _presign_recording_url(storage_path: str | None) -> str | None:
 
 
 # Explicit allowlist, not a blocklist -- a real query against interview_events
-# today returns 15 distinct event_type values (SESSION_STARTED,
+# today returns 15+ distinct event_type values (SESSION_STARTED,
 # QUESTION_SKIPPED, PHASE_STARTED, HINT_REQUESTED, WAITING_ROOM_*, etc.),
-# only 3 of which are genuine integrity signals; the rest are ordinary
-# lifecycle bookkeeping that must never show up on an "integrity timeline".
-# Matches process_ui_command's own explicit tuple in controller.py exactly
-# -- same 5 strings, not derived from it (no shared import between the
-# agent and backend packages) so keep these two lists in sync by hand if
-# either changes.
+# only a handful of which are genuine integrity signals; the rest are
+# ordinary lifecycle bookkeeping that must never show up on an "integrity
+# timeline". Matches process_ui_command's own explicit tuple in
+# controller.py exactly -- same 6 strings, not derived from it (no shared
+# import between the agent and backend packages) so keep these two lists
+# in sync by hand if either changes.
 INTEGRITY_EVENT_TYPES = (
     "FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED",
     "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED",
+    "HEAD_DOWN_SUSPECTED",
 )
 
 
 async def _get_integrity_events(db: AsyncSession, session: InterviewSession) -> list[IntegrityEventResponse]:
     """Session-finalization/proctoring aggregation (2026-09-02, see
     CURRENT_DECISIONS.md's "Proctoring PR-D scope decision" and the
-    aggregation/dashboard plan that followed it): resolves the 5 known
-    integrity signal types for one session, in order.
+    aggregation/dashboard plan that followed it, plus Part 2's head-pose
+    signal): resolves the known integrity signal types (INTEGRITY_EVENT_
+    TYPES) for one session, in order.
 
     video_offset_seconds is computed as event.created_at - session.started_at
     -- a real, named approximation, not a frame-exact seek: the Egress
@@ -918,6 +922,66 @@ async def regenerate_question(
 # HR Results Dashboard (Phase 8D)
 # ══════════════════════════════════════════════════════════════════════════
 
+async def _get_live_transcript(db: AsyncSession, session_id: UUID) -> list[dict]:
+    """Amendment (2026-09-03, see CURRENT_DECISIONS.md's "Results display
+    for non-naturally-completed sessions" entry): fallback source for a
+    session's transcript when the legacy final_result JSONB snapshot was
+    never written. final_result.transcript is ONLY ever populated by the
+    agent's own natural end-of-interview path (persistence.py's
+    build_final_result -> save_completion) -- a session that ends any
+    other way (candidate/HR-terminated, the idle-disconnect sweep, an
+    agent crash) never gets that snapshot, even though every individual
+    turn is already durably persisted here in InterviewMessage as it
+    happens. Real DB evidence at the time of this fix: 4 real TERMINATED
+    sessions with 1-8 real messages each, every one showing an empty
+    transcript on the results page despite the real conversation existing
+    the whole time. "system" is a theoretically-allowed speaker value
+    (see the model's own comment) but has never actually been written by
+    the agent -- excluded here so this can never violate
+    TranscriptMessage's agent|candidate-only contract even if that ever
+    changes."""
+    result = await db.execute(
+        select(InterviewMessage)
+        .where(
+            InterviewMessage.session_id == session_id,
+            InterviewMessage.speaker.in_(("candidate", "agent")),
+        )
+        .order_by(InterviewMessage.sequence_number)
+    )
+    return [{"speaker": m.speaker, "text": m.text} for m in result.scalars().all()]
+
+
+async def _get_live_question_records_and_submission(
+    db: AsyncSession, session_id: UUID
+) -> tuple[list[dict], dict]:
+    """Same gap and reasoning as _get_live_transcript above, for
+    question_records/technical_submission. InterviewCheckpoint is saved
+    after essentially every turn (persistence.py's save_checkpoint, called
+    throughout the interview, not just at natural completion), so the
+    latest row is a near-real-time snapshot even for a session that never
+    reached that natural path. Unlike the transcript, InterviewCheckpoint
+    deliberately does NOT store the full transcript (see its own
+    docstring) -- only this structured progress data, which it does
+    carry, in the exact same QuestionRecord-model shape build_final_result
+    itself serializes (both call `.model_dump(mode="json")` on the same
+    context.question_records), so no reshaping is needed here."""
+    result = await db.execute(
+        select(InterviewCheckpoint)
+        .where(InterviewCheckpoint.session_id == session_id)
+        .order_by(InterviewCheckpoint.created_at.desc())
+        .limit(1)
+    )
+    checkpoint = result.scalar_one_or_none()
+    if checkpoint is None:
+        return [], {}
+    question_records = checkpoint.question_records or []
+    technical_submission = (
+        (checkpoint.section_progress or {}).get("technical", {}).get("technical_submission")
+        or {}
+    )
+    return question_records, technical_submission
+
+
 @router.get("/interviews/{session_id}/result", response_model=EvaluationDetailResponse)
 async def get_candidate_result(
     session_id: UUID,
@@ -945,6 +1009,24 @@ async def get_candidate_result(
         job_title = job_result.scalar_one_or_none()
 
     final_result = session.final_result or {}
+
+    # Amendment (2026-09-03): final_result is only ever written by the
+    # agent's own natural completion path -- fall back to the live sources
+    # (already durably persisted independently of that path) rather than
+    # silently showing "nothing was recorded" for a session that actually
+    # has real data. See _get_live_transcript's docstring for the full
+    # reasoning and real evidence.
+    transcript = final_result.get("transcript") or []
+    raw_question_records = final_result.get("question_records") or []
+    technical_submission = final_result.get("technical_submission") or {}
+    if not transcript:
+        transcript = await _get_live_transcript(db, session_id)
+    if not raw_question_records or not technical_submission:
+        live_records, live_submission = await _get_live_question_records_and_submission(db, session_id)
+        if not raw_question_records:
+            raw_question_records = live_records
+        if not technical_submission:
+            technical_submission = live_submission
 
     eval_result = await db.execute(
         select(Evaluation)
@@ -984,7 +1066,8 @@ async def get_candidate_result(
     # question_id doesn't resolve (legacy pre-Phase-7 session using
     # ephemeral, never-persisted questions) still comes through with
     # title/text/competency left None rather than being dropped.
-    raw_question_records = final_result.get("question_records") or []
+    # (raw_question_records already resolved above, final_result or the
+    # live-checkpoint fallback.)
     question_uuids = []
     for r in raw_question_records:
         try:
@@ -1020,9 +1103,9 @@ async def get_candidate_result(
         candidate_name=session.profile.full_name if session.profile else None,
         candidate_email=session.profile.email if session.profile else None,
         job_title=job_title,
-        transcript=final_result.get("transcript") or [],
+        transcript=transcript,
         question_records=question_records,
-        technical_submission=final_result.get("technical_submission") or {},
+        technical_submission=technical_submission,
         overall_score=evaluation.overall_score,
         recommendation=evaluation.recommendation,
         evidence_sufficiency=evaluation.evidence_sufficiency,
@@ -1030,11 +1113,110 @@ async def get_candidate_result(
         detailed_overview=evaluation.detailed_overview,
         scores=scores,
         weighted_score=evaluation.weighted_score,
+        is_placeholder=evaluation.is_placeholder,
         override_suggested=evaluation.override_suggested,
         override_reason=evaluation.override_reason,
         recording_url=_presign_recording_url(session.recording_storage_path),
         integrity_events=await _get_integrity_events(db, session),
     )
+
+
+@router.post("/interviews/{session_id}/regenerate-evaluation", response_model=EvaluationDetailResponse)
+async def regenerate_evaluation(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Evaluation regeneration (2026-09-03, see CURRENT_DECISIONS.md's
+    "Evaluation regeneration for placeholder sessions" entry): HR-triggered,
+    on-demand -- generates a real evaluation for a session stuck on the
+    generic _ensure_evaluation_placeholder row, using whatever real
+    evidence exists (InterviewMessage/InterviewCheckpoint via
+    _get_live_transcript/_get_live_question_records_and_submission,
+    already built for the results-display fix this follows). Deliberately
+    NOT restricted to COMPLETED sessions -- a TERMINATED (early-ended)
+    session is explicitly eligible, evaluated honestly from partial
+    evidence (evidence_sufficiency exists precisely to flag this), per the
+    confirmed decision: 112 of 149 real placeholder sessions found during
+    scoping were TERMINATED, and excluding them would have addressed only
+    a third of the real problem."""
+    from backend.api.endpoints.internal import _upsert_evaluation, _resolve_criteria_for_job
+    from backend.services.evaluation_generator import generate_evaluation
+
+    result = await db.execute(
+        select(InterviewSession)
+        .options(selectinload(InterviewSession.profile))
+        .where(InterviewSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found.")
+
+    if session.status not in ("COMPLETED", "TERMINATED"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot generate an evaluation for a session that hasn't ended yet.",
+        )
+
+    transcript = await _get_live_transcript(db, session_id)
+    raw_question_records, technical_submission = await _get_live_question_records_and_submission(db, session_id)
+
+    question_uuids = []
+    for r in raw_question_records:
+        try:
+            question_uuids.append(UUID(r["question_id"]))
+        except (KeyError, ValueError, TypeError):
+            continue
+    question_eval_criteria = {}
+    if question_uuids:
+        q_result = await db.execute(
+            select(InterviewQuestion).where(InterviewQuestion.id.in_(question_uuids))
+        )
+        question_eval_criteria = {
+            str(q.id): q.eval_criteria for q in q_result.scalars().all() if q.eval_criteria is not None
+        }
+
+    resolved_criteria = await _resolve_criteria_for_job(db, session.job_id)
+    criteria = [
+        {
+            "key": c.key,
+            "label": c.label,
+            "kind": c.kind,
+            "guidance_text": c.guidance_text,
+            "section_id": str(c.section_id) if c.section_id else None,
+        }
+        for c in resolved_criteria
+    ]
+
+    try:
+        generated = await generate_evaluation(
+            role=session.role or "",
+            level=session.level or "",
+            transcript=transcript,
+            question_records=raw_question_records,
+            technical_submission=technical_submission,
+            question_eval_criteria=question_eval_criteria,
+            criteria=criteria,
+        )
+    except Exception:
+        logger.exception("Failed to regenerate evaluation for session %s", session_id)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to generate a new evaluation. Check the backend logs and try again.",
+        )
+
+    await _upsert_evaluation(
+        db, session,
+        overall_score=generated["overall_score"],
+        recommendation=generated["recommendation"],
+        evidence_sufficiency=generated["evidence_sufficiency"],
+        summary=generated["summary"],
+        detailed_overview=generated["detailed_overview"],
+        criterion_scores=generated["criterion_scores"],
+    )
+    await db.commit()
+
+    return await get_candidate_result(session_id, db, admin_id)
 
 
 @router.get("/jobs/{job_id}/results", response_model=JobResultsResponse)
@@ -1281,31 +1463,40 @@ async def update_job_criteria(
     # A template key not present in payload.criteria at all stays disabled
     # at the default weight (5) -- matches the old enabled_keys behavior's
     # "not in the list = disabled" convention.
+    #
+    # Bug fix (2026-09-02): the response used to be built AFTER
+    # `db.commit()` by reading attributes back off the just-added ORM
+    # objects (`r.key`, `r.label`, ...). Committing expires every attribute
+    # on those objects by default (SQLAlchemy's expire_on_commit), so that
+    # later read silently becomes a lazy-load -- which async SQLAlchemy
+    # can't do outside an active greenlet context, and raised
+    # `MissingGreenlet: greenlet_spawn has not been called` on every save.
+    # Fix: build the response payload from the values already in hand
+    # (`t`/`setting`) during the same loop that builds the rows, before
+    # commit -- never re-reading attributes off a committed object.
     settings_by_key = {c.key: c for c in payload.criteria}
-    new_rows = []
+    response_rows = []
     for t in templates:
         setting = settings_by_key.get(t.key)
-        row = AssessmentCriterion(
+        enabled = setting.enabled if setting else False
+        weight = setting.weight if setting else 5
+        db.add(AssessmentCriterion(
             job_id=job_id,
             section_id=None,
             key=t.key,
             label=t.label,
             kind=t.kind,
-            enabled=(setting.enabled if setting else False),
+            enabled=enabled,
             guidance_text=t.guidance_text,
             source="TEMPLATE",
-            weight=(setting.weight if setting else 5),
-        )
-        db.add(row)
-        new_rows.append(row)
+            weight=weight,
+        ))
+        response_rows.append(AssessmentCriterionResponse(
+            key=t.key, label=t.label, kind=t.kind,
+            enabled=enabled, guidance_text=t.guidance_text,
+            source="TEMPLATE", weight=weight,
+        ))
 
     await db.commit()
 
-    return [
-        AssessmentCriterionResponse(
-            key=r.key, label=r.label, kind=r.kind,
-            enabled=r.enabled, guidance_text=r.guidance_text,
-            source=r.source, weight=r.weight,
-        )
-        for r in new_rows
-    ]
+    return response_rows

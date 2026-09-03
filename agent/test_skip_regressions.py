@@ -1321,6 +1321,63 @@ def test_followup_cap_is_deterministically_enforced_in_background():
     asyncio.run(scenario())
 
 
+def test_repeated_ask_past_first_turn_is_capped_like_a_follow_up():
+    """Bug fix (2026-09-03, real-evidence report): a live test of a
+    1-question VERBAL section produced 6 questions before a human had to
+    manually end the session -- the LLM tagged every deep-dive as ASK
+    instead of FOLLOW_UP, and ASK had no count-based cap of its own (only
+    FOLLOW_UP did, per test_followup_cap_is_deterministically_enforced_
+    in_background above). Drives a mock LLM that ALWAYS returns ASK (the
+    exact observed failure mode, never self-correcting to FOLLOW_UP/
+    TRANSITION) and confirms process_candidate_input() reclassifies every
+    ASK after the first as a FOLLOW_UP, so the pre-existing cap
+    enforcement catches it -- the interview does not silently accumulate
+    extra "questions" no matter how long the LLM keeps mislabeling."""
+    from agent.interview.models import StructuredAction, ActionEnum, OrderedSectionProgress
+
+    class AlwaysAskLLM:
+        async def generate_structured(self, system_prompt, messages, response_model):
+            return StructuredAction(
+                action=ActionEnum.ASK,
+                response="Here's another question, unrelated in phrasing.",
+                reason="LLM never switches off ASK -- the exact observed bug.",
+            )
+
+    async def scenario():
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        q1 = Question(
+            id="iq-1", title="Q1", problem_statement="Tell me about yourself.",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=[q1])
+        controller = InterviewController(AlwaysAskLLM(), MockPersistence(), context)
+
+        actions = []
+        for _ in range(6):
+            action = await controller.process_candidate_input("some answer")
+            actions.append(action.action)
+
+        # The first ASK is legitimate (posing the one real question). Every
+        # one after it is the LLM repeating the exact observed bug -- with
+        # the fix, none of those get to stay ASK: they're reclassified to
+        # FOLLOW_UP and, once the cap is hit, downgraded to ACKNOWLEDGE.
+        # Before this fix, `actions` would have been six ASKs in a row.
+        assert actions[0] == ActionEnum.ASK
+        assert ActionEnum.ASK not in actions[1:]
+        assert actions[-1] == ActionEnum.ACKNOWLEDGE
+
+        # Only the one real question exists -- no phantom extra questions
+        # were ever advanced into or recorded.
+        core_section = context.sections["VERBAL"]
+        assert core_section.current_index == 0
+        assert core_section.current_question.id == "iq-1"
+        assert controller.context.question_records == []
+
+    asyncio.run(scenario())
+
+
 def test_b2b_core_question_walk_advances_then_transitions_to_closing():
     """Phase 7D: an ordered, HR-approved core-question Verbal section stays
     in BACKGROUND between questions (no phase change — BACKGROUND->BACKGROUND

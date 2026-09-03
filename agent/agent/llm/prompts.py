@@ -195,6 +195,10 @@ SUBSEQUENT TURNS (candidate has answered):
 - You may ask up to {max_followups} follow-up(s) to probe deeper on THIS
   competency only — {followups_used} used so far. Never introduce a topic
   outside {competency} as a follow-up (e.g. no unrelated questions).
+- Use action=FOLLOW_UP for every one of these, never action=ASK again —
+  action=ASK is ONLY for the very first turn of a question, above. A
+  deep-dive on the same competency is still a follow-up, not "another
+  question," no matter how different the phrasing feels.
 - Once satisfied, or once no follow-ups remain, use action=TRANSITION to
   move to the next question.
 

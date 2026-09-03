@@ -362,9 +362,9 @@ class QuestionRecordDetail(BaseModel):
 
 class IntegrityEventResponse(BaseModel):
     """One flagged moment from the integrity timeline -- see admin.py's
-    _get_integrity_events for the exact 5-type allowlist and the
-    video_offset_seconds approximation this carries."""
-    event_type: str  # "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED"
+    _get_integrity_events for the exact allowlist (INTEGRITY_EVENT_TYPES)
+    and the video_offset_seconds approximation this carries."""
+    event_type: str  # "FULLSCREEN_EXITED" | "TAB_HIDDEN" | "WINDOW_BLURRED" | "NO_FACE_DETECTED" | "MULTIPLE_FACES_DETECTED" | "HEAD_DOWN_SUSPECTED"
     phase: Optional[str] = None
     metadata: dict = {}
     # Approximate seconds into the session recording -- None if the
@@ -392,6 +392,14 @@ class EvaluationDetailResponse(BaseModel):
     summary: Optional[str] = None
     detailed_overview: Optional[str] = None
     scores: List[CriterionScoreResponse] = []
+    # Evaluation regeneration (2026-09-03): True when this evaluation is
+    # the generic _ensure_evaluation_placeholder row -- the session never
+    # actually got a real AI evaluation (crashed, lost its lease, or ended
+    # via a path that never talks to the agent, e.g. TERMINATED). Drives
+    # the frontend's "Regenerate Evaluation" affordance. See
+    # CURRENT_DECISIONS.md's "Evaluation regeneration for placeholder
+    # sessions" entry.
+    is_placeholder: bool = False
     # Scoring-mechanism upgrade: the code-computed weighted aggregate of
     # `scores` above, deliberately separate from overall_score (the LLM's
     # own independent holistic judgment) -- see CURRENT_DECISIONS.md's

@@ -399,6 +399,15 @@ class Evaluation(Base):
     override_suggested = Column(Boolean, nullable=True)
     override_reason = Column(Text, nullable=True)
 
+    # Evaluation regeneration (2026-09-03, see CURRENT_DECISIONS.md): True
+    # for a row created by _ensure_evaluation_placeholder (a session never
+    # actually evaluated -- crashed, lost its lease, or ended via a path
+    # that never talks to the agent at all), False once a real evaluation
+    # (initial or regenerated) is submitted. Replaces the earlier, fragile
+    # "compare summary against the exact placeholder sentinel string"
+    # detection with an explicit, unambiguous flag.
+    is_placeholder = Column(Boolean, nullable=False, default=False, server_default="false")
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

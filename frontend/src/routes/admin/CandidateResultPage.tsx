@@ -5,11 +5,12 @@ import {
   ArrowLeft, Mail, Calendar, Settings2, Loader2, Save,
   ChevronDown, CheckCircle2, XCircle, SkipForward, RotateCw, Clock,
   Lightbulb, MessageCircle, Code2, MessagesSquare, PencilLine, AlertTriangle,
-  VideoOff, ShieldAlert, Maximize2, EyeOff, Users,
+  VideoOff, ShieldAlert, Maximize2, EyeOff, Users, Smartphone, RefreshCw, AudioLines,
 } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { Card } from "../../components/ui/Card";
+import { AiCoreIcon } from "../../components/ui/AiCoreIcon";
 
 /**
  * Full redesign (2026-09-01, approved from the "Candidate Scorecard"
@@ -57,6 +58,10 @@ const INTEGRITY_EVENT_META: Record<string, { icon: typeof ShieldAlert; label: st
   WINDOW_BLURRED: { icon: EyeOff, label: "Window lost focus", bg: "bg-warning/10", text: "text-warning" },
   NO_FACE_DETECTED: { icon: VideoOff, label: "No face detected on camera", bg: "bg-warning/10", text: "text-warning" },
   MULTIPLE_FACES_DETECTED: { icon: Users, label: "Multiple faces detected on camera", bg: "bg-destructive/10", text: "text-destructive" },
+  // Part 2 (docs/CURRENT_DECISIONS.md): threshold not yet calibrated
+  // against a real capture -- see useFaceDetectionMonitor.ts's docstring.
+  // "Suspected" in the label deliberately, not a bare "Looking away".
+  HEAD_DOWN_SUSPECTED: { icon: Smartphone, label: "Suspected phone use (head tilted down)", bg: "bg-warning/10", text: "text-warning" },
   DEFAULT: { icon: ShieldAlert, label: "Integrity event", bg: "bg-warning/10", text: "text-warning" },
 };
 
@@ -67,12 +72,14 @@ function formatOffset(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-function scoreTone(score: number | null | undefined): "success" | "warning" | "destructive" | "muted" {
-  if (score == null) return "muted";
-  if (score >= 4) return "success";
-  if (score >= 3) return "warning";
-  return "destructive";
-}
+/* Score visualization, e& guide Section 11: "Use mostly Grey base, Red
+ * progress, Maroon for high-level summaries... avoid rainbow
+ * dashboards." One criterion score isn't itself the headline number
+ * (that's the two numerals in the rail above) -- it's a supporting
+ * breakdown, so it gets the calmer of the two brand accents (maroon) at
+ * a consistent color; the bar's LENGTH is what communicates magnitude,
+ * not a green-good/red-bad hue swap across five separate colors. */
+const CRITERION_BAR_FILL = "bg-secondary";
 
 /** candidate_profile_service.py falls back to the literal string
  * "Candidate" as full_name when a Supabase profile is auto-created with
@@ -136,6 +143,17 @@ export default function CandidateResultPage() {
   const [expandedCriterion, setExpandedCriterion] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // Evaluation regeneration (2026-09-03).
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenerateError, setRegenerateError] = useState("");
+
+  // Manual refresh (2026-09-03 UX pass): distinct from the initial-load
+  // isLoading -- that flag swaps the whole page for a skeleton, which
+  // would be a jarring way to handle "let me re-check this result,"
+  // especially right after an action taken ON this same page (an
+  // override save, a regeneration) already refetches in place.
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   /** Integrity Timeline row click: seeks the existing player above rather
    *  than duplicating a second video experience in this section. No
    *  autoplay -- jumping straight to playing audio on click is a rougher
@@ -153,9 +171,10 @@ export default function CandidateResultPage() {
   const [overrideReason, setOverrideReason] = useState("");
   const [isSavingOverride, setIsSavingOverride] = useState(false);
 
-  const fetchResult = async () => {
+  const fetchResult = async (isManualRefresh = false) => {
     if (!sessionId) return;
-    setIsLoading(true);
+    if (isManualRefresh) setIsRefreshing(true);
+    else setIsLoading(true);
     setError("");
     try {
       const data = await adminClient.getCandidateResult(sessionId);
@@ -171,12 +190,27 @@ export default function CandidateResultPage() {
       setError(err.message || "Failed to load candidate result");
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchResult();
   }, [sessionId]);
+
+  const handleRegenerateEvaluation = async () => {
+    if (!sessionId) return;
+    setIsRegenerating(true);
+    setRegenerateError("");
+    try {
+      const data = await adminClient.regenerateEvaluation(sessionId);
+      setResult(data);
+    } catch (err: any) {
+      setRegenerateError(err.message || "Failed to regenerate the evaluation");
+    } finally {
+      setIsRegenerating(false);
+    }
+  };
 
   const handleSaveOverride = async () => {
     if (!sessionId) return;
@@ -229,18 +263,35 @@ export default function CandidateResultPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
-        <Link to={`/admin/jobs/${jobId}/results`}>
-          <Button variant="outline" className="p-2 h-10 w-10 shrink-0" aria-label="Back to candidate list">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-primary mb-0.5">
-            {result.job_title || "Unknown Job"} · Candidate Result
-          </p>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground truncate">{name}</h1>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <Link to={`/admin/jobs/${jobId}/results`}>
+            <Button variant="outline" size="sm" className="shrink-0 gap-1.5">
+              {/* e& guide Section 16 (RTL requirements): "Mirrored
+                  directional icons" -- confirmed via a real RTL render
+                  that a static ArrowLeft points the wrong way once the
+                  page flows right-to-left; "back" should point toward
+                  where the reader came from, which is the right in RTL. */}
+              <ArrowLeft className="h-4 w-4 rtl:rotate-180" /> Back to Results
+            </Button>
+          </Link>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-primary mb-0.5">
+              {result.job_title || "Unknown Job"} · Candidate Result
+            </p>
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground truncate">{name}</h1>
+          </div>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-1.5"
+          onClick={() => fetchResult(true)}
+          disabled={isRefreshing}
+        >
+          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+          {isRefreshing ? "Refreshing…" : "Refresh"}
+        </Button>
       </div>
 
       {isIncompleteSession && (
@@ -319,12 +370,19 @@ export default function CandidateResultPage() {
               </p>
             )}
             <div className="flex flex-col items-center mt-5">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold ${finalSuggested ? "bg-success text-success-foreground" : "bg-muted text-foreground border border-border"}`}>
+            {/* Verdict pill, e& score-visualization system (Section 11):
+                "Grey base, Red progress, Maroon for high-level summaries"
+                -- green never appears in that palette at all. Proceed is
+                the high-value outcome (maroon, solid); Do Not Proceed is
+                a plain neutral state, not an alarm (grey outline). */}
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-bold ${finalSuggested ? "bg-secondary text-secondary-foreground" : "bg-muted text-foreground border border-border"}`}>
               {finalSuggested ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
               {finalSuggested ? "Proceed to Next Step" : "Do Not Proceed"}
             </span>
             {result.recommendation && (
-              <p className="text-xs text-muted-foreground mt-3">AI recommendation: <span className="font-semibold text-foreground">{result.recommendation}</span></p>
+              <p className="text-xs text-muted-foreground mt-3 flex items-center justify-center gap-1.5">
+                <AiCoreIcon /> AI recommendation: <span className="font-semibold text-foreground">{result.recommendation}</span>
+              </p>
             )}
             {hasOverride && (
               <div className="w-full mt-4 pt-4 border-t border-border/70 flex items-start gap-2 text-start">
@@ -347,6 +405,14 @@ export default function CandidateResultPage() {
         <div className="flex-1 min-w-0 w-full flex flex-col gap-6">
 
           <div id="recording" className="flex flex-col gap-6 scroll-mt-8">
+            {/* Design pass (2026-09-03): a small voice-interview motif --
+                nothing on this page previously signaled that this was a
+                spoken interview at all, despite that being the product's
+                actual core differentiator. Sits directly on the recording
+                zone's own dark surface rather than adding a new card. */}
+            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <AudioLines className="h-3.5 w-3.5 text-primary" /> Voice Interview Recording
+            </div>
             {/* Recording playback: recording_url is a short-lived presigned
                 GET URL computed fresh by the backend on every fetch of this
                 page. null/undefined is a real, non-error state (R2 wasn't
@@ -488,7 +554,43 @@ export default function CandidateResultPage() {
             </div>
 
             <div className="rounded-xl border border-border bg-background p-6">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-3">Overall Assessment</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Overall Assessment</p>
+                {result.is_placeholder && (
+                  // Design pass (2026-09-03): the guide's primary-button
+                  // color (e& Red) is reserved for real, meaningful actions
+                  // -- "Start Interview, Continue, Practice Again" are its
+                  // own examples. This is the one genuine primary action
+                  // on this page, not a secondary/outline-weight control.
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    onClick={handleRegenerateEvaluation}
+                    disabled={isRegenerating}
+                  >
+                    {isRegenerating ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5 mr-1.5" />}
+                    {isRegenerating ? "Generating…" : "Regenerate Evaluation"}
+                  </Button>
+                )}
+              </div>
+              {/* Evaluation regeneration (2026-09-03): this evaluation is
+                  still the generic _ensure_evaluation_placeholder row --
+                  the session never got a real AI evaluation (crashed, lost
+                  its lease, or ended via a path that never talks to the
+                  agent, e.g. a candidate-terminated or idle-disconnected
+                  session). The transcript/question records below are real
+                  (see the results-display fix this follows) even though
+                  this summary isn't yet -- the button generates a real one
+                  from that same evidence. */}
+              {result.is_placeholder && (
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3.5 py-2.5 text-sm text-foreground">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+                  <p>This session was never fully evaluated by AI — the summary and scores below are a placeholder. The real transcript and question records are still shown accurately; click "Regenerate Evaluation" to generate a real assessment from them.</p>
+                </div>
+              )}
+              {regenerateError && (
+                <p className="mb-3 text-sm text-destructive">{regenerateError}</p>
+              )}
               <p className="text-foreground leading-relaxed font-medium">{result.summary || "No summary available."}</p>
               {result.detailed_overview && (
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line mt-3">{result.detailed_overview}</p>
@@ -513,8 +615,6 @@ export default function CandidateResultPage() {
             ) : (
               <div className="rounded-xl border border-border bg-background overflow-hidden divide-y divide-border">
                 {result.scores.map((score, idx) => {
-                  const tone = scoreTone(score.score);
-                  const barClass = { success: "bg-success", warning: "bg-warning", destructive: "bg-destructive", muted: "bg-muted" }[tone];
                   const key = score.criterion_key || String(idx);
                   const isOpen = expandedCriterion === key;
                   const hasDetail = Boolean(score.overview) || score.strengths.length > 0 || score.improvements.length > 0;
@@ -539,7 +639,7 @@ export default function CandidateResultPage() {
                         {score.score != null ? (
                           <>
                             <div className="flex-1 h-2 rounded-full bg-muted relative overflow-hidden">
-                              <div className={`absolute inset-y-0 start-0 rounded-full ${barClass}`} style={{ width: `${(score.score / 5) * 100}%` }} />
+                              <div className={`absolute inset-y-0 start-0 rounded-full ${CRITERION_BAR_FILL}`} style={{ width: `${(score.score / 5) * 100}%` }} />
                             </div>
                             <span className="w-10 shrink-0 text-end text-sm font-bold text-foreground tabular-nums">{score.score}/5</span>
                           </>

@@ -183,6 +183,144 @@ questions when it is picked up: `FaceLandmarker` vs. extending
 per-candidate calibration step is needed to keep the false-positive rate
 acceptable across camera angles/lighting.
 
+## Proctoring Part 2 — head-pose detection scope (RESOLVED, build approved)
+A second live manual test (2026-09-02) reproduced the exact gap above
+(face stayed visible while looking down at a phone) — confirmed as the
+known gap, not a regression in Part 1/PR-D. Approved to build now:
+
+- **New event**: `HEAD_DOWN_SUSPECTED`, decomposed from `FaceLandmarker`'s
+  `outputFacialTransformationMatrixes` (real, confirmed API —
+  `node_modules/@mediapipe/tasks-vision/vision.d.ts`), not
+  `FaceDetector`'s face-count-only output.
+- **Replaces, not adds to, PR-D's detector**: `FaceLandmarker` can also
+  report face count (`faceLandmarks.length`), so it replaces
+  `FaceDetector` entirely inside `useFaceDetectionMonitor` rather than
+  running two WASM models in the same tab — `NO_FACE_DETECTED`/
+  `MULTIPLE_FACES_DETECTED` keep their exact existing behavior, now
+  computed from the landmarker's output instead.
+- **Phase scope (confirmed, deliberately not narrowed)**: runs during
+  every phase the existing `monitoringActive` gate already covers,
+  including `CODING` — explicitly considered and rejected narrowing to
+  verbal-only phases only, despite the real risk that looking down at a
+  keyboard/second reference while coding reads the same as looking down
+  at a phone. Revisit if live CODING-phase data shows an unacceptable
+  false-positive rate.
+- **Thresholds — validate before locking in**: starting proposal is 25°
+  downward pitch sustained for 3 consecutive ~4s samples (~12s) — longer
+  than face-absence's 2-sample/8s window, since a glance down is far more
+  common/benign than disappearing. To be confirmed against real decomposed
+  pitch angles logged from an actual test session, same evidence-first
+  approach as PR-D's own debounce tuning — not committed as final numbers
+  yet.
+- **No per-candidate calibration step for v1** — added complexity/UX
+  friction deferred unless real testing shows the fixed threshold is
+  unusable for some camera angles.
+- `controller.py`'s `process_ui_command` allowlist needs one more string
+  added (frozen file) — same category of one-line, already-proven-branch
+  change as PR-D's two-string addition; requires its own explicit sign-off
+  before that specific edit, per AGENTS.md's frozen-contract rule.
+
+**Built (2026-09-02), sign-off obtained, status: calibration pending real
+data, not yet a finished/trusted threshold:**
+- `face_landmarker.task` fetched and confirmed real (HTTP 200, genuine
+  zip-format task bundle, ~3.6MB) from Google's public model storage;
+  replaces PR-D's `blaze_face_short_range.tflite` in
+  `useFaceDetectionMonitor`, which now derives NO_FACE/MULTIPLE_FACES from
+  `FaceLandmarker` too (one detector, not two running side by side).
+- Matrix-to-Euler-angle math (`headPose.ts`) verified against
+  hand-constructed synthetic rotation matrices for each axis — pitch/yaw/
+  roll each cleanly isolate the corresponding pure rotation with correct
+  sign, confirming the linear algebra itself is correct.
+- **What real-world calibration still owes us**: whether MediaPipe's
+  actual matrix layout/axis convention matches the column-major
+  assumption `headPose.ts` documents, and which sign of pitch means
+  "down" vs. "up" — this sandbox's Browser pane blocks camera access
+  (same limitation PR-D hit), so this can only be confirmed via a real
+  live test. `useFaceDetectionMonitor.ts` logs every decomposed angle to
+  the console (`VITE_HEAD_POSE_DEBUG`, on by default) and the trigger
+  condition checks `Math.abs(pitch)` in both directions until that's
+  confirmed. Do not treat HEAD_DOWN_SUSPECTED as a calibrated signal until
+  a real test confirms the axis/sign and the 25°/3-sample defaults hold up.
+- The LiveKit agent worker (`python -m agent.main dev`) does NOT hot-reload
+  in dev mode (`in-process auto-reload has been removed`, per its own
+  startup warning) — it must be manually restarted to pick up this
+  controller.py change before a live test will actually persist
+  HEAD_DOWN_SUSPECTED events.
+
+## Results display for non-naturally-completed sessions (RESOLVED, implemented 2026-09-03)
+Audit request ("ensure answers are being recorded, scoring works, results
+are shown clearly") found a real, confirmed bug, fixed the same day:
+`get_candidate_result`'s `transcript`/`question_records`/
+`technical_submission` were read ONLY from `InterviewSession.final_result`
+— a JSONB snapshot written ONLY by the agent's own natural end-of-
+interview path (`build_final_result` -> `save_completion`). Any session
+ending a different way (candidate/HR-terminated, the idle-disconnect
+sweep, an agent crash) never got that snapshot, even though every
+individual turn was already durably persisted in `InterviewMessage` as it
+happened. Real DB evidence at the time: 4 real TERMINATED sessions with
+1-8 real messages each, all showing an empty transcript on the results
+page.
+
+**Fix**: `admin.py`'s `get_candidate_result` now falls back to a live
+`InterviewMessage` query for `transcript`, and to the latest
+`InterviewCheckpoint` row's `question_records`/`technical_submission`,
+whenever `final_result` didn't carry them. Verified against all 4 real
+affected sessions post-fix — each now returns its real, previously-hidden
+transcript/question_records; a naturally-completed session's
+already-correct `final_result` data is unaffected (confirmed unchanged
+before/after).
+
+**Separately verified, not a bug**: the scoring mechanism itself
+(`internal.py`'s `submit_evaluation`, weighted-score computation) is
+correct — proven with a real, direct end-to-end invocation (`overall_score`,
+`weighted_score`, and real per-criterion `Score` rows all landing together
+correctly in one call; the test write was reverted immediately after).
+**Flagged, not fixed (separate, larger scope)**: no retry mechanism exists
+today for a session whose `submit_evaluation()` call fails for an
+unrelated reason (network blip, backend restart mid-flight) — it's
+permanently stuck on the generic placeholder evaluation with no automatic
+recovery path.
+
+## Evaluation regeneration for placeholder sessions (RESOLVED — scoped 2026-09-03, not yet built)
+Follow-up to the above, scoped in detail with real DB evidence before any
+code: **149 of 220 (68%) terminal sessions are stuck on the generic
+placeholder evaluation** — 112/112 (100%) of TERMINATED sessions
+(structural: `_finalize_live_session` never attempts evaluation at all,
+not a flaky failure) and 37/108 (34%) of COMPLETED sessions (genuine
+submission failures). 138 of the 149 have real, recoverable transcript
+data (via the fix above) a real evaluation could be generated from.
+
+**Confirmed decisions:**
+1. **Trigger — on-demand, one session at a time.** An HR-clicked
+   "Regenerate Evaluation" button on the candidate result page, not an
+   automatic background sweep and not a bulk per-job action. Matches this
+   project's existing philosophy (HR judges, the system surfaces evidence
+   — same spirit as the scoring override) and avoids background-job
+   scheduling/backoff design this project doesn't otherwise have.
+2. **TERMINATED sessions ARE eligible** — a real AI evaluation should be
+   generated from whatever partial evidence exists (the existing
+   `evidence_sufficiency` field already exists precisely to flag this as
+   partial), not withheld by session status. Excluding TERMINATED would
+   have addressed only 37 of the 149 real cases.
+
+**Design, not yet built**: host evaluation generation in the **backend**,
+not the agent — an agent worker only exists transiently per live call, so
+there's no idle agent to hand a retroactive job to. Confirmed feasible by
+reading `EVALUATOR_PROMPT` directly: it's one self-contained structured
+LLM call over a plain JSON evidence blob (role/level/transcript/
+question_records/technical_submission/question_eval_criteria/criteria),
+nothing LiveKit/voice/agent-specific, and every piece of that evidence is
+already backend-accessible. Follows the exact precedent of
+`backend/services/question_generator.py` (the existing admin-side AI
+question generation), which is explicitly documented as not depending on
+agent code — this is the same pattern applied to a second use case, not
+new architecture. Plan: a new `evaluation_generator.py` service, a new
+`POST .../regenerate-evaluation` endpoint, a small additive
+`Evaluation.is_placeholder` boolean (replacing fragile string-matching on
+the exact placeholder text) migration, sharing `internal.py`'s existing
+weighted-score/upsert logic rather than duplicating it, and a frontend
+button gated on `is_placeholder` + real transcript existing.
+
 ## Still unresolved (do not implement against these silently)
 - Invitation expiration policy
 - Whether public candidates need any email verification at all (currently: no, by design)
