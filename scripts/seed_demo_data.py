@@ -356,9 +356,23 @@ async def seed():
                 db.add(evaluation)
                 await db.flush()
 
-                for score in _fabricate_scores(template_criteria, profile):
+                scores = _fabricate_scores(template_criteria, profile)
+                for score in scores:
                     score.evaluation_id = evaluation.id
                     db.add(score)
+
+                # Mirror internal.py's submit_evaluation formula exactly:
+                # weighted_score = sum(weight_i * score_i) / sum(weight_i)
+                # over criteria with a non-null score. All TEMPLATE criteria
+                # share weight=5 here, so this is just their plain average
+                # -- still computed properly rather than left None, which
+                # would otherwise show a confusing "No scored criteria to
+                # compute a weighted score" next to a fully populated
+                # criteria breakdown (CandidateResultPage.tsx).
+                weight_by_key = {c.key: c.weight for c in template_criteria}
+                weighted_sum = sum(weight_by_key.get(s.criterion_key, 5) * s.score for s in scores if s.score is not None)
+                total_weight = sum(weight_by_key.get(s.criterion_key, 5) for s in scores if s.score is not None)
+                evaluation.weighted_score = (weighted_sum / total_weight) if total_weight > 0 else None
 
                 await db.commit()
 
