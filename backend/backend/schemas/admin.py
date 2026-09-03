@@ -427,6 +427,17 @@ class EvaluationDetailResponse(BaseModel):
     # never started/failed). See admin.py's get_candidate_result.
     recording_url: Optional[str] = None
 
+    # Demo seeding (2026-09-03): True for a fabricated candidate result
+    # created by scripts/seed_demo_data.py to populate the results view for
+    # the free-tier demo, before any real candidate has completed this job.
+    # Carried entirely in final_result JSONB (final_result["is_mock"]) --
+    # deliberately no new column/migration for what's demo-only metadata.
+    # Drives CandidateResultPage.tsx showing an explicit "this is mock
+    # data" note in place of the generic "no recording available" message,
+    # so a reviewer never mistakes fabricated data for a real, lost
+    # recording.
+    is_mock_data: bool = False
+
     # Aggregation/dashboard pass (2026-09-02): every flagged moment for this
     # session -- fullscreen/tab/focus events (PR-B) and face-presence events
     # (PR-D). Empty list is a legitimate, common state (nothing was ever

@@ -432,6 +432,11 @@ export default function CandidateResultPage() {
                 >
                   Your browser does not support video playback.
                 </video>
+              ) : result.is_mock_data ? (
+                <div className="p-5 flex items-center gap-3 text-sm text-white/70">
+                  <AiCoreIcon />
+                  This result is mock data, included to show what a completed candidate review looks like — no interview actually happened for it.
+                </div>
               ) : (
                 <div className="p-5 flex items-center gap-3 text-sm text-white/70">
                   <VideoOff className="h-5 w-5 shrink-0" />

@@ -166,6 +166,11 @@ export interface EvaluationDetail {
    *  if no recording exists for this session (R2 not configured when the
    *  interview ran, camera denied, or Egress never started/failed). */
   recording_url?: string;
+  /** Demo seeding (2026-09-03): true for a fabricated candidate result
+   *  (scripts/seed_demo_data.py), so the results view can say so plainly
+   *  instead of showing the generic "no recording available" message,
+   *  which would otherwise misleadingly read as a real, lost recording. */
+  is_mock_data: boolean;
   /** Aggregation/dashboard pass: every flagged moment for this session
    *  (PR-B fullscreen/tab/focus events + PR-D face-presence events).
    *  Empty is a legitimate, common state, not an error. */

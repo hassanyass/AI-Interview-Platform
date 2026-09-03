@@ -1159,6 +1159,7 @@ async def get_candidate_result(
         override_suggested=evaluation.override_suggested,
         override_reason=evaluation.override_reason,
         recording_url=_presign_recording_url(session.recording_storage_path),
+        is_mock_data=bool(final_result.get("is_mock")),
         integrity_events=await _get_integrity_events(db, session),
     )
 
