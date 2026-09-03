@@ -323,6 +323,16 @@ export const adminClient = {
     return fetchApi<Invitation[]>(`/api/v1/admin/definitions/${definitionId}/invitations`);
   },
 
+  /** Invitation email composer (2026-09-03): AI-drafted subject/body for
+   *  this job, purely generative -- nothing is persisted or sent by this
+   *  call. Powers the composer's "Regenerate" action. */
+  generateInvitationMessage: async (definitionId: string): Promise<{ subject: string; body: string }> => {
+    return fetchApi<{ subject: string; body: string }>(
+      `/api/v1/admin/definitions/${definitionId}/generate-invitation-message`,
+      { method: "POST" }
+    );
+  },
+
   createTestDrive: async (definitionId: string): Promise<PublicRegisterResponse> => {
     return fetchApi<PublicRegisterResponse>(`/api/v1/admin/definitions/${definitionId}/test-drive`, {
       method: "POST",

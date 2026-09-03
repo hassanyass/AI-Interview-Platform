@@ -5,6 +5,7 @@ import { Card, CardContent } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { useTranslation } from "react-i18next";
+import InvitationComposer from "./InvitationComposer";
 
 interface CandidateAccessProps {
   jobId: string;
@@ -353,6 +354,14 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
           </CardContent>
         </Card>
       </div>
+
+      {/* New (2026-09-03): compose one message, send to several candidates
+          at once, with an AI-regeneratable draft. Deliberately a separate
+          surface from the quick single-email form above -- that one is
+          real (creates an actual InterviewInvitation row the OTP flow
+          depends on); this one's Send is a stub for now, see
+          InvitationComposer.tsx's own docstring. */}
+      <InvitationComposer definitionId={definition.id} />
     </div>
   );
 }

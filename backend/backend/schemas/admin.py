@@ -241,6 +241,15 @@ class QuestionGenerateRequest(BaseModel):
     num_questions: int = Field(default=5, ge=1, le=20)
 
 
+class InvitationMessageResponse(BaseModel):
+    """AI-drafted invitation email subject/body (2026-09-03) -- purely
+    generated text, never persisted or sent. See
+    CandidateAccess.tsx's invitation composer and CURRENT_DECISIONS.md's
+    P1 (email provider, still deferred)."""
+    subject: str
+    body: str
+
+
 class GeneratedQuestion(BaseModel):
     """A single question produced by the AI generator."""
     title: str

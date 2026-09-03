@@ -50,6 +50,7 @@ from backend.schemas.admin import (
     QuestionUpdate,
     QuestionResponse,
     QuestionGenerateRequest,
+    InvitationMessageResponse,
     validate_question_config,
     validate_section_config,
     CriterionScoreResponse,
@@ -540,6 +541,47 @@ async def update_definition(
         select(Job).options(selectinload(Job.definition)).where(Job.id == job_id)
     )
     return result.scalar_one()
+
+
+@router.post("/definitions/{definition_id}/generate-invitation-message", response_model=InvitationMessageResponse)
+async def generate_invitation_message_for_definition(
+    definition_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """AI-drafted invitation email subject/body for CandidateAccess.tsx's
+    invitation composer (2026-09-03) -- the "Regenerate" action. Purely
+    generative: nothing here is persisted, and this never sends anything
+    -- actually sending is explicitly deferred (CURRENT_DECISIONS.md's
+    P1, email provider still unresolved), which is why the composer's
+    Send button is a stub, not wired to this or any invitation-creation
+    endpoint."""
+    result = await db.execute(
+        select(InterviewDefinition)
+        .options(selectinload(InterviewDefinition.job))
+        .where(InterviewDefinition.id == definition_id)
+    )
+    definition = result.scalar_one_or_none()
+    if not definition:
+        raise HTTPException(status_code=404, detail="InterviewDefinition not found")
+
+    from backend.services.invitation_message_generator import generate_invitation_message
+
+    try:
+        generated = await generate_invitation_message(
+            job_title=definition.job.title,
+            job_description=definition.job.description,
+            seniority=definition.job.seniority,
+            duration_minutes=definition.duration_minutes,
+        )
+    except Exception:
+        logger.exception("Failed to generate invitation message for definition %s", definition_id)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to generate an invitation message. Check the backend logs and try again.",
+        )
+
+    return InvitationMessageResponse(**generated)
 
 
 @router.post("/definitions/{definition_id}/test-drive", response_model=PublicRegisterResponse)
