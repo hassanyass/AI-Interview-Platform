@@ -49,3 +49,15 @@ agent/.tts_cache/
 # Agent Groq key-rotation state (agent/agent/interview/groq_key_rotator.py)
 # — machine-local, regenerated on demand
 agent/.groq_key_state_*.json
+
+# Claude Code / AI-agent tooling config (2026-09-03): kept on local disk so
+# Claude Code continues operating under the exact same rules/workflow in
+# future sessions, but untracked from git so the public GitHub repo shows
+# only the project itself. NOT the same as agent/ (the real, deployed
+# LiveKit voice-interview service) -- that stays fully tracked.
+/.claude/
+/.agents/
+/CLAUDE.md
+/AGENTS.md
+/docs/transition-phase-SKILL.md
+/docs/transition-phase.workflow.md
