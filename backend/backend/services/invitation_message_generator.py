@@ -12,6 +12,7 @@ explicitly out of scope for this pass -- see docs/CURRENT_DECISIONS.md's
 P1 (email provider, still unresolved/deferred) -- this service only ever
 produces text; it never sends anything.
 """
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -71,16 +72,22 @@ async def generate_invitation_message(
 
     logger.info("[InvitationMessageGen] Calling Groq model=%s job=%s", model, job_title)
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
-        ],
-        model=model,
-        temperature=0.7,
-        max_tokens=1024,
-        response_format={"type": "json_object"},
-    )
+    def _call():
+        return client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+            ],
+            model=model,
+            temperature=0.7,
+            max_tokens=1024,
+            response_format={"type": "json_object"},
+        )
+
+    # Off the event loop -- same fix as question_generator.py and
+    # evaluation_generator.py's Groq calls; see question_generator.py's
+    # comment for the production symptom this caused.
+    chat_completion = await asyncio.to_thread(_call)
 
     raw = chat_completion.choices[0].message.content
     parsed = json.loads(raw)

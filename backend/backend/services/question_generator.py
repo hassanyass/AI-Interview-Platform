@@ -5,6 +5,7 @@ Uses the official Groq Python SDK, reading GROQ_API_KEY and GROQ_MODEL
 from the existing backend.core.config.settings.  This is a completely new
 code path; it does NOT import from or depend on agent/agent/* in any way.
 """
+import asyncio
 import json
 import logging
 from typing import List, Optional
@@ -166,16 +167,25 @@ async def generate_questions(
     logger.info("[QuestionGen] Calling Groq model=%s questions=%d section=%s",
                 model, num_questions, section_type)
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPTS.get(section_type, _SYSTEM_PROMPTS["VERBAL"])},
-            {"role": "user", "content": user_prompt},
-        ],
-        model=model,
-        temperature=0.7,
-        max_tokens=4096,
-        response_format={"type": "json_object"},
-    )
+    def _call():
+        return client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPTS.get(section_type, _SYSTEM_PROMPTS["VERBAL"])},
+                {"role": "user", "content": user_prompt},
+            ],
+            model=model,
+            temperature=0.7,
+            max_tokens=4096,
+            response_format={"type": "json_object"},
+        )
+
+    # Off the event loop -- the sync Groq SDK's HTTP call was blocking the
+    # whole ASGI event loop for its full duration (confirmed 2026-09-03:
+    # this surfaced in production as a hung request that the platform's own
+    # health checking dropped mid-flight, which the browser then reports as
+    # a misleading CORS error since no response headers ever arrive). Same
+    # fix as evaluation_generator.py already applies to its own Groq call.
+    chat_completion = await asyncio.to_thread(_call)
 
     raw = chat_completion.choices[0].message.content
     parsed = json.loads(raw)
