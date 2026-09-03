@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
+# Aligned to 3.13 (2026-09-03), same reasoning as backend/Dockerfile: the
+# local dev environment this project has actually been run and verified
+# against all session is 3.13.5.
 
 WORKDIR /app
 

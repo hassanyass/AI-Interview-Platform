@@ -1,25 +1,22 @@
 #!/bin/bash
-# Start a dummy HTTP server on the port Render provides (default 8000)
-# This satisfies Render's requirement for Web Services to bind to a port,
-# allowing the agent to run on the 100% free tier.
+# Deployment target: Railway (2026-09-03), not Render.
 #
-# Deployment-readiness audit (2026-09-02, docs/deployment-readiness.md):
-# this free-tier-web-service disguise is now confirmed, separately, to be
-# a poor fit regardless of this file's own bugs -- see that doc's
-# "Combined single-container" follow-up research for the real RAM/CPU
-# evidence. Left in place (not reverted) since a hosting decision hasn't
-# been made yet; the bug below is real and worth fixing independent of
-# which host is ultimately chosen.
-python -m http.server ${PORT:-8000} &
-
-# Run the LiveKit agent
-# Bug fix (2026-09-02): `python -m agent.main` with no subcommand does not
-# start the worker -- confirmed by reading the installed livekit-agents
-# CLI source directly (site-packages/livekit/agents/cli/_legacy.py): with
-# no subcommand, it prints --help and exits immediately. `start` is the
-# real production subcommand (distinct from `dev`/`console`/
-# `download-files`). Before this fix, the container would launch, the
-# dummy HTTP server above would satisfy Render's health check, and the
-# agent itself would silently exit almost immediately -- going offline
-# with no crash or error surfaced anywhere.
+# The agent used to run here alongside a dummy `python -m http.server`
+# purely to satisfy Render's free-tier requirement that a Web Service
+# bind to $PORT -- that workaround is gone now that the agent isn't
+# deployed to Render at all (see docs/deployment-readiness.md and
+# render.yaml's own comment for the full reasoning: Render's free tier
+# structurally can't run a real background worker, and the disguise
+# workaround was separately confirmed to be a poor fit on measured
+# RAM/CPU evidence even before considering its own reliability risk).
+#
+# Railway needs none of that: confirmed directly against Railway's own
+# docs that a background worker requires no $PORT, no public domain, and
+# no healthcheck to keep running ("Railway does not monitor the
+# healthcheck endpoint after the deployment has gone live").
+#
+# `start` (not `dev`/`console`/no-subcommand) is the real production
+# subcommand -- confirmed 2026-09-02 by reading the installed
+# livekit-agents CLI source directly; running with no subcommand prints
+# --help and exits without ever starting the worker.
 python -m agent.main start

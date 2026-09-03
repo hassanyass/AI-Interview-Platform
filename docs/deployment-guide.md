@@ -1,109 +1,152 @@
-# Path2Hire Deployment Guide (100% Free Tier, No Credit Card)
+# Deployment Guide — Free Tier, No Credit Card (2026-09-03 revision)
 
-This guide provides step-by-step instructions for deploying the Path2Hire platform completely for free with **no credit card required**. We use Vercel for the frontend and a special Render configuration for the backend and agent.
+Supersedes the previous "Render for everything, disguise the agent as a web
+service" plan. That plan is still technically possible (the code paths for
+it still exist in git history), but is deliberately not the one below —
+see `docs/deployment-readiness.md`'s full comparison for why. **This
+revision: Render (backend) + Vercel (frontend) + Railway (agent worker)**,
+confirmed genuinely free and card-free on all three as of this writing.
 
-## Architecture & How the Free Tier Hack Works
-- **Frontend (Vercel)**: 100% free, always fast.
-- **Backend (Render Web Service)**: 100% free, but naturally spins down after 15 minutes of inactivity, causing ~45s cold starts.
-- **Agent Worker (Render Web Service)**: 100% free. We have modified the agent's code to run a "dummy" HTTP server alongside the LiveKit worker. This tricks Render into allowing it on their free "Web Service" tier instead of forcing you into a $7/month Background Worker plan.
-- **The "Always Awake" Hack**: To prevent both the backend and the agent from sleeping and dropping candidate interviews, we will use a free uptime monitor (`cron-job.org`) to ping both services every 14 minutes. This keeps your entire stack awake 24/7 for zero cost.
+## Architecture
+- **Frontend (Vercel)**: 100% free, static SPA, no functions used.
+- **Backend (Render Web Service)**: free tier fits this correctly — it's a
+  genuine stateless HTTP API. Spins down after 15 minutes idle, ~30-60s
+  cold start on the next request — a real, accepted UX tradeoff for a
+  free demo, not a bug.
+- **Agent worker (Railway)**: a real background-worker deployment, not a
+  disguise. Confirmed directly against Railway's own docs: no `$PORT`, no
+  public domain, and no ongoing healthcheck are required for a
+  non-HTTP worker to keep running. Railway's Trial plan gives a one-time
+  $5 credit with **no credit card required** (confirmed on Railway's own
+  pricing page) — comfortably enough for a light, mostly-idle worker over
+  a 2-week window, though real interview sessions cost more than pure
+  idle time, so it's worth checking Railway's usage dashboard partway
+  through rather than assuming the full 2 weeks is guaranteed.
 
 ## Prerequisites
-- A GitHub repository containing the latest code.
-- A [Vercel account](https://vercel.com/).
-- A [Render account](https://render.com/) (No credit card required).
-- A [cron-job.org account](https://cron-job.org/) (100% free).
-- Your existing Supabase and LiveKit credentials.
+- A GitHub repository containing the latest code (this revision's
+  `render.yaml`/`agent/start.sh`/pinned `agent/requirements.txt`).
+- A [Vercel account](https://vercel.com/) — no card required.
+- A [Render account](https://render.com/) — no card required.
+- A [Railway account](https://railway.com/) — no card required (confirmed:
+  *"Can I try Railway without a credit card? Yes... No credit card
+  required."*).
+- Your Supabase, LiveKit, Groq, and (if using recordings) Cloudflare R2
+  credentials.
+- **Before starting**: confirm the Supabase DB password rotation (if one
+  was in progress) is actually finished, and that whatever value you type
+  into Render's `DATABASE_URL` is the current, real password.
 
 ---
 
-## Step 1: Render (Backend & Agent Worker)
-
-We deploy the backend and agent first so that we have their URLs ready for the frontend. 
+## Step 1: Render (Backend only)
 
 1. Go to your [Render Dashboard](https://dashboard.render.com/).
-2. Click **New** -> **Blueprint**.
-3. Connect your GitHub repository.
-4. Render will read the `render.yaml` file and automatically propose two **Web Services**:
-   - `ai-interview-backend`
-   - `ai-interview-agent`
-5. **Instance Types**: Select the **Free** instance type for **BOTH** services. 
-6. **Environment Variables**: Render will prompt you to fill in the required environment variables. Refer to the list below:
-   - `ENVIRONMENT`: `production`
-   - `SUPABASE_URL`: Your Supabase Project URL
-   - `SUPABASE_SECRET_KEY`: Your Supabase `service_role` secret
-   - `SUPABASE_JWKS_URL`: `https://<your-project-id>.supabase.co/auth/v1/.well-known/jwks.json`
-   - `DATABASE_URL`: Your Supabase **Supavisor connection pooler string** (usually port 6543)
-   - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
-   - `GROQ_API_KEY`, `GROQ_MODEL`
-   - `STT_PROVIDER`, `STT_MODEL`, `STT_LANGUAGE`
-   - `LLM_PROVIDER`, `LLM_MODEL`
-   - `TTS_PROVIDER`, `TTS_MODEL`, `TTS_LANGUAGE`
-   - `AGENT_API_SECRET`: A secure random string you generate (e.g., `my_super_secret_agent_key_123`)
-7. Click **Apply**. Render will begin building and deploying both services.
-8. Once they are deployed, note **both** public URLs (e.g., `https://ai-interview-backend.onrender.com` and `https://ai-interview-agent.onrender.com`).
-9. **Update Internal Links**: Go to the **Environment** settings for the `ai-interview-agent` service and add:
-   - `BACKEND_INTERNAL_URL`: The backend URL you just copied (e.g., `https://ai-interview-backend.onrender.com`).
+2. Click **New** → **Blueprint**, connect your GitHub repository. Render
+   reads `render.yaml`, which now proposes exactly **one** service:
+   `ai-interview-backend`.
+3. **Instance Type**: Free.
+4. **Environment Variables** — Render will prompt for each of these
+   (matching `render.yaml`'s current list exactly; the previous version of
+   this guide was missing two of the *required* ones, which would have
+   crashed the backend on boot):
+   - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
+     `SUPABASE_JWKS_URL` — all four required, no defaults.
+   - `DATABASE_URL` — the Supabase **Supavisor pooler** connection string
+     (not the direct connection string), required.
+   - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
+   - `SECRET_KEY` — generate a real random value (e.g. `openssl rand -hex
+     32`); do **not** leave this at the code's own placeholder default.
+   - `GROQ_API_KEY`, `GROQ_MODEL` — used by the backend itself for AI
+     question generation, the invitation-message composer, and evaluation
+     regeneration.
+   - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`,
+     `R2_BUCKET_NAME`, `R2_ENDPOINT` — for recording playback (confirmed
+     wanted for this deployment).
+   - `BACKEND_CORS_ORIGINS` — leave a placeholder for now (e.g.
+     `["http://localhost:5173"]`); you'll update this for real in Step 4.
+   - `AGENT_API_SECRET` — a secure random string you generate; the exact
+     same value goes into Railway's agent env vars in Step 2.
+5. Click **Apply**. `preDeployCommand: alembic upgrade head` runs your
+   migrations automatically on every deploy.
+6. Once deployed, note the backend's public URL (e.g.
+   `https://ai-interview-backend.onrender.com`).
 
 ---
 
-## Step 2: Keep-Alive Monitor (cron-job.org)
+## Step 2: Railway (Agent worker)
 
-To prevent your free Render services from falling asleep and causing delays/dropped connections:
-
-1. Go to [cron-job.org](https://cron-job.org/en/) and log in.
-2. Click **Create Cronjob**.
-3. **Backend Monitor**:
-   - Title: `Path2Hire Backend`
-   - URL: `https://ai-interview-backend.onrender.com/docs` (Your backend URL + `/docs`)
-   - Execution Schedule: **Every 14 minutes**
-   - Click Create.
-4. **Agent Monitor**:
-   - Click **Create Cronjob** again.
-   - Title: `Path2Hire Agent`
-   - URL: `https://ai-interview-agent.onrender.com/` (Your agent URL)
-   - Execution Schedule: **Every 14 minutes**
-   - Click Create.
-
-*Your backend and agent are now awake 24/7, mimicking a paid server for free.*
+1. Go to your [Railway Dashboard](https://railway.com/dashboard) and sign
+   up/log in — no card required.
+2. **New Project** → **Deploy from GitHub repo**, select this repository.
+3. Once the service is created, open its **Settings**:
+   - **Root Directory**: `agent` (Railway will then find `agent/Dockerfile`
+     automatically — it looks for a `Dockerfile` at the root of whatever
+     directory you point it at).
+   - **Networking**: leave this service **private** — it never needs a
+     public domain. It only makes outbound calls (to LiveKit Cloud and to
+     the Render backend's public URL); nothing ever calls into it.
+4. **Variables** tab — set every one of these (all are read directly by
+   `agent/agent/main.py`; the first six are hard-required and the process
+   refuses to run without them):
+   - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`
+   - `GROQ_API_KEY`
+   - `AGENT_API_SECRET` — must exactly match what you set on Render in
+     Step 1.
+   - `BACKEND_INTERNAL_URL` — the Render backend's public URL from Step 1
+     (e.g. `https://ai-interview-backend.onrender.com`). This is a normal
+     outbound HTTPS call across providers — no special cross-provider
+     networking setup needed, since Railway's *private* networking only
+     applies between services inside the same Railway project.
+   - `TTS_PROVIDER` — set to whatever this project is actually configured
+     to use (confirm against your own `.env`; defaults to `azure` in code
+     if unset, which is easy to silently deploy wrong).
+   - `GROQ_API_KEY_1` through `GROQ_API_KEY_7` (optional but recommended)
+     — the multi-key rotation pool for Groq's per-key daily TTS quota.
+   - `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` — only if `TTS_PROVIDER` is
+     `azure` or you want it as a fallback.
+5. Deploy. Check the service's **Logs** tab for the same "registered
+   worker" line you'd see locally (`docs/LOCAL_DEMO_SETUP.md` shows exactly
+   what a healthy startup looks like) — that's the real proof it
+   registered with LiveKit Cloud, not just that the container started.
 
 ---
 
 ## Step 3: Vercel (Frontend)
 
-1. Go to your [Vercel Dashboard](https://vercel.com/dashboard).
-2. Click **Add New** -> **Project**.
-3. Import your GitHub repository.
-4. **Configure Project**:
-   - **Framework Preset**: Vite
-   - **Root Directory**: Click `Edit` and select `frontend`.
-5. **Environment Variables**: Add the following:
-   - `VITE_SUPABASE_URL`: Your Supabase Project URL
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`: Your Supabase `anon`/`public` key
-   - `VITE_API_BASE_URL`: The Render backend URL you copied in Step 1 (e.g., `https://ai-interview-backend.onrender.com`).
-6. Click **Deploy**.
-7. Once deployed, note your new Vercel public URL (e.g., `https://path2hire-frontend.vercel.app`).
+1. Go to your [Vercel Dashboard](https://vercel.com/dashboard) → **Add
+   New** → **Project** → import this repository.
+2. **Framework Preset**: Vite (auto-detected). **Root Directory**: `frontend`.
+3. **Environment Variables**:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` (the public/anon key — safe to embed
+     in a client bundle by design)
+   - `VITE_API_BASE_URL` — the Render backend URL from Step 1.
+4. Deploy. Note the resulting Vercel URL (e.g.
+   `https://your-app.vercel.app`).
 
 ---
 
-## Step 4: Final Configurations (CORS & Supabase Auth)
+## Step 4: Wire up CORS and Supabase Auth
 
-Now that we have all the deployed URLs, we need to finalize the security and authentication handshakes.
-
-1. **Update Backend CORS in Render**:
-   - Go to your Render Dashboard -> `ai-interview-backend` -> **Environment**.
-   - Add/Update the `BACKEND_CORS_ORIGINS` variable to include your exact Vercel URL.
-   - Format: `["https://path2hire-frontend.vercel.app"]`
-   - Save and Render will automatically restart the backend with the new CORS policy.
-
-2. **Update Supabase Redirect URLs**:
-   - Go to your [Supabase Dashboard](https://supabase.com/dashboard).
-   - Navigate to **Authentication** -> **URL Configuration**.
-   - Under **Site URL**, ensure it is set to your primary Vercel frontend URL (e.g., `https://path2hire-frontend.vercel.app`).
-   - Under **Redirect URLs**, add your Vercel URL (e.g., `https://path2hire-frontend.vercel.app/**`).
-   - *This step is critical for the magic link and OTP login flows to successfully redirect candidates back to the deployed app instead of localhost.*
+1. **Render → `ai-interview-backend` → Environment**: update
+   `BACKEND_CORS_ORIGINS` to include your real Vercel URL, e.g.
+   `["https://your-app.vercel.app"]`. Saving triggers an automatic
+   redeploy.
+2. **Supabase Dashboard → Authentication → URL Configuration**: set
+   **Site URL** to your Vercel URL, and add it (with `/**`) to **Redirect
+   URLs**. This is required for the OTP/magic-link candidate flow to
+   redirect back to the deployed app instead of `localhost` — the code
+   side of this (`emailRedirectTo: window.location.href`) is already
+   dynamic and needs no change.
 
 ## Validation
-1. Open your Vercel frontend URL.
-2. Log in / apply as a candidate.
-3. Start the interview. The UI should successfully request a token from the backend, connect to LiveKit, and the agent should immediately join the room and begin speaking with zero delay.
+1. Open the Vercel URL, log in as admin.
+2. Publish a job, generate an invite link or send yourself an invitation.
+3. Start a real interview end-to-end: the frontend should get a LiveKit
+   token from Render, connect to LiveKit Cloud, and the Railway-hosted
+   agent should join the room and start speaking — check Railway's logs
+   live during this to confirm the job dispatch actually reached it.
+4. Expect the **first** request to Render after any 15-minute idle period
+   to take 30-60 seconds (the free-tier cold start) — this is expected,
+   not a failure.

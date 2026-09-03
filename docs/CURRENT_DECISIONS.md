@@ -281,7 +281,7 @@ unrelated reason (network blip, backend restart mid-flight) — it's
 permanently stuck on the generic placeholder evaluation with no automatic
 recovery path.
 
-## Evaluation regeneration for placeholder sessions (RESOLVED — scoped 2026-09-03, not yet built)
+## Evaluation regeneration for placeholder sessions (RESOLVED — built and shipped 2026-09-03)
 Follow-up to the above, scoped in detail with real DB evidence before any
 code: **149 of 220 (68%) terminal sessions are stuck on the generic
 placeholder evaluation** — 112/112 (100%) of TERMINATED sessions
@@ -320,6 +320,41 @@ new architecture. Plan: a new `evaluation_generator.py` service, a new
 the exact placeholder text) migration, sharing `internal.py`'s existing
 weighted-score/upsert logic rather than duplicating it, and a frontend
 button gated on `is_placeholder` + real transcript existing.
+
+## Agent worker hosting: Railway (RESOLVED 2026-09-03)
+Deployment target for the 2-week, 10-test-user demo, confirmed with the
+user: **Render (backend) + Vercel (frontend) + Railway (agent worker)**,
+all free tier, no credit card anywhere. Explicitly ruled out Google Cloud
+and Oracle Cloud for this pass (both require a card for general signup,
+confirmed directly against their own current docs) even though earlier
+research had flagged them as technically-free options — the user's
+constraint here is "free AND no card," not just "free."
+
+Real, sourced evidence for Railway specifically (not carried over from
+generic "Railway is popular" impressions):
+- **No credit card for the Trial plan** — confirmed directly quoting
+  Railway's own pricing page: *"Can I try Railway without a credit card?
+  Yes... No credit card required."* One-time $5 credit.
+- **Genuinely supports a real background worker**, not a disguise —
+  confirmed directly against Railway's own docs: *"Background workers do
+  not need a public domain... there's no healthcheckPath required
+  because a worker is not an HTTP service... Railway does not monitor
+  the healthcheck endpoint after the deployment has gone live."* No
+  `$PORT` binding requirement at all, unlike Render's free Web Service
+  tier.
+- Real caveat, stated plainly: the $5 credit is enough for a *light,
+  mostly-idle* service by Railway's own cost examples (~$0.30-0.50/month)
+  — this agent is heavier than that at idle (numpy/av/livekit-agents
+  loaded) and heavier still during real interview sessions with 10 real
+  test users. Worth checking Railway's usage dashboard partway through
+  the 2 weeks rather than assuming the credit lasts the whole window.
+
+**This also resolves** the standing "how to host the agent worker" open
+question from the deployment-readiness audit — see
+`docs/deployment-readiness.md`'s "Resolved (2026-09-03): agent hosting is
+Railway, not Render" entry for the concrete code/config changes this
+triggered (`render.yaml`, `agent/start.sh`, `agent/requirements.txt`,
+both Dockerfiles).
 
 ## Still unresolved (do not implement against these silently)
 - Invitation expiration policy

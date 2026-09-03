@@ -1,4 +1,8 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
+# Aligned to 3.13 (2026-09-03): the pinned requirements.txt lockfile was
+# generated against the local dev environment's actual Python 3.13.5 --
+# building against 3.12 risked a dependency that only ships 3.13 wheels,
+# or subtly different resolved behavior. See docs/deployment-readiness.md.
 
 WORKDIR /app
 

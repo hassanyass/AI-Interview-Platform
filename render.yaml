@@ -6,9 +6,19 @@ services:
     dockerfilePath: Dockerfile
     preDeployCommand: alembic upgrade head
     envVars:
+      # Required at startup (backend/backend/core/config.py's Settings has
+      # no default for these five -- missing any one crashes the container
+      # on boot with a Pydantic ValidationError before it serves a single
+      # request. Confirmed 2026-09-03: this list previously only had
+      # SUPABASE_URL/SUPABASE_SECRET_KEY/DATABASE_URL, silently missing
+      # the other two required Supabase fields.)
       - key: SUPABASE_URL
         sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
       - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
         sync: false
       - key: DATABASE_URL
         sync: false
@@ -18,26 +28,46 @@ services:
         sync: false
       - key: LIVEKIT_API_SECRET
         sync: false
+      # Real random secret for guest JWT signing -- the code's own default
+      # ("local_guest_jwt_secret_key_change_me_in_prod") is a placeholder,
+      # never use it for a real deployment.
+      - key: SECRET_KEY
+        sync: false
+      # Groq -- used by the backend itself (not just the agent) for AI
+      # question generation, the invitation-message composer, and
+      # evaluation regeneration.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        sync: false
+      # Cloudflare R2 -- recording playback (degrades gracefully to "no
+      # recording available" if omitted, but confirmed wanted for this
+      # deployment).
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_NAME
+        sync: false
+      - key: R2_ENDPOINT
+        sync: false
       - key: BACKEND_CORS_ORIGINS
         sync: false
       - key: AGENT_API_SECRET
         sync: false
 
-  - type: web
-    name: ai-interview-agent
-    env: docker
-    rootDir: agent
-    dockerfilePath: Dockerfile
-    envVars:
-      - key: LIVEKIT_URL
-        sync: false
-      - key: LIVEKIT_API_KEY
-        sync: false
-      - key: LIVEKIT_API_SECRET
-        sync: false
-      - key: GROQ_API_KEY
-        sync: false
-      - key: BACKEND_INTERNAL_URL
-        sync: false
-      - key: AGENT_API_SECRET
-        sync: false
+# The agent worker is deployed on Railway, not Render (2026-09-03) --
+# Render's free tier cannot run a genuine persistent background worker at
+# all (confirmed directly against Render's own docs: only Web Services,
+# Static Sites, Postgres, and Key Value are free-tier eligible), and the
+# free-tier-web-service-disguise workaround previously here was confirmed
+# separately to be a poor fit (real measured RAM/CPU evidence -- see
+# docs/deployment-readiness.md) even before considering its own
+# reliability risk. Railway's free Trial genuinely supports a real
+# background-worker deployment (no $PORT, no public domain, no
+# healthcheck required -- confirmed directly against Railway's own docs)
+# with no credit card required. See docs/deployment-readiness.md for the
+# full comparison and docs/LOCAL_DEMO_SETUP.md-adjacent deployment notes
+# for the Railway setup steps.
