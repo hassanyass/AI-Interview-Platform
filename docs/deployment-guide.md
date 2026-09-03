@@ -41,15 +41,24 @@ confirmed genuinely free and card-free on all three as of this writing.
 
 ## Step 1: Render (Backend only)
 
+**Use the manual "Web Service" flow below, not "Blueprint."** Confirmed
+2026-09-03: Render's Blueprint flow (which reads `render.yaml`) prompts for
+a credit card even when every service in the manifest is Free tier — a
+known, reported quirk, not specific to any one account. The manual flow
+does not require a card for the Free instance type. `render.yaml` is kept
+in the repo only as a reference for the exact env var list; it is not
+actually used to deploy.
+
 1. Go to your [Render Dashboard](https://dashboard.render.com/).
-2. Click **New** → **Blueprint**, connect your GitHub repository. Render
-   reads `render.yaml`, which now proposes exactly **one** service:
-   `ai-interview-backend`.
-3. **Instance Type**: Free.
-4. **Environment Variables** — Render will prompt for each of these
-   (matching `render.yaml`'s current list exactly; the previous version of
-   this guide was missing two of the *required* ones, which would have
-   crashed the backend on boot):
+2. Click **New** → **Web Service**, connect your GitHub repository, and
+   select this repo (not a Blueprint).
+3. **Root Directory**: `backend`. Render will detect `backend/Dockerfile`
+   and set **Runtime** to Docker automatically.
+4. **Instance Type**: Free.
+5. **Environment Variables** — add each of these manually (matching
+   `render.yaml`'s list exactly; an earlier version of this guide was
+   missing two of the *required* ones, which would have crashed the
+   backend on boot):
    - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`,
      `SUPABASE_JWKS_URL` — all four required, no defaults.
    - `DATABASE_URL` — the Supabase **Supavisor pooler** connection string
@@ -67,9 +76,12 @@ confirmed genuinely free and card-free on all three as of this writing.
      `["http://localhost:5173"]`); you'll update this for real in Step 4.
    - `AGENT_API_SECRET` — a secure random string you generate; the exact
      same value goes into Railway's agent env vars in Step 2.
-5. Click **Apply**. `preDeployCommand: alembic upgrade head` runs your
-   migrations automatically on every deploy.
-6. Once deployed, note the backend's public URL (e.g.
+6. Click **Create Web Service**. Render builds the Docker image and starts
+   the container; `alembic upgrade head` now runs as part of the
+   container's own start command (`backend/Dockerfile`'s `CMD`), *before*
+   Uvicorn starts, on every deploy — this replaced `preDeployCommand`,
+   which Render doesn't support on the Free instance type.
+7. Once deployed, note the backend's public URL (e.g.
    `https://ai-interview-backend.onrender.com`).
 
 ---

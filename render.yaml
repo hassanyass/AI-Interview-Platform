@@ -1,10 +1,21 @@
+# NOT USED for the actual deploy (2026-09-03) -- kept only as a reference
+# for the exact env var list. Render Blueprints (which read this file)
+# prompt for a credit card even when every listed service is Free tier
+# (confirmed: reported and reproduced, see docs/deployment-guide.md and
+# docs/deployment-readiness.md). The real deploy instead uses Render's
+# manual "New +" -> "Web Service" flow, which does not require a card for
+# the Free instance type. That flow also can't use preDeployCommand below
+# -- confirmed against Render's own docs that Pre-Deploy Command is
+# "available for paid web services, private services, and background
+# workers" only, not Free -- so `alembic upgrade head` was moved into
+# backend/Dockerfile's CMD instead, where it runs on every container
+# start regardless of plan.
 services:
   - type: web
     name: ai-interview-backend
     env: docker
     rootDir: backend
     dockerfilePath: Dockerfile
-    preDeployCommand: alembic upgrade head
     envVars:
       # Required at startup (backend/backend/core/config.py's Settings has
       # no default for these five -- missing any one crashes the container
