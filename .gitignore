@@ -42,6 +42,9 @@ dist-ssr/
 .DS_Store
 Thumbs.db
 
+# Word/Office temporary lock files
+~$*
+
 # Agent TTS audio cache (agent/agent/interview/tts_cache.py) — machine-local,
 # regenerated on demand, binary
 agent/.tts_cache/
