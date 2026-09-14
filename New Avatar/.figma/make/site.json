@@ -1,0 +1,10 @@
+{
+  "description": "Engage in live conversational interviews with a professional AI interviewer character, enhancing the candidate experience through interactive visual presence.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

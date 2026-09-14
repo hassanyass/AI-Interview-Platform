@@ -1,0 +1,66 @@
+# Environments
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.env.local
+.venv
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Word/Office temporary lock files
+~$*
+
+# Agent TTS audio cache (agent/agent/interview/tts_cache.py) — machine-local,
+# regenerated on demand, binary
+agent/.tts_cache/
+
+# Agent Groq key-rotation state (agent/agent/interview/groq_key_rotator.py)
+# — machine-local, regenerated on demand
+agent/.groq_key_state_*.json
+
+# Claude Code / AI-agent tooling config (2026-09-03): kept on local disk so
+# Claude Code continues operating under the exact same rules/workflow in
+# future sessions, but untracked from git so the public GitHub repo shows
+# only the project itself. NOT the same as agent/ (the real, deployed
+# LiveKit voice-interview service) -- that stays fully tracked.
+/.claude/
+/.agents/
+/CLAUDE.md
+/AGENTS.md
+/docs/transition-phase-SKILL.md
+/docs/transition-phase.workflow.md
