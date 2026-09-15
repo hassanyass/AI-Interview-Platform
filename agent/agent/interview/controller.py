@@ -10,6 +10,7 @@ The LLM produces conversational content within the constraints the controller pr
 import time
 import json
 import logging
+import os
 from typing import Awaitable, Callable, Optional, List
 from datetime import datetime
 
@@ -45,6 +46,15 @@ from agent.interview.input_limits import (
 
 logger = logging.getLogger(__name__)
 
+# Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B1): seconds
+# added to the running section clock each time a FOLLOW_UP is committed on
+# an ordered VERBAL core question. Env-configurable rather than hardcoded,
+# matching this codebase's convention for timing constants (see
+# voice_adapter.py's STT_ENDPOINT_DELAY_SECONDS / WAITING_ROOM_TIMEOUT_SECONDS).
+# Naturally bounded by the max-2 follow-up cap (<= 2x per question); no
+# separate section-level ceiling by decision (plan §6-Q1, approved).
+VERBAL_FOLLOWUP_TIME_BONUS_SECONDS = max(0, int(os.getenv("VERBAL_FOLLOWUP_TIME_BONUS_SECONDS", "120")))
+
 
 class InterviewController:
     def __init__(
@@ -60,6 +70,10 @@ class InterviewController:
         # Timer
         self._start_time: Optional[float] = None
         self._total_duration_sec = context.time_remaining_seconds
+        # B3: set when a follow-up grants time; consumed (and cleared) by
+        # the very next generate_ui_state() so the frontend sees the grant
+        # exactly once, as a moment, not on every subsequent update.
+        self._pending_time_bonus_seconds: Optional[int] = None
         self._custom_question: Optional[Question] = None
         self._question_generator: Optional[Callable[[], Awaitable[Question]]] = None
         self._question_fallback_builder: Optional[Callable[[], Question]] = None
@@ -743,8 +757,19 @@ class InterviewController:
             "time_remaining_seconds": (
                 None if ctx.current_phase == InterviewPhase.WAITING_ROOM
                 else self.get_remaining_time()
-            )
+            ),
+            # B3 (docs/verbal-section-flow-plan.md): additive, optional.
+            # `granted` is transient -- present only on the first state
+            # update after a follow-up earned time (so the UI can show the
+            # moment once), null otherwise. `total` is the running tally.
+            "time_bonus_granted_seconds": self._consume_pending_time_bonus(),
+            "time_bonus_total_seconds": ctx.followup_time_bonus_seconds_total,
         }
+
+    def _consume_pending_time_bonus(self) -> Optional[int]:
+        granted = self._pending_time_bonus_seconds
+        self._pending_time_bonus_seconds = None
+        return granted
         
     async def process_ui_command(self, command: str, payload: dict = None) -> Optional[StructuredAction]:
         """
@@ -2115,6 +2140,40 @@ class InterviewController:
 
         if action.action == ActionEnum.FOLLOW_UP:
             self.context.followups_used += 1
+            # B1 (docs/verbal-section-flow-plan.md): a follow-up on an
+            # ordered VERBAL core question earns the candidate extra time,
+            # so probing deeper never eats into the time they were promised
+            # for the agreed questions. get_remaining_time() is
+            # total - elapsed, so growing the total grows remaining by
+            # exactly the bonus; the extension survives a reconnect through
+            # time_remaining_seconds alone (controller __init__ reseeds
+            # _total_duration_sec from it). Deliberately VERBAL-core only:
+            # MCQ/CODING have a 0 cap and never reach here, and the legacy
+            # free-form flow is slated for retirement (plan §6-Q3).
+            core_section = self._active_core_section()
+            if (
+                core_section is not None
+                and core_section.section_type == "VERBAL"
+                and VERBAL_FOLLOWUP_TIME_BONUS_SECONDS > 0
+            ):
+                self._total_duration_sec += VERBAL_FOLLOWUP_TIME_BONUS_SECONDS
+                self.context.followup_time_bonus_seconds_total += VERBAL_FOLLOWUP_TIME_BONUS_SECONDS
+                self._pending_time_bonus_seconds = VERBAL_FOLLOWUP_TIME_BONUS_SECONDS
+                # B2: re-sync context.time_remaining_seconds NOW (get_remaining_
+                # time() writes it) so the checkpoint saved at the end of this
+                # turn carries the extension -- that field is the only thing a
+                # reconnect reseeds the clock from.
+                remaining_now = self.get_remaining_time()
+                # get_remaining_time() only writes the context field once the
+                # clock has started; assign explicitly so the sync holds in
+                # every state, not just the started one.
+                self.context.time_remaining_seconds = remaining_now
+                logger.info(
+                    "Follow-up granted +%ss (section total +%ss, remaining now %ss)",
+                    VERBAL_FOLLOWUP_TIME_BONUS_SECONDS,
+                    self.context.followup_time_bonus_seconds_total,
+                    remaining_now,
+                )
 
         if action.action == ActionEnum.ASK and phase == InterviewPhase.BACKGROUND:
             self.context.background_progress.questions_asked += 1

@@ -64,6 +64,13 @@ export interface StateUpdatePayload {
   last_question_outcome: string | null;
   allowed_controls: AllowedControl[];
   time_remaining_seconds: number | null;
+  /** Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B3).
+   *  `granted` is transient: present only on the first state update after
+   *  a follow-up earned extra time (render the moment once), null/absent
+   *  otherwise. `total` is the running tally for the current section.
+   *  Both optional -- older agents simply don't send them. */
+  time_bonus_granted_seconds?: number | null;
+  time_bonus_total_seconds?: number;
   sections_progress?: {
     total: number;
     completed: number;

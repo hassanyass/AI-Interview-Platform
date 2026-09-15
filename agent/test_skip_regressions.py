@@ -3042,3 +3042,121 @@ def test_legacy_flow_still_downgrades_over_cap_followup_to_acknowledge():
         assert controller.context.current_phase == InterviewPhase.BACKGROUND
 
     asyncio.run(scenario())
+
+
+# ─── Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B1-B3) ───────
+# Each committed FOLLOW_UP on an ordered VERBAL core question grants extra time.
+
+from agent.interview.controller import VERBAL_FOLLOWUP_TIME_BONUS_SECONDS as BONUS
+
+
+def test_each_followup_grants_exactly_the_bonus_and_only_followups_do():
+    """T4: FOLLOW_UP adds exactly the bonus to remaining; ASK adds nothing;
+    the cap bounds it to two grants per question (the third attempt is the
+    forced advance, which grants nothing)."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        base = controller.get_remaining_time()
+
+        await controller.process_candidate_input(None)           # ASK: no grant
+        assert controller.get_remaining_time() == base
+        assert controller.context.followup_time_bonus_seconds_total == 0
+
+        await controller.process_candidate_input("a1")           # follow-up 1
+        assert controller.get_remaining_time() == base + BONUS
+        await controller.process_candidate_input("a2")           # follow-up 2
+        assert controller.get_remaining_time() == base + 2 * BONUS
+        assert controller.context.followup_time_bonus_seconds_total == 2 * BONUS
+
+        await controller.process_candidate_input("a3")           # cap -> forced advance, no grant
+        assert controller.get_remaining_time() == base + 2 * BONUS
+        assert controller.context.followup_time_bonus_seconds_total == 2 * BONUS
+
+    asyncio.run(scenario())
+
+
+def test_mcq_core_questions_never_grant_time():
+    """T4b: MCQ/CODING have a 0 follow-up cap by decision -- a FOLLOW_UP
+    there is downgraded before it can ever reach the grant."""
+    async def scenario():
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        context.time_remaining_seconds = 1200
+        mcq = Question(
+            id="core-mcq1", title="MCQ 1", problem_statement="Pick one.",
+            difficulty="mid", competency="knowledge",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["MCQ"] = OrderedSectionProgress(section_type="MCQ", questions=[mcq])
+        controller = InterviewController(object(), MockPersistence(), context)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP)
+        base = controller.get_remaining_time()
+
+        await controller.process_candidate_input(None)
+        await controller.process_candidate_input("a1")
+
+        assert controller.get_remaining_time() == base
+        assert controller.context.followup_time_bonus_seconds_total == 0
+
+    asyncio.run(scenario())
+
+
+def test_ui_state_reports_the_grant_once_and_keeps_the_running_total():
+    """T5: time_bonus_granted_seconds appears on the first state update after
+    a grant and is null after that; time_bonus_total_seconds accumulates."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+
+        await controller.process_candidate_input(None)
+        state = controller.generate_ui_state()
+        assert state["time_bonus_granted_seconds"] is None
+        assert state["time_bonus_total_seconds"] == 0
+
+        await controller.process_candidate_input("a1")
+        first = controller.generate_ui_state()
+        second = controller.generate_ui_state()
+        assert first["time_bonus_granted_seconds"] == BONUS
+        assert second["time_bonus_granted_seconds"] is None      # consumed exactly once
+        assert second["time_bonus_total_seconds"] == BONUS
+
+        await controller.process_candidate_input("a2")
+        assert controller.generate_ui_state()["time_bonus_granted_seconds"] == BONUS
+        assert controller.generate_ui_state()["time_bonus_total_seconds"] == 2 * BONUS
+
+    asyncio.run(scenario())
+
+
+def test_grant_survives_resume_via_time_remaining_only():
+    """T6: the checkpoint carries the EXTENDED time_remaining_seconds (the
+    only thing a reconnect reseeds the clock from) and no new bonus field
+    (the /internal/* checkpoint contract is untouched); a controller built
+    from that context starts with the extended clock."""
+    async def scenario():
+        persistence = MockPersistence()
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        context.time_remaining_seconds = 1200
+        q1 = Question(
+            id="core-q1", title="Core Q1", problem_statement="HR question number 1?",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=[q1, q1.model_copy(update={"id": "core-q2"})])
+        controller = InterviewController(object(), persistence, context)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP)
+        await controller.process_candidate_input(None)
+        await controller.process_candidate_input("a1")
+
+        saved = persistence.storage[context.session_id]
+        assert saved["time_remaining_seconds"] == 1200 + BONUS
+        assert "followup_time_bonus_seconds_total" not in saved
+        assert "time_bonus_total_seconds" not in saved
+
+        # Resume: a fresh controller seeds its clock from the context's
+        # time_remaining_seconds, exactly as __init__ does in production.
+        resumed = InterviewController(object(), MockPersistence(), context)
+        assert resumed.get_remaining_time() == 1200 + BONUS
+
+    asyncio.run(scenario())

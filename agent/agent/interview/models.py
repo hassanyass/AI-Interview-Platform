@@ -339,6 +339,14 @@ class InterviewRuntimeContext(BaseModel):
     # Current question tracking
     hints_used: int = 0
     followups_used: int = 0
+    # Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B1):
+    # running total of interview time granted by follow-ups this section.
+    # Display/bookkeeping only -- the clock itself is extended via the
+    # controller's _total_duration_sec, and what survives a reconnect is
+    # time_remaining_seconds (which already includes any grant), so this is
+    # deliberately NOT part of the checkpoint payload (persistence.py sends
+    # an explicit field list) and never crosses the /internal/* contract.
+    followup_time_bonus_seconds_total: int = 0
     
     # Section tracking
     interview_plan: Optional[InterviewPlan] = None
