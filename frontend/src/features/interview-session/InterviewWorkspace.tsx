@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocalParticipant, useRoomContext, useTracks } from "@livekit/components-react";
 import { Track, type RemoteAudioTrack } from "livekit-client";
 import { Loader2, Timer, LogOut, Video, VideoOff, Maximize2, Minimize2 } from "lucide-react";
@@ -19,6 +19,8 @@ import { EndInterviewDialog } from "./EndInterviewDialog";
 import { isFullscreenActive, requestFullscreen } from "../../lib/fullscreen";
 import { terminateInterview } from "../../services/api/interviews";
 import { useFaceDetectionMonitor } from "./useFaceDetectionMonitor";
+import { SelfViewVideo } from "./SelfViewVideo";
+import { TimeBonusIndicator } from "./TimeBonusIndicator";
 
 const AgentConnectingScreen = () => {
   const { t } = useTranslation();
@@ -473,6 +475,48 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
     };
   }, []);
 
+  /**
+   * Camera/mic hardware release (2026-09-14). Real bug this fixes: the
+   * camera's physical indicator light stayed ON after a session ended or
+   * was terminated. Two gaps caused it --
+   *   1. The fullscreen-termination path disabled only the MICROPHONE
+   *      (see the FULLSCREEN_EXITED handler above), never the camera, and
+   *      relied entirely on <LiveKitRoom> unmounting to release it.
+   *   2. Natural agent-driven completion never disabled either one --
+   *      same reliance on the room's own teardown.
+   * setCameraEnabled(false) alone also isn't a hardware guarantee: it
+   * unpublishes/mutes, but whether the underlying MediaStreamTrack is
+   * actually stopped depends on library defaults that shouldn't be
+   * trusted for what is, in effect, a privacy promise to the candidate.
+   * So: explicitly stop() every local track on ANY terminal state, and
+   * again on unmount as a backstop. stop() on an already-stopped track is
+   * a no-op, so the overlap between the two is harmless.
+   */
+  const releaseLocalMedia = useCallback(() => {
+    const localParticipant = room?.localParticipant;
+    if (!localParticipant) return;
+    localParticipant.setCameraEnabled(false).catch(() => {});
+    localParticipant.setMicrophoneEnabled(false).catch(() => {});
+    localParticipant.trackPublications.forEach((publication) => {
+      // Both layers: LiveKit's own track teardown, and the raw
+      // MediaStreamTrack underneath it -- the latter is what actually
+      // turns the camera light off.
+      publication.track?.stop();
+      publication.track?.mediaStreamTrack?.stop();
+    });
+  }, [room]);
+
+  useEffect(() => {
+    if (!isCompleted && !isFullscreenBlocked) return;
+    releaseLocalMedia();
+  }, [isCompleted, isFullscreenBlocked, releaseLocalMedia]);
+
+  useEffect(() => {
+    return () => {
+      releaseLocalMedia();
+    };
+  }, [releaseLocalMedia]);
+
   // Audit fix (2026-08-27): client-side Web Speech API fallback. Fires only
   // on ttsStatus.status === "gave_up" — the point voice_adapter.py has
   // definitively failed to speak this turn server-side (TTS provider outage,
@@ -605,7 +649,17 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
             {state?.phase !== "WAITING_ROOM" && (
               <span className="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-1.5 font-semibold tabular-nums text-foreground">
                 <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                {formatTime(displaySeconds)}
+                {/* B4 (docs/verbal-section-flow-plan.md): the digits plus the
+                    follow-up time-grant moment and running tally. The
+                    countdown itself already re-seeds on every
+                    time_remaining_seconds update (effect above), so the
+                    number jumps correctly on its own; this only adds the
+                    *moment* so a grant reads as earned, not as a glitch. */}
+                <TimeBonusIndicator
+                  formattedTime={formatTime(displaySeconds)}
+                  grantedSeconds={state?.time_bonus_granted_seconds}
+                  totalSeconds={state?.time_bonus_total_seconds}
+                />
               </span>
             )}
             
@@ -756,6 +810,14 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
 
       <TtsRetryOverlay ttsStatus={ttsStatus} />
       <FullscreenGraceOverlay secondsRemaining={fullscreenGraceSeconds} isBlocked={isFullscreenBlocked} />
+      {/* Self-view (2026-09-14): candidate's own camera, so they can see
+          themselves "like a real meeting" rather than just trust the
+          header's on/off indicator above. Same already-published local
+          camera track as useFaceDetectionMonitor (line 427-428) -- no
+          second getUserMedia call. Preview only, by explicit product
+          decision: no camera toggle here, camera stays on for the whole
+          interview exactly as PR-C already designed it. */}
+      <SelfViewVideo cameraTrack={localCameraTrack} />
       </div>
 
       <EndInterviewDialog

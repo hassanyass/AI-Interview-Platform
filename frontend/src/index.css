@@ -7,6 +7,16 @@
 @import "@fontsource/ibm-plex-sans-arabic/600.css";
 @config "../tailwind.config.js";
 
+/* Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B4): the one
+   animation TimeBonusIndicator needs. Defined here because this project has
+   no Tailwind animation plugin wired for v4 -- the `animate-in / fade-in /
+   slide-in-from-*` classes used elsewhere are not emitted at all (verified
+   against the built CSS), so a new component must not depend on them. */
+@keyframes himma-bonus-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 @layer base {
   :root {
     /* Background: White */

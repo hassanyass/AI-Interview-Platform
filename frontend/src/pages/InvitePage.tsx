@@ -187,6 +187,12 @@ export default function InvitePage() {
                 </p>
               </div>
             )}
+            {/* B5 (docs/verbal-section-flow-plan.md): follow-ups can extend
+                the clock, so the estimate above is a floor -- say so before
+                the first "+2:00" lands mid-interview. */}
+            {context?.duration_minutes && (
+              <p className="text-xs text-muted-foreground mt-2">{t('invite.followupBonusNote')}</p>
+            )}
           </div>
 
           <Card className="shadow-xl shadow-black/5 border-muted/60">
