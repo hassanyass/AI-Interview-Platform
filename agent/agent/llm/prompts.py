@@ -35,7 +35,10 @@ SYSTEM_MESSAGES = {
         # spoken by the CONTROLLER, not the LLM, when the follow-up cap is
         # reached -- the next HR question is appended verbatim after "_next".
         "core_followups_exhausted_next": "Thank you. Let's move on to the next question.",
-        "core_followups_exhausted_last": "Thank you, that covers this question."
+        "core_followups_exhausted_last": "Thank you, that covers this question.",
+        # A3: spoken before the verbatim HR question when the model paraphrased
+        # it on the first turn. Neutral on purpose -- valid for any position.
+        "core_question_lead_in": "Here's your question."
     },
     "ar": {
         "end_interview": "شكرًا لوقتك اليوم. بننهي المقابلة هنا وبنتواصل معك قريبًا. طاب يومك!",
@@ -50,7 +53,8 @@ SYSTEM_MESSAGES = {
         "core_section_no_skip": "هذا السؤال جزء من المقابلة، فخلّنا نكمل فيه — خذ وقتك وجاوب متى ما جهزت.",
         "core_move_to_technical_unavailable": "المقابلة عندها ترتيب محدد، ما فيه قسم تقني منفصل نقفز له — خلّنا نكمل بالسؤال الحالي.",
         "core_followups_exhausted_next": "شكراً لك. خلّنا ننتقل للسؤال التالي.",
-        "core_followups_exhausted_last": "شكراً لك، هذا يكفي لهذا السؤال."
+        "core_followups_exhausted_last": "شكراً لك، هذا يكفي لهذا السؤال.",
+        "core_question_lead_in": "إليك سؤالك."
     }
 }
 # ─── Core Interviewer Identity ────────────────────────────────────────────────

@@ -324,6 +324,16 @@ class InterviewController:
             return f"{messages['core_followups_exhausted_next']} {self._question_problem_text(next_q)}"
         return messages["core_followups_exhausted_last"]
 
+    def _ensure_verbatim_core_question(self, spoken: str, question: Question) -> str:
+        """A3: keep the model's text if it already contains the HR question
+        verbatim (case-insensitive containment -- punctuation/casing drift is
+        not paraphrase); otherwise replace it with lead-in + verbatim text."""
+        text = self._question_problem_text(question).strip()
+        if text and text.casefold() in (spoken or "").casefold():
+            return spoken
+        messages = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])
+        return f"{messages['core_question_lead_in']} {text}"
+
     def _question_title_text(self, question: Optional[Question]) -> str:
         if not question:
             return ""
@@ -570,6 +580,27 @@ class InterviewController:
                     self._append_control_response(handled)
                     await self.persistence.save_checkpoint(self.context)
                     return handled
+
+        # A3 (docs/verbal-section-flow-plan.md, approved): the FIRST turn of a
+        # VERBAL core question must contain the HR-approved question text
+        # verbatim. CORE_QUESTION_PROMPT asks for this, but a prompt is a
+        # request; this makes it a guarantee. If the model complied (its
+        # text already contains the exact question) its own natural lead-in
+        # is kept untouched; if it paraphrased, the spoken text becomes a
+        # localised lead-in + the verbatim question instead. An ASK reaching
+        # here with current_question_asked False is a genuine first turn --
+        # the reclassification above only fires once the question was asked.
+        if action.action == ActionEnum.ASK:
+            first_turn_section = self._active_core_section()
+            if (
+                first_turn_section is not None
+                and first_turn_section.section_type == "VERBAL"
+                and not first_turn_section.current_question_asked
+                and first_turn_section.current_question is not None
+            ):
+                action.response = self._ensure_verbatim_core_question(
+                    action.response, first_turn_section.current_question
+                )
 
         # Apply action effects (transitions, evaluation tracking, etc.)
         await self._apply_action(action)

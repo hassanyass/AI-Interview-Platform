@@ -3160,3 +3160,71 @@ def test_grant_survives_resume_via_time_remaining_only():
         assert resumed.get_remaining_time() == 1200 + BONUS
 
     asyncio.run(scenario())
+
+
+# ─── Verbal-flow orchestration (docs/verbal-section-flow-plan.md, A3) ──────────
+# The first turn of a VERBAL core question must contain the HR question verbatim.
+
+def test_first_turn_paraphrase_is_replaced_with_verbatim_question():
+    """T7: the model paraphrased the HR question -> spoken text becomes the
+    localised lead-in + the exact question text."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        controller._generate_next_action = AsyncMock(return_value=StructuredAction(
+            action=ActionEnum.ASK,
+            response="So, to kick things off, could you walk me through your background a bit?",
+            reason="scripted paraphrase",
+        ))
+
+        first = await controller.process_candidate_input(None)
+
+        assert first.action == ActionEnum.ASK
+        assert first.response == f"{SYSTEM_MESSAGES['en']['core_question_lead_in']} HR question number 1?"
+        assert controller.context.sections["VERBAL"].current_question_asked is True
+
+    asyncio.run(scenario())
+
+
+def test_first_turn_compliant_text_is_kept_untouched():
+    """T7b: the model included the question verbatim (any casing) -> its own
+    natural lead-in is preserved exactly."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        spoken = "Great to meet you. Let's start: hr QUESTION number 1? Take your time."
+        controller._generate_next_action = AsyncMock(return_value=StructuredAction(
+            action=ActionEnum.ASK, response=spoken, reason="scripted compliant",
+        ))
+
+        first = await controller.process_candidate_input(None)
+
+        assert first.response == spoken
+
+    asyncio.run(scenario())
+
+
+def test_verbatim_guarantee_does_not_touch_subsequent_turns_or_other_sections():
+    """T7c: only the FIRST turn of a VERBAL core question is guarded -- a
+    follow-up turn's text is left alone, and an MCQ section's ASK is not
+    rewritten (MCQ has its own prompt/flow)."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP)
+        await controller.process_candidate_input(None)
+        follow = await controller.process_candidate_input("a1")
+        assert follow.response == "llm said (FOLLOW_UP)"
+
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        context.time_remaining_seconds = 1200
+        mcq = Question(
+            id="core-mcq1", title="MCQ 1", problem_statement="Pick one.",
+            difficulty="mid", competency="knowledge",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["MCQ"] = OrderedSectionProgress(section_type="MCQ", questions=[mcq])
+        mcq_controller = InterviewController(object(), MockPersistence(), context)
+        _script_llm(mcq_controller, ActionEnum.ASK)
+        first = await mcq_controller.process_candidate_input(None)
+        assert first.response == "llm said (ASK)"
+
+    asyncio.run(scenario())
