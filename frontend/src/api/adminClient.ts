@@ -247,6 +247,16 @@ export const adminClient = {
     });
   },
 
+  /** Delete one candidate's interview session from a job's results.
+   *  Hard delete -- also removes the session's evaluation, scores,
+   *  transcript and its R2 recording. The CandidateProfile itself is not
+   *  touched (they may have sessions on other jobs). No undo. */
+  deleteInterviewSession: async (sessionId: string): Promise<void> => {
+    return fetchApi<void>(`/api/v1/admin/interviews/${sessionId}`, {
+      method: "DELETE",
+    });
+  },
+
   updateDefinition: async (definitionId: string, data: { duration_minutes?: number; is_public?: boolean }): Promise<Job> => {
     return fetchApi<Job>(`/api/v1/admin/definitions/${definitionId}`, {
       method: "PATCH",

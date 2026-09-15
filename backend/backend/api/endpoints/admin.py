@@ -201,6 +201,49 @@ def _presign_recording_url(storage_path: str | None) -> str | None:
         return None
 
 
+def _delete_recording_object(storage_path: str | None) -> bool:
+    """Delete a session's recording object from R2 (2026-09-14, added for
+    candidate deletion). Returns True if the object was deleted or there
+    was nothing to delete, False if a delete was attempted and failed.
+
+    Deliberately mirrors _presign_recording_url's construction of the
+    client (same credentials, same path addressing style) rather than
+    introducing a second, subtly-different R2 client.
+
+    Never raises: a failed R2 delete must not roll back or block the
+    database delete the caller has already decided to perform -- the
+    alternative (500 the request and leave the row in place) is strictly
+    worse for the admin, who then can't remove the candidate at all. The
+    caller logs/surfaces the discrepancy instead; same "a
+    recording-subsystem failure must never block the core flow" principle
+    the rest of this module already applies.
+    """
+    if not storage_path:
+        return True
+    if not all([settings.R2_ACCOUNT_ID, settings.R2_ACCESS_KEY_ID, settings.R2_SECRET_ACCESS_KEY,
+                settings.R2_BUCKET_NAME, settings.R2_ENDPOINT]):
+        # R2 not configured in this environment -- there is no object to
+        # delete here, which is a real, tolerated state (same as presign's).
+        return True
+    try:
+        import boto3
+        from botocore.config import Config
+
+        client = boto3.client(
+            "s3",
+            endpoint_url=settings.R2_ENDPOINT,
+            aws_access_key_id=settings.R2_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.R2_SECRET_ACCESS_KEY,
+            region_name="auto",
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        )
+        client.delete_object(Bucket=settings.R2_BUCKET_NAME, Key=storage_path)
+        return True
+    except Exception:
+        logger.exception("Failed to delete recording object %s from R2", storage_path)
+        return False
+
+
 # Explicit allowlist, not a blocklist -- a real query against interview_events
 # today returns 15+ distinct event_type values (SESSION_STARTED,
 # QUESTION_SKIPPED, PHASE_STARTED, HINT_REQUESTED, WAITING_ROOM_*, etc.),
@@ -1162,6 +1205,58 @@ async def get_candidate_result(
         is_mock_data=bool(final_result.get("is_mock")),
         integrity_events=await _get_integrity_events(db, session),
     )
+
+
+@router.delete("/interviews/{session_id}", status_code=204)
+async def delete_interview_session(
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Delete one candidate's interview session from a job's results
+    (2026-09-14). Hard delete, matching delete_job's existing precedent in
+    this module -- the ORM relationships on InterviewSession are already
+    declared cascade="all, delete-orphan", so this removes the session's
+    messages, events, checkpoints, consent, configuration, and its
+    Evaluation (and that Evaluation's Scores) along with it. There is no
+    undo.
+
+    Deliberately scoped to the SESSION, not the person: the
+    CandidateProfile and any JobApplication/InterviewInvitation rows are
+    left intact, because those are shared with (and meaningful to) other
+    jobs the same candidate may have applied to -- deleting a result from
+    one job's dashboard must not silently erase that candidate everywhere.
+
+    The R2 recording object is deleted too, so this is a real deletion of
+    the candidate's interview rather than one that leaves their video
+    sitting in storage unreferenced. A failed R2 delete does NOT fail the
+    request (see _delete_recording_object's docstring): the row still goes,
+    and the orphaned object is logged for manual cleanup -- refusing to
+    delete the row because storage misbehaved would leave the admin unable
+    to remove the candidate at all.
+    """
+    result = await db.execute(
+        select(InterviewSession).where(InterviewSession.id == session_id)
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found.")
+
+    # Captured BEFORE the delete/commit -- reading an ORM attribute after
+    # commit expires it and forces a lazy-load outside an async-safe
+    # context (the MissingGreenlet bug class this module has hit before).
+    storage_path = session.recording_storage_path
+
+    await db.delete(session)
+    await db.commit()
+
+    if not _delete_recording_object(storage_path):
+        logger.error(
+            "Session %s deleted, but its recording object %s could not be removed from R2 "
+            "and is now orphaned -- manual cleanup required.",
+            session_id, storage_path,
+        )
+    return None
 
 
 @router.post("/interviews/{session_id}/regenerate-evaluation", response_model=EvaluationDetailResponse)

@@ -6,9 +6,22 @@ interface ConfirmDeleteModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => Promise<void>;
+  /** Defaults preserve this modal's original job-deletion copy, so the
+   *  existing JobsListPage usage is unchanged; pass these to reuse it for
+   *  anything else (2026-09-14: candidate deletion on JobResultsPage). */
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
 }
 
-export default function ConfirmDeleteModal({ isOpen, onClose, onConfirm }: ConfirmDeleteModalProps) {
+export default function ConfirmDeleteModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  title = "Delete Job",
+  description = "Are you sure you want to delete this job? This will permanently delete all candidates and evaluations associated with it.",
+  confirmLabel = "Delete",
+}: ConfirmDeleteModalProps) {
   const [isDeleting, setIsDeleting] = useState(false);
 
   if (!isOpen) return null;
@@ -30,7 +43,7 @@ export default function ConfirmDeleteModal({ isOpen, onClose, onConfirm }: Confi
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-red-500" />
-            <h2 className="text-xl font-bold tracking-tight text-foreground">Delete Job</h2>
+            <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
           </div>
           <button onClick={onClose} disabled={isDeleting} className="p-2 text-muted-foreground hover:bg-muted rounded-full transition-colors">
             <X className="h-5 w-5" />
@@ -40,7 +53,7 @@ export default function ConfirmDeleteModal({ isOpen, onClose, onConfirm }: Confi
         {/* Content */}
         <div className="p-6">
           <p className="text-base text-foreground">
-            Are you sure you want to delete this job? This will permanently delete all candidates and evaluations associated with it.
+            {description}
           </p>
         </div>
 
@@ -48,7 +61,7 @@ export default function ConfirmDeleteModal({ isOpen, onClose, onConfirm }: Confi
         <div className="px-6 py-4 border-t border-border/50 bg-muted/10 flex justify-end gap-3">
           <Button variant="outline" onClick={onClose} disabled={isDeleting}>Cancel</Button>
           <Button onClick={handleConfirm} disabled={isDeleting} className="min-w-[120px] bg-red-500 hover:bg-red-600 text-white">
-            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Delete"}
+            {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmLabel}
           </Button>
         </div>
       </div>
