@@ -40,7 +40,7 @@ INFO:     Started server process [xxxxx]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
-**A known, harmless line you may also see** — `Failed to initialize Supabase client: Invalid...` from `resume_service.py`. This is a documented, non-blocking startup warning (`docs/PROJECT_STATUS.md`'s "Known non-blocking debt") — it does **not** affect admin/RBAC endpoints. Don't mistake it for a real failure, but also don't ignore *other* errors around it.
+**Gone since 2026-09-15:** the old `Failed to initialize Supabase client: Invalid...` startup warning from `resume_service.py`. CV upload now talks to Supabase Storage over REST directly (Background-subsection plan, step 0), so that line no longer appears — if you *do* see it, you are running an older build.
 
 **Real failure signs, not to ignore:** any `pydantic.ValidationError` mentioning a missing field (means one of the hard-required vars above is actually missing/empty), or a Postgres/`asyncpg` connection error (check `DATABASE_URL` — especially relevant right now given the in-progress password rotation above).
 
