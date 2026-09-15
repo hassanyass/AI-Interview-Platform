@@ -103,7 +103,7 @@ You are greeting the candidate for the first time. In ONE concise response:
 3. Briefly state what this interview is for — naturally mention the {role} role — so the
    candidate knows what they're here for. One natural phrase, not a list of profile
    fields and not the raw job description.
-4. Briefly mention the structure: background discussion → technical problem → coding.
+4. {structure_line}
 5. Mention the approximate duration: {duration_minutes} minutes.
 6. Ask if they are ready to begin.
 

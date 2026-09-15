@@ -3228,3 +3228,168 @@ def test_verbatim_guarantee_does_not_touch_subsequent_turns_or_other_sections():
         assert first.response == "llm said (ASK)"
 
     asyncio.run(scenario())
+
+
+# ─── Intro handshake fix (2026-09-15, verbal-flow plan addendum) ──────────────
+# Live finding: a session sat in BRIEFING for 18 state updates / 12 ASKs and
+# never reached the ordered core questions -- BRIEFING -> WELCOME had exactly
+# one path (the LLM emitting TRANSITION) while BRIEFING_PROMPT orders "MUST
+# use action=ASK (NOT TRANSITION)" on every turn. A prompt-obeying model never
+# started the interview.
+
+def _kickoff_controller(num_questions: int = 2) -> InterviewController:
+    """B2B controller starting from CREATED (the real kick-off path), with an
+    HR-approved VERBAL section."""
+    context = make_controller(InterviewPhase.CREATED).context
+    context.time_remaining_seconds = 1200
+    context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=[
+        Question(
+            id=f"core-q{i}", title=f"Core Q{i}", problem_statement=f"HR question number {i}?",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        for i in range(1, num_questions + 1)
+    ])
+    return InterviewController(object(), MockPersistence(), context)
+
+
+def _obedient_llm(controller: InterviewController):
+    """An LLM that does exactly what each phase's prompt tells it: ASK in
+    BRIEFING (never TRANSITION), TRANSITION in WELCOME, ASK for a core
+    question's first turn. This is the model behaviour that stalled live."""
+    def generate(*_a, **_k):
+        phase = controller.context.current_phase
+        if phase == InterviewPhase.BRIEFING:
+            return StructuredAction(action=ActionEnum.ASK, response="Hi, I'm the interviewer. Ready to begin?", reason="prompt: ASK")
+        if phase == InterviewPhase.WELCOME:
+            return StructuredAction(action=ActionEnum.TRANSITION, response="Great, let's begin.", reason="prompt: TRANSITION", should_transition=True)
+        return StructuredAction(action=ActionEnum.ASK, response="(llm core turn)", reason="")
+    controller._generate_next_action = AsyncMock(side_effect=generate)
+
+
+def test_prompt_obeying_llm_reaches_first_hr_question_on_the_reply_turn():
+    """T8: greeting, candidate replies, and by that SAME reply turn the
+    interview is in BACKGROUND with HR question 1 spoken verbatim as part of
+    the 'let's begin' utterance (no extra candidate input needed)."""
+    async def scenario():
+        controller = _kickoff_controller()
+        section = controller.context.sections["VERBAL"]
+        _obedient_llm(controller)
+        controller.start_interview()
+
+        greeting = await controller.process_candidate_input(None)
+        assert greeting.action == ActionEnum.ASK
+        assert controller.context.current_phase == InterviewPhase.BRIEFING
+
+        reply = await controller.process_candidate_input("Hi there, yes, I'm Rick.")
+
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+        assert reply.action == ActionEnum.TRANSITION
+        assert reply.response.startswith("Great, let's begin.")
+        assert reply.response.endswith("HR question number 1?")
+        assert section.current_index == 0
+        assert section.current_question_asked is True
+
+    asyncio.run(scenario())
+
+
+def test_welcome_turn_without_transition_is_forced_into_the_interview():
+    """T9: a model that acknowledges in WELCOME without TRANSITION is forced
+    forward, keeping its own acknowledgement text plus Q1 verbatim."""
+    async def scenario():
+        controller = _kickoff_controller()
+        controller.start_interview()
+        controller._generate_next_action = AsyncMock(side_effect=[
+            StructuredAction(action=ActionEnum.ASK, response="Hello! Ready?", reason=""),
+            StructuredAction(action=ActionEnum.ACKNOWLEDGE, response="Nice to meet you, Rick.", reason="no transition"),
+        ])
+        await controller.process_candidate_input(None)
+
+        reply = await controller.process_candidate_input("I'm Rick.")
+
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+        assert reply.action == ActionEnum.TRANSITION
+        assert reply.response == "Nice to meet you, Rick. HR question number 1?"
+
+    asyncio.run(scenario())
+
+
+def test_briefing_does_not_advance_before_the_greeting_or_without_a_reply():
+    """T10a: the hop needs BOTH a delivered greeting and real candidate
+    input -- a silent/empty turn re-runs the greeting rather than skipping
+    ahead, and nothing moves before the greeting has gone out."""
+    async def scenario():
+        controller = _kickoff_controller()
+        _obedient_llm(controller)
+        controller.start_interview()
+        assert controller._briefing_greeted is False
+
+        await controller.process_candidate_input(None)     # greeting
+        assert controller._briefing_greeted is True
+        await controller.process_candidate_input(None)     # silence: no reply yet
+        assert controller.context.current_phase == InterviewPhase.BRIEFING
+
+        await controller.process_candidate_input("Hi.")     # real reply -> hop
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+def test_end_interview_said_during_the_greeting_is_still_handled_in_briefing():
+    """T10b: the hop sits after control-intent detection, so a candidate who
+    ends the interview in response to the greeting is handled there -- not
+    hopped into WELCOME first."""
+    async def scenario():
+        controller = _kickoff_controller()
+        _obedient_llm(controller)
+        controller.start_interview()
+        await controller.process_candidate_input(None)
+
+        ended = await controller.process_candidate_input("I want to end the interview.")
+
+        assert ended.detected_candidate_control == CandidateControlAction.END_INTERVIEW or ended.action == ActionEnum.END \
+            or controller.context.current_phase in (InterviewPhase.CLOSING, InterviewPhase.COMPLETED)
+        assert controller.context.current_phase != InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+def test_briefing_structure_line_describes_real_sections():
+    """The greeting prompt describes the job's actual sections when they
+    exist, and keeps the legacy line otherwise."""
+    with_sections = _kickoff_controller(num_questions=3)
+    line = with_sections._briefing_structure_line()
+    assert "spoken discussion (3 questions)" in line
+    assert "technical problem" not in line
+
+    legacy = make_controller(InterviewPhase.CREATED)
+    assert "background discussion" in legacy._briefing_structure_line()
+
+
+def test_full_walk_from_kickoff_obedient_llm_exercises_cap_and_time_grant():
+    """End-to-end from CREATED with the prompt-obeying model: greeting ->
+    reply -> Q1 verbatim -> two follow-ups (each granting time) -> cap ->
+    forced advance to Q2 verbatim. The complete approved flow in one run."""
+    async def scenario():
+        controller = _kickoff_controller(num_questions=2)
+        section = controller.context.sections["VERBAL"]
+        _obedient_llm(controller)
+        controller.start_interview()
+        base = controller.get_remaining_time()
+
+        await controller.process_candidate_input(None)
+        await controller.process_candidate_input("Hi, I'm Rick.")           # -> BACKGROUND, Q1 asked
+        await controller.process_candidate_input("I have experience.")     # ASK -> reclassified FOLLOW_UP 1
+        await controller.process_candidate_input("I built a CV system.")   # FOLLOW_UP 2
+        assert controller.context.followups_used == 2
+        assert controller.get_remaining_time() == base + 2 * BONUS
+
+        forced = await controller.process_candidate_input("I used car datasets.")
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response.endswith("HR question number 2?")
+        assert section.current_index == 1
+        assert controller.context.question_records[-1].question_id == "core-q1"
+
+    asyncio.run(scenario())

@@ -74,6 +74,12 @@ class InterviewController:
         # the very next generate_ui_state() so the frontend sees the grant
         # exactly once, as a moment, not on every subsequent update.
         self._pending_time_bonus_seconds: Optional[int] = None
+        # Intro handshake fix (2026-09-15, verbal-flow plan addendum): set
+        # once the BRIEFING greeting has actually been delivered, so the
+        # controller (not the LLM) can move BRIEFING -> WELCOME on the
+        # candidate's first reply. Not persisted: a resume that lands in
+        # BRIEFING simply re-greets, same as today.
+        self._briefing_greeted = False
         self._custom_question: Optional[Question] = None
         self._question_generator: Optional[Callable[[], Awaitable[Question]]] = None
         self._question_fallback_builder: Optional[Callable[[], Question]] = None
@@ -309,6 +315,25 @@ class InterviewController:
             return question.problem_statement_ar
         return question.problem_statement
 
+    def _briefing_structure_line(self) -> str:
+        """Intro handshake fix (2026-09-15): the greeting used to promise the
+        legacy "background -> technical problem -> coding" structure even
+        for a B2B session whose real structure is its HR-configured
+        sections. Describe what will actually happen when sections exist;
+        keep the legacy line otherwise."""
+        sections = [
+            (name, sec) for name, sec in (self.context.sections or {}).items()
+            if sec.questions
+        ]
+        if not sections:
+            return "Briefly mention the structure: background discussion → technical problem → coding."
+        labels = {"VERBAL": "a spoken discussion", "CODING": "a coding exercise", "MCQ": "a short multiple-choice part"}
+        parts = [
+            f"{labels.get(name, name.lower())} ({len(sec.questions)} question{'s' if len(sec.questions) != 1 else ''})"
+            for name, sec in sections
+        ]
+        return "Briefly mention the structure, in candidate-friendly words: " + "; then ".join(parts) + "."
+
     def _compose_forced_core_advance_text(self, core_section: OrderedSectionProgress) -> str:
         """A1 (docs/verbal-section-flow-plan.md): what the controller itself
         says when the follow-up cap forces an advance -- a localised bridge,
@@ -431,6 +456,28 @@ class InterviewController:
                 await self.persistence.save_checkpoint(self.context)
                 return handled
 
+        # Intro handshake fix (2026-09-15, verbal-flow plan addendum). Live
+        # finding: a session sat in BRIEFING for 18 state updates / 12 ASKs
+        # and never reached the ordered core questions. BRIEFING -> WELCOME
+        # had exactly one path -- the LLM emitting TRANSITION -- while
+        # BRIEFING_PROMPT orders "MUST use action=ASK (NOT TRANSITION)" on
+        # every turn the phase is BRIEFING. Earlier live runs only worked
+        # because the previous model disobeyed that on the reply turn; the
+        # current one (openai/gpt-oss-120b) obeys it, and never starts the
+        # interview. BRIEFING is one greeting turn by design: once the
+        # greeting is out and the candidate has replied, the controller
+        # moves to WELCOME itself so the next generation runs under
+        # WELCOME_PROMPT ("acknowledge, then TRANSITION"). Placed after the
+        # control-intent check so an END/REPEAT said during the greeting is
+        # still handled in BRIEFING.
+        if (
+            self.context.current_phase == InterviewPhase.BRIEFING
+            and self._briefing_greeted
+            and user_text
+        ):
+            logger.info("Briefing greeting answered -- advancing BRIEFING -> WELCOME deterministically.")
+            self._transition_to(InterviewPhase.WELCOME)
+
         # Generate LLM response
         try:
             action = await self._generate_next_action()
@@ -448,6 +495,16 @@ class InterviewController:
                 f"LLM generated invalid action {action.action.value} for phase {self.context.current_phase.value}. Defaulting to ACKNOWLEDGE."
             )
             action.action = ActionEnum.ACKNOWLEDGE
+
+        # Intro handshake fix (2026-09-15): WELCOME is exactly one turn --
+        # acknowledge the candidate's reply and move into the interview. If
+        # the model acknowledges/asks without transitioning, force it; the
+        # model's own acknowledgement text is kept. _should_allow_transition
+        # already returns True for WELCOME.
+        if self.context.current_phase == InterviewPhase.WELCOME and action.action != ActionEnum.TRANSITION:
+            logger.info("WELCOME turn without TRANSITION (%s) -- forcing the transition into the interview.", action.action.value)
+            action.action = ActionEnum.TRANSITION
+            action.should_transition = True
 
         # Bug fix (2026-09-03, real-evidence report): a 1-question VERBAL
         # section produced 6 questions in a live test before a human had to
@@ -602,8 +659,32 @@ class InterviewController:
                     action.response, first_turn_section.current_question
                 )
 
+        phase_before_apply = self.context.current_phase
+
         # Apply action effects (transitions, evaluation tracking, etc.)
         await self._apply_action(action)
+
+        # Intro handshake fix (2026-09-15): the WELCOME -> BACKGROUND
+        # transition is spoken as "let's begin" and the voice path does not
+        # chain a turn, so the first HR question would otherwise only be
+        # asked once the candidate says something else. Append it verbatim
+        # to the same utterance and mark it asked -- the interview starts
+        # deterministically, silent candidate or not. Same composition the
+        # A1 forced advance uses; A3 (first-turn verbatim guard) then never
+        # sees a "first turn" for this question, by design.
+        if (
+            phase_before_apply == InterviewPhase.WELCOME
+            and self.context.current_phase == InterviewPhase.BACKGROUND
+        ):
+            opening_section = self._active_core_section()
+            if (
+                opening_section is not None
+                and opening_section.section_type == "VERBAL"
+                and opening_section.current_question is not None
+                and not opening_section.current_question_asked
+            ):
+                action.response = f"{action.response.rstrip()} {self._question_problem_text(opening_section.current_question)}".strip()
+                opening_section.current_question_asked = True
 
         # A1: the forced-advance text above already voiced the next core
         # question verbatim, so it has been asked -- flag it so the LLM's
@@ -1873,6 +1954,7 @@ class InterviewController:
                 role=self.context.role,
                 level=self.context.confirmed_level,
                 duration_minutes=self._total_duration_sec // 60,
+                structure_line=self._briefing_structure_line(),
                 allowed_actions=allowed_actions,
             )
 
@@ -2205,6 +2287,9 @@ class InterviewController:
                     self.context.followup_time_bonus_seconds_total,
                     remaining_now,
                 )
+
+        if action.action == ActionEnum.ASK and phase == InterviewPhase.BRIEFING:
+            self._briefing_greeted = True
 
         if action.action == ActionEnum.ASK and phase == InterviewPhase.BACKGROUND:
             self.context.background_progress.questions_asked += 1
