@@ -1362,18 +1362,27 @@ def test_repeated_ask_past_first_turn_is_capped_like_a_follow_up():
         # The first ASK is legitimate (posing the one real question). Every
         # one after it is the LLM repeating the exact observed bug -- with
         # the fix, none of those get to stay ASK: they're reclassified to
-        # FOLLOW_UP and, once the cap is hit, downgraded to ACKNOWLEDGE.
-        # Before this fix, `actions` would have been six ASKs in a row.
+        # FOLLOW_UP. Before this fix, `actions` would have been six ASKs.
         assert actions[0] == ActionEnum.ASK
         assert ActionEnum.ASK not in actions[1:]
-        assert actions[-1] == ActionEnum.ACKNOWLEDGE
 
-        # Only the one real question exists -- no phantom extra questions
-        # were ever advanced into or recorded.
+        # Updated 2026-09-14 (docs/verbal-section-flow-plan.md, A1 -- the
+        # approved change this test originally froze the OLD behaviour of):
+        # hitting the cap no longer parks the interview on an ACKNOWLEDGE
+        # loop. The third reclassified ASK (cap 2 already used) is turned
+        # into a controller-driven TRANSITION that advances the ordered
+        # walk. Since this section has only one question, that means the
+        # section completes and the interview moves to CLOSING -- still
+        # with exactly ONE real question ever asked/recorded, which is the
+        # original bug's actual invariant ("no phantom extra questions").
+        assert actions[3] == ActionEnum.TRANSITION
         core_section = context.sections["VERBAL"]
-        assert core_section.current_index == 0
-        assert core_section.current_question.id == "iq-1"
-        assert controller.context.question_records == []
+        assert core_section.completed is True
+        assert core_section.current_index == 1
+        records = controller.context.question_records
+        assert [r.question_id for r in records] == ["iq-1"]
+        assert records[0].followups_used == 2
+        assert controller.context.current_phase in (InterviewPhase.CLOSING, InterviewPhase.COMPLETED)
 
     asyncio.run(scenario())
 
@@ -2883,5 +2892,153 @@ def test_9i_full_mcq_interview_walk_with_submission_and_evaluation():
         assert final_result["completed"] == 1
         assert final_result["evaluation"]["recommendation"] == "Hire"
         assert final_result["question_records"][0]["question_id"] == "iq-mcq-full"
+
+    asyncio.run(scenario())
+
+
+# ─── Verbal-flow orchestration (docs/verbal-section-flow-plan.md, A1) ──────────
+# Reproduced bug: once the max-2 follow-up cap was hit, an over-cap FOLLOW_UP
+# (or a drifted ASK) was downgraded to ACKNOWLEDGE and the flow never advanced
+# to the next HR-approved question unless the LLM volunteered TRANSITION.
+
+from agent.interview.models import ActionEnum, StructuredAction
+
+
+def _verbal_controller(num_questions: int, extra_sections: bool = False) -> InterviewController:
+    """B2B controller with one VERBAL section of N HR-approved questions,
+    optionally followed by an MCQ section (so exhausting VERBAL should land
+    in WAITING_ROOM rather than CLOSING)."""
+    context = make_controller(InterviewPhase.BACKGROUND).context
+    context.time_remaining_seconds = 1200  # comfortably "normal" tier: cap = 2
+    questions = [
+        Question(
+            id=f"core-q{i}", title=f"Core Q{i}", problem_statement=f"HR question number {i}?",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        for i in range(1, num_questions + 1)
+    ]
+    context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=questions)
+    if extra_sections:
+        mcq = Question(
+            id="core-mcq1", title="MCQ 1", problem_statement="Pick one.",
+            difficulty="mid", competency="knowledge",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["MCQ"] = OrderedSectionProgress(section_type="MCQ", questions=[mcq])
+    return InterviewController(object(), MockPersistence(), context)
+
+
+def _script_llm(controller: InterviewController, *actions: ActionEnum) -> None:
+    script = [StructuredAction(action=a, response=f"llm said ({a.value})", reason="scripted") for a in actions]
+    controller._generate_next_action = AsyncMock(side_effect=script)
+
+
+async def _drive(controller: InterviewController, *inputs):
+    last = None
+    for text in inputs:
+        last = await controller.process_candidate_input(text)
+    return last
+
+
+def test_followup_cap_forces_advance_to_next_core_question_verbatim():
+    """T1: cap reached => the controller itself moves on, speaking the next
+    HR question verbatim, and the new question is marked asked."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=3)
+        section = controller.context.sections["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "answer 1", "answer 2")
+        assert controller.context.followups_used == 2
+        assert section.current_index == 0
+
+        forced = await controller.process_candidate_input("answer 3")  # would be follow-up 3
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.should_transition is True
+        # The LLM's would-be extra follow-up is NOT what gets spoken.
+        assert "llm said" not in forced.response
+        assert SYSTEM_MESSAGES["en"]["core_followups_exhausted_next"] in forced.response
+        assert forced.response.endswith("HR question number 2?")
+        # Bookkeeping went through the existing advance path.
+        assert section.current_index == 1
+        assert section.current_question_asked is True
+        assert controller.context.followups_used == 0
+        assert controller.context.question_records[-1].question_id == "core-q1"
+        assert controller.context.question_records[-1].followups_used == 2
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+def test_followup_cap_on_last_question_bridges_only_and_enters_waiting_room():
+    """T2: cap reached on the section's LAST question => bridge only (no
+    question text); the existing section-boundary branching takes over
+    (WAITING_ROOM, because another section remains)."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=1, extra_sections=True)
+        section = controller.context.sections["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "a1", "a2")
+
+        forced = await controller.process_candidate_input("a3")
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response == SYSTEM_MESSAGES["en"]["core_followups_exhausted_last"]
+        assert section.completed is True
+        assert controller.context.current_phase == InterviewPhase.WAITING_ROOM
+
+    asyncio.run(scenario())
+
+
+def test_followup_cap_on_last_question_of_only_section_enters_closing():
+    """T2b: same, but no further section => CLOSING."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=1)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "a1", "a2")
+
+        forced = await controller.process_candidate_input("a3")
+
+        assert forced.response == SYSTEM_MESSAGES["en"]["core_followups_exhausted_last"]
+        assert controller.context.current_phase == InterviewPhase.CLOSING
+
+    asyncio.run(scenario())
+
+
+def test_drifted_ask_past_first_turn_at_cap_also_forces_advance():
+    """T3: the 2026-09-03 reclassification (ASK past the first turn ==
+    FOLLOW_UP) now feeds the same forced advance -- a model inventing "a new
+    question of its own" at the cap can no longer stall the flow."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        section = controller.context.sections["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.ASK)
+        await _drive(controller, None, "a1", "a2")
+
+        forced = await controller.process_candidate_input("a3")
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response.endswith("HR question number 2?")
+        assert section.current_index == 1
+
+    asyncio.run(scenario())
+
+
+def test_legacy_flow_still_downgrades_over_cap_followup_to_acknowledge():
+    """Guard: the legacy (non-core) BACKGROUND flow keeps its old behaviour
+    -- A1 is scoped to the ordered VERBAL core flow only."""
+    async def scenario():
+        controller = make_controller(InterviewPhase.BACKGROUND)
+        controller.context.background_progress.limits.max_followups_per_question = 1
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "a1")
+
+        over_cap = await controller.process_candidate_input("a2")
+
+        assert over_cap.action == ActionEnum.ACKNOWLEDGE
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
 
     asyncio.run(scenario())

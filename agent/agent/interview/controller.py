@@ -295,6 +295,21 @@ class InterviewController:
             return question.problem_statement_ar
         return question.problem_statement
 
+    def _compose_forced_core_advance_text(self, core_section: OrderedSectionProgress) -> str:
+        """A1 (docs/verbal-section-flow-plan.md): what the controller itself
+        says when the follow-up cap forces an advance -- a localised bridge,
+        plus the NEXT HR-approved question verbatim when one remains. Peeks
+        at current_index + 1 without mutating; _advance_core_question() (run
+        later by _apply_action) is what actually moves the pointer. On the
+        section's last question it is the bridge alone -- the existing
+        WAITING_ROOM/CLOSING branching speaks whatever comes next."""
+        messages = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])
+        next_index = core_section.current_index + 1
+        if next_index < len(core_section.questions):
+            next_q = core_section.questions[next_index]
+            return f"{messages['core_followups_exhausted_next']} {self._question_problem_text(next_q)}"
+        return messages["core_followups_exhausted_last"]
+
     def _question_title_text(self, question: Optional[Question]) -> str:
         if not question:
             return ""
@@ -443,14 +458,50 @@ class InterviewController:
         # FOLLOW_UP once the effective cap is reached, for BOTH the legacy
         # BACKGROUND/TECHNICAL/CODING flow and (once Phase 7D populates
         # context.sections) the new ordered core-question flow.
+        forced_core_advance = False
         if action.action == ActionEnum.FOLLOW_UP:
             max_followups = self._current_max_followups()
             if self.context.followups_used >= max_followups:
-                logger.info(
-                    f"Follow-up cap reached ({self.context.followups_used}/{max_followups}) "
-                    f"in phase {self.context.current_phase.value}. Downgrading FOLLOW_UP to ACKNOWLEDGE."
-                )
-                action.action = ActionEnum.ACKNOWLEDGE
+                # Verbal-flow orchestration (docs/verbal-section-flow-plan.md,
+                # A1 -- approved 2026-09-14). Reproduced bug: downgrading an
+                # over-cap FOLLOW_UP to ACKNOWLEDGE stops the extra probing
+                # but never MOVES ON -- current_index only advanced if the
+                # LLM volunteered TRANSITION, so a model that kept probing
+                # (or drifted into "a new question", reclassified above)
+                # left the candidate in an acknowledge loop on the same
+                # question until the very_limited time tier fired. For an
+                # ordered VERBAL core question that has actually been asked,
+                # the cap now deterministically advances instead: the
+                # controller speaks the bridge + the NEXT HR question
+                # verbatim itself (the voice path does not chain a turn on
+                # TRANSITION, so relying on a later LLM turn to ask it
+                # would stall on a silent candidate), and the existing
+                # _apply_action -> _handle_automatic_transition ->
+                # _advance_core_question() path does the bookkeeping,
+                # including the WAITING_ROOM/CLOSING branching on the last
+                # question. Legacy (non-core) flow keeps the old downgrade.
+                core_section = self._active_core_section()
+                if (
+                    core_section is not None
+                    and core_section.section_type == "VERBAL"
+                    and core_section.current_question_asked
+                ):
+                    logger.info(
+                        f"Follow-up cap reached ({self.context.followups_used}/{max_followups}) "
+                        f"on core question id={core_section.current_question.id if core_section.current_question else None}. "
+                        "Forcing advance to the next HR-approved question."
+                    )
+                    action.action = ActionEnum.TRANSITION
+                    action.should_transition = True
+                    action.response = self._compose_forced_core_advance_text(core_section)
+                    action.reason = "Follow-up cap reached; system advanced to the next core question."
+                    forced_core_advance = True
+                else:
+                    logger.info(
+                        f"Follow-up cap reached ({self.context.followups_used}/{max_followups}) "
+                        f"in phase {self.context.current_phase.value}. Downgrading FOLLOW_UP to ACKNOWLEDGE."
+                    )
+                    action.action = ActionEnum.ACKNOWLEDGE
 
         # Check for section completion before applying the action
         if action.action == ActionEnum.TRANSITION or action.should_transition:
@@ -508,6 +559,16 @@ class InterviewController:
 
         # Apply action effects (transitions, evaluation tracking, etc.)
         await self._apply_action(action)
+
+        # A1: the forced-advance text above already voiced the next core
+        # question verbatim, so it has been asked -- flag it so the LLM's
+        # subsequent turns are (correctly) follow-up turns for THAT
+        # question, not a second "first turn" that re-asks it. Only when a
+        # next question actually exists (not on the last-question bridge).
+        if forced_core_advance:
+            next_section = self._active_core_section()
+            if next_section is not None and next_section.current_question is not None:
+                next_section.current_question_asked = True
 
         # Append AI message to conversation history
         self.append_message("assistant", action.response)

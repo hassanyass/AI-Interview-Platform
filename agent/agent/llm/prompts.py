@@ -30,7 +30,12 @@ SYSTEM_MESSAGES = {
         # request and redirect back to the current question rather than a
         # raw rejection, per the rebrand's error-friendly-messaging standard.
         "core_section_no_skip": "This question's part of the interview, so let's stick with it — go ahead and share your answer whenever you're ready.",
-        "core_move_to_technical_unavailable": "This interview follows a set structure, so there's no separate technical section to jump to — let's continue with the current question."
+        "core_move_to_technical_unavailable": "This interview follows a set structure, so there's no separate technical section to jump to — let's continue with the current question.",
+        # Verbal-flow orchestration (docs/verbal-section-flow-plan.md, A1):
+        # spoken by the CONTROLLER, not the LLM, when the follow-up cap is
+        # reached -- the next HR question is appended verbatim after "_next".
+        "core_followups_exhausted_next": "Thank you. Let's move on to the next question.",
+        "core_followups_exhausted_last": "Thank you, that covers this question."
     },
     "ar": {
         "end_interview": "شكرًا لوقتك اليوم. بننهي المقابلة هنا وبنتواصل معك قريبًا. طاب يومك!",
@@ -43,7 +48,9 @@ SYSTEM_MESSAGES = {
         "submit_mcq": "تمام، سجّلت إجابتك. خلّنا نكمل.",
         "no_hints": "للأسف ما عندي تلميح إضافي لهذا السؤال. حاول تحله باللي تناقشنا فيه.",
         "core_section_no_skip": "هذا السؤال جزء من المقابلة، فخلّنا نكمل فيه — خذ وقتك وجاوب متى ما جهزت.",
-        "core_move_to_technical_unavailable": "المقابلة عندها ترتيب محدد، ما فيه قسم تقني منفصل نقفز له — خلّنا نكمل بالسؤال الحالي."
+        "core_move_to_technical_unavailable": "المقابلة عندها ترتيب محدد، ما فيه قسم تقني منفصل نقفز له — خلّنا نكمل بالسؤال الحالي.",
+        "core_followups_exhausted_next": "شكراً لك. خلّنا ننتقل للسؤال التالي.",
+        "core_followups_exhausted_last": "شكراً لك، هذا يكفي لهذا السؤال."
     }
 }
 # ─── Core Interviewer Identity ────────────────────────────────────────────────
@@ -199,8 +206,11 @@ SUBSEQUENT TURNS (candidate has answered):
   action=ASK is ONLY for the very first turn of a question, above. A
   deep-dive on the same competency is still a follow-up, not "another
   question," no matter how different the phrasing feels.
-- Once satisfied, or once no follow-ups remain, use action=TRANSITION to
-  move to the next question.
+- Once satisfied, use action=TRANSITION to move to the next question.
+- When {followups_used} reaches {max_followups}, the system moves on to the
+  next question AUTOMATICALLY -- do not keep probing, and never invent a
+  new question of your own. Every HR-approved question will be asked in
+  order; your job on this one is finished.
 
 Candidate Profile:
 {profile}
