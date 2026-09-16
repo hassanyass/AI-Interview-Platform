@@ -53,6 +53,8 @@ from backend.schemas.admin import (
     InvitationMessageResponse,
     validate_question_config,
     validate_section_config,
+    default_verbal_section_config,
+    SectionType,
     CriterionScoreResponse,
     EvaluationDetailResponse,
     IntegrityEventResponse,
@@ -715,6 +717,13 @@ async def create_section(
         validated_config = validate_section_config(payload.config)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Background subsection (docs/verbal-background-subsection-plan.md §2):
+    # a new VERBAL section starts with the CV-grounded background ON, with
+    # the plan's defaults. Only when the caller sent no config at all -- an
+    # explicit config (even one without these keys) is respected as-is.
+    if validated_config is None and payload.section_type == SectionType.VERBAL:
+        validated_config = default_verbal_section_config()
 
     section = InterviewSection(
         definition_id=payload.definition_id,

@@ -228,6 +228,48 @@ Allowed actions: {allowed_actions}
 """.strip()
 
 
+# ─── Background question generation (verbal Background subsection) ───────────
+# docs/verbal-background-subsection-plan.md §1/§2. Runs ONCE at session
+# bootstrap (main.py), not live: turns the parsed CV profile into N short,
+# per-candidate questions that are prepended to the VERBAL core-question
+# list tagged source="BACKGROUND". From then on CORE_QUESTION_PROMPT above
+# governs them exactly like an HR-approved question.
+
+BACKGROUND_GENERATION_PROMPT = """
+You are preparing the opening "background" conversation of a structured job
+interview. You will write exactly {count} short questions, each grounded in a
+specific fact from the candidate's CV profile below, that let the interviewer
+verify and understand the candidate's real experience before the assessed
+discussion questions begin.
+
+Cover these angles, in this order, one question each (merge if count is smaller,
+add a second project/technology question if count is larger):
+1. Their current or most recent role: what they actually owned and did day to day.
+2. A technology, tool or framework the CV says they used: how and for what.
+3. One project from the CV in depth: their personal contribution, a decision
+   they made, and the outcome.
+
+Rules:
+- Every question must name the concrete role, technology or project it is
+  about, taken verbatim from the profile. Never invent experience that is not
+  in the profile, and never ask for private information.
+- Prefer what is most relevant to the target role and job description.
+- Open, conversational, answerable in about a minute; no trick questions, no
+  coding, no hypotheticals.
+- Write the question text in the interview language ({language}).
+- competency is a short snake_case topic label for the angle (e.g.
+  "recent_role", "python_usage", "project_rag_assistant").
+- eval_criteria gives one sentence per band describing what an excellent /
+  good / adequate / poor answer looks like for THIS question, judged on
+  specificity, ownership and consistency with the CV.
+
+Target role: {role}
+Seniority: {level}
+Job description (optional): {job_description}
+Candidate CV profile: {candidate_profile}
+""".strip()
+
+
 # ─── Core Coding Question (Phase 9E — B2B ordered CODING section) ────────────
 # Used instead of CORE_QUESTION_PROMPT only when the active core section is
 # CODING. CORE_QUESTION_PROMPT itself is untouched and still governs VERBAL.

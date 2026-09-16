@@ -207,7 +207,16 @@
                            "timeBudgetPlaceholder":  "e.g. 15",
                            "savingBudget":  "Saving...",
                            "timeBudgetSaved":  "Saved",
-                           "timeBudgetFailed":  "Failed to save time budget"
+                           "timeBudgetFailed":  "Failed to save time budget",
+                           "backgroundTitle":  "Background conversation",
+                           "backgroundToggle":  "Start with a background conversation based on the candidate's CV",
+                           "backgroundHelp":  "Short, CV-grounded questions asked before the discussion questions. Their time is carved out of this section's budget.",
+                           "backgroundCount":  "Questions",
+                           "backgroundMinutes":  "Up to (min)",
+                           "backgroundSummary":  "Verbal {{total}} min — up to {{background}} min background, at least {{discussion}} min discussion",
+                           "backgroundSummaryNoBudget":  "Set the section's time budget to see the split.",
+                           "backgroundTooLong":  "Background must be at most half of the section budget ({{max}} min).",
+                           "backgroundSaveFailed":  "Failed to save background settings"
                        },
     "questionEditor":  {
                            "regenerate":  "Regenerate",

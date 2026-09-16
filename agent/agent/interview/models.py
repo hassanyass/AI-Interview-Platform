@@ -174,6 +174,16 @@ class OrderedSectionProgress(BaseModel):
     # COMPLETED and advancing past it. Reset to False by
     # controller._advance_core_question() each time current_index moves.
     current_question_asked: bool = False
+    # Background subsection (docs/verbal-background-subsection-plan.md):
+    # HR's per-section settings, forwarded by /load's SectionPayload. Only
+    # meaningful for VERBAL; defaults are the "off" state so every existing
+    # payload/fixture keeps behaving exactly as before. The generated
+    # background questions themselves are ordinary entries at the FRONT of
+    # `questions`, tagged source="BACKGROUND" -- nothing about the ordered
+    # walk changes.
+    include_background: bool = False
+    background_question_count: Optional[int] = None
+    background_time_budget_minutes: Optional[int] = None
 
     @property
     def current_question(self) -> Optional[Question]:
@@ -184,6 +194,10 @@ class OrderedSectionProgress(BaseModel):
     @property
     def total_questions(self) -> int:
         return len(self.questions)
+
+    @property
+    def background_questions(self) -> List[Question]:
+        return [q for q in self.questions if q.source == "BACKGROUND"]
 
 
 # ─── Time-Tier Thresholds (Phase 7B) ────────────────────────────────────────────

@@ -207,7 +207,16 @@
                            "timeBudgetPlaceholder":  "مثلاً 15",
                            "savingBudget":  "جاري الحفظ...",
                            "timeBudgetSaved":  "تم الحفظ",
-                           "timeBudgetFailed":  "فشل حفظ الميزانية الزمنية"
+                           "timeBudgetFailed":  "فشل حفظ الميزانية الزمنية",
+                           "backgroundTitle":  "محادثة الخلفية",
+                           "backgroundToggle":  "ابدأ بمحادثة خلفية مبنية على السيرة الذاتية للمرشح",
+                           "backgroundHelp":  "أسئلة قصيرة مستندة إلى السيرة الذاتية تُطرح قبل أسئلة النقاش. وقتها يُقتطع من ميزانية هذا القسم.",
+                           "backgroundCount":  "عدد الأسئلة",
+                           "backgroundMinutes":  "حتى (دقيقة)",
+                           "backgroundSummary":  "شفهي {{total}} دقيقة — حتى {{background}} دقيقة خلفية، و{{discussion}} دقيقة على الأقل للنقاش",
+                           "backgroundSummaryNoBudget":  "حدّد الميزانية الزمنية للقسم لرؤية التوزيع.",
+                           "backgroundTooLong":  "يجب ألا تتجاوز الخلفية نصف ميزانية القسم ({{max}} دقيقة).",
+                           "backgroundSaveFailed":  "فشل حفظ إعدادات الخلفية"
                        },
     "questionEditor":  {
                            "regenerate":  "إعادة توليد",

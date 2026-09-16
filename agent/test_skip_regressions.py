@@ -3393,3 +3393,207 @@ def test_full_walk_from_kickoff_obedient_llm_exercises_cap_and_time_grant():
         assert controller.context.question_records[-1].question_id == "core-q1"
 
     asyncio.run(scenario())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Verbal Background subsection, step 1 (docs/verbal-background-subsection-plan
+# .md §7): HR flag -> contract field -> agent generation + ordering + tags.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _bg_load_payload(include_background=True, count=3, budget=5):
+    return {
+        "role": "Backend Engineer", "level": "mid",
+        "sections": [{
+            "section_type": "VERBAL", "time_budget_minutes": 20,
+            "include_background": include_background,
+            "background_question_count": count,
+            "background_time_budget_minutes": budget,
+            "questions": [
+                {"id": "hr-1", "order_index": 0, "title": "HR one", "text": "Tell me about ownership.", "competency": "ownership"},
+                {"id": "hr-2", "order_index": 1, "title": "HR two", "text": "Describe a conflict.", "competency": "conflict"},
+            ],
+        }],
+    }
+
+
+def _bg_profile():
+    return {
+        "full_name": "Cand", "professional_title": "Senior ML Engineer", "years_of_experience": 8,
+        "skills": ["Python", "PyTorch"], "frameworks": ["FastAPI"], "projects": ["RAG support assistant"],
+    }
+
+
+class _BGStructuredLLM:
+    """Records the prompt and returns a canned BackgroundQuestionSet."""
+    def __init__(self, drafts, fail=False):
+        self.drafts, self.fail, self.calls = drafts, fail, []
+
+    async def generate_structured(self, system_prompt, messages, response_model):
+        self.calls.append((system_prompt, messages, response_model))
+        if self.fail:
+            raise RuntimeError("groq down")
+        return response_model(questions=self.drafts)
+
+
+def test_bg_build_core_sections_forwards_hr_settings_and_defaults_off():
+    from agent.main import build_core_sections
+    built = build_core_sections(_bg_load_payload(count=4, budget=6))
+    verbal = built["VERBAL"]
+    assert verbal.include_background is True
+    assert verbal.background_question_count == 4
+    assert verbal.background_time_budget_minutes == 6
+
+    # Pre-feature payload: no keys at all -> off, exactly as before.
+    legacy = _bg_load_payload()
+    for key in ("include_background", "background_question_count", "background_time_budget_minutes"):
+        legacy["sections"][0].pop(key)
+    verbal = build_core_sections(legacy)["VERBAL"]
+    assert verbal.include_background is False
+    assert verbal.background_question_count is None
+    assert verbal.background_questions == []
+
+
+@pytest.mark.asyncio
+async def test_bg_generator_maps_drafts_to_tagged_questions():
+    from agent.interview.background_generator import (
+        generate_background_questions, BackgroundQuestionDraft, BackgroundEvalBands,
+    )
+    drafts = [
+        BackgroundQuestionDraft(title="Recent role", competency="Recent Role", text="What did you own as Senior ML Engineer?",
+                                eval_criteria=BackgroundEvalBands(excellent="e", good="g", adequate="a", poor="p")),
+        BackgroundQuestionDraft(title="PyTorch", competency="pytorch_usage", text="How did you use PyTorch?"),
+        BackgroundQuestionDraft(title="blank", competency="x", text="   "),  # unusable -> dropped
+        BackgroundQuestionDraft(title="RAG", competency="project rag", text="Walk me through the RAG assistant."),
+    ]
+    llm = _BGStructuredLLM(drafts)
+    questions = await generate_background_questions(
+        llm=llm, role="Backend Engineer", level="mid", language="en",
+        job_description="Build APIs", candidate_profile=_bg_profile(), count=3,
+    )
+    assert [q.title for q in questions] == ["Recent role", "PyTorch", "RAG"]
+    assert all(q.source == "BACKGROUND" for q in questions)
+    assert [q.competency for q in questions] == ["background:recent_role", "background:pytorch_usage", "background:project_rag"]
+    assert all(q.id.startswith("bg-") for q in questions)
+    assert questions[0].eval_criteria == {"excellent": "e", "good": "g", "adequate": "a", "poor": "p"}
+    assert questions[0].coding_required is False and questions[0].difficulty == "mid"
+    # The prompt is grounded in the profile and asks for the requested count.
+    system_prompt = llm.calls[0][0]
+    assert "Senior ML Engineer" in system_prompt and "exactly 3 short questions" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_bg_generator_respects_count_cap_and_never_raises():
+    from agent.interview.background_generator import generate_background_questions, BackgroundQuestionDraft
+    drafts = [BackgroundQuestionDraft(title=f"q{i}", competency=f"c{i}", text=f"text {i}") for i in range(5)]
+    got = await generate_background_questions(
+        llm=_BGStructuredLLM(drafts), role="r", level="junior", language="en",
+        job_description=None, candidate_profile=_bg_profile(), count=2,
+    )
+    assert len(got) == 2
+
+    # Model failure -> [] (background silently skipped), not an exception.
+    got = await generate_background_questions(
+        llm=_BGStructuredLLM(drafts, fail=True), role="r", level="junior", language="en",
+        job_description=None, candidate_profile=_bg_profile(), count=3,
+    )
+    assert got == []
+
+
+@pytest.mark.asyncio
+async def test_bg_generator_skips_ungroundable_profile_without_calling_llm():
+    from agent.interview.background_generator import generate_background_questions
+    llm = _BGStructuredLLM([])
+    got = await generate_background_questions(
+        llm=llm, role="r", level="mid", language="en", job_description=None,
+        candidate_profile={"full_name": "Only A Name", "email": "x@y", "skills": []}, count=3,
+    )
+    assert got == [] and llm.calls == []
+
+
+def test_bg_attach_prepends_tagged_questions_and_is_idempotent():
+    from agent.main import build_core_sections, attach_background_questions
+    from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
+    built = build_core_sections(_bg_load_payload())
+    bg = [draft_to_question(BackgroundQuestionDraft(title=f"bg{i}", competency=f"t{i}", text=f"bg text {i}"), "mid", i) for i in range(2)]
+
+    assert attach_background_questions(built, bg) == 2
+    verbal = built["VERBAL"]
+    assert [q.source for q in verbal.questions] == ["BACKGROUND", "BACKGROUND", "HR_APPROVED", "HR_APPROVED"]
+    assert verbal.current_index == 0 and verbal.current_question.source == "BACKGROUND"
+    assert verbal.total_questions == 4 and len(verbal.background_questions) == 2
+
+    # Second call: nothing changes (guards a double bootstrap).
+    assert attach_background_questions(built, bg) == 0
+    assert verbal.total_questions == 4
+    # Empty list / no VERBAL section: no-ops.
+    assert attach_background_questions(built, []) == 0
+    assert attach_background_questions({}, bg) == 0
+
+
+def test_bg_checkpoint_round_trip_restores_same_questions_and_pointer():
+    """Resume must not regenerate: the checkpoint carries the generated
+    questions, and rebuilding from it keeps current_index meaningful."""
+    from agent.main import build_core_sections, attach_background_questions, restore_background_questions
+    from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
+
+    async def scenario():
+        built = build_core_sections(_bg_load_payload())
+        bg = [draft_to_question(BackgroundQuestionDraft(title=f"bg{i}", competency=f"t{i}", text=f"bg text {i}"), "mid", i) for i in range(3)]
+        attach_background_questions(built, bg)
+        built["VERBAL"].current_index = 2  # mid-background
+
+        controller = make_controller(InterviewPhase.BACKGROUND)
+        controller.context.sections = built
+        await controller.persistence.save_checkpoint(controller.context)
+        checkpoint = controller.persistence.storage[controller.context.session_id]
+        snap = checkpoint["section_progress"]["verbal"]
+        assert snap["current_index"] == 2
+        assert [q["id"] for q in snap["background_questions"]] == [q.id for q in bg]
+
+        # Fresh /load rebuild (HR questions only) + restore from checkpoint,
+        # in the order entrypoint() does it.
+        rebuilt = build_core_sections(_bg_load_payload())
+        restored = restore_background_questions(checkpoint)
+        assert attach_background_questions(rebuilt, restored) == 3
+        rebuilt["VERBAL"].current_index = snap["current_index"]
+        assert rebuilt["VERBAL"].current_question.id == bg[2].id
+        assert [q.id for q in rebuilt["VERBAL"].questions] == [q.id for q in bg] + ["hr-1", "hr-2"]
+
+        # Pre-feature checkpoint: nothing to restore, no crash.
+        assert restore_background_questions({"section_progress": {"verbal": {"current_index": 1}}}) == []
+        assert restore_background_questions({}) == []
+
+    asyncio.run(scenario())
+
+
+def test_bg_questions_walk_first_as_ordinary_core_questions():
+    """Through the controller: a background question is asked verbatim
+    first, and the existing forced advance carries the walk into the HR
+    questions after it -- the shipped deterministic machinery, no special
+    casing (the background-specific cap/bridge belong to step 3)."""
+    from agent.main import build_core_sections, attach_background_questions
+    from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
+
+    async def scenario():
+        built = build_core_sections(_bg_load_payload())
+        bg = [draft_to_question(BackgroundQuestionDraft(title="Recent role", competency="recent_role",
+                                                        text="What did you own as Senior ML Engineer?"), "mid", 0)]
+        attach_background_questions(built, bg)
+        controller = make_controller(InterviewPhase.BACKGROUND)
+        controller.context.time_remaining_seconds = 1200
+        controller.context.sections = built
+        section = built["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+
+        first = await controller.process_candidate_input(None)
+        assert first.response.endswith("What did you own as Senior ML Engineer?")
+        assert section.current_question.source == "BACKGROUND"
+
+        await _drive(controller, "I owned the ML platform.", "Also the deployment pipeline.")
+        forced = await controller.process_candidate_input("And monitoring.")
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response.endswith("Tell me about ownership.")
+        assert section.current_question.id == "hr-1" and section.current_index == 1
+        assert controller.context.question_records[-1].question_id == bg[0].id
+
+    asyncio.run(scenario())

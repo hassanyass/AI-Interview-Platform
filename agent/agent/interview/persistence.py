@@ -128,6 +128,10 @@ class MockPersistence(InterviewPersistence):
                     {
                         "current_index": context.sections["VERBAL"].current_index,
                         "completed": context.sections["VERBAL"].completed,
+                        "background_questions": [
+                            q.model_dump(mode="json")
+                            for q in context.sections["VERBAL"].background_questions
+                        ],
                     }
                     if "VERBAL" in context.sections else None
                 ),
@@ -279,6 +283,15 @@ class APIPersistence(InterviewPersistence):
                     {
                         "current_index": context.sections["VERBAL"].current_index,
                         "completed": context.sections["VERBAL"].completed,
+                        # Background subsection: the ONLY questions that are
+                        # not rebuildable from /load -- they were generated
+                        # for this session. main.py's resume path restores
+                        # them from here (restore_background_questions) so
+                        # the pointer above keeps its meaning.
+                        "background_questions": [
+                            q.model_dump(mode="json")
+                            for q in context.sections["VERBAL"].background_questions
+                        ],
                     }
                     if "VERBAL" in context.sections else None
                 ),

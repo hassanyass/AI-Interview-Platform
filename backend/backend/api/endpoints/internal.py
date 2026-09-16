@@ -399,6 +399,9 @@ async def load_session_for_agent(
                     # architecture.md item 1's flag) for a session created
                     # before WR-A shipped, or a legacy definition.
                     time_budget_minutes=(db_section.config or {}).get("time_budget_minutes"),
+                    include_background=bool((db_section.config or {}).get("include_background", False)),
+                    background_question_count=(db_section.config or {}).get("background_question_count"),
+                    background_time_budget_minutes=(db_section.config or {}).get("background_time_budget_minutes"),
                     questions=[
                         QuestionPayload(
                             id=str(q.id),

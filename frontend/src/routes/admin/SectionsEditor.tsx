@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { adminClient, type JobDetail } from "../../api/adminClient";
-import { Plus, Trash2, ArrowUp, ArrowDown, Code2, MessageSquare, ListTodo, Loader2, ChevronDown, ChevronUp, Clock } from "lucide-react";
+import { Plus, Trash2, ArrowUp, ArrowDown, Code2, MessageSquare, ListTodo, Loader2, ChevronDown, ChevronUp, Clock, FileText } from "lucide-react";
 import QuestionEditor from "./QuestionEditor";
 import { Card, CardContent } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
@@ -26,6 +26,166 @@ const SECTION_TYPES = [
   { value: "CODING", label: "Coding", icon: Code2, comingSoon: false },
   { value: "MCQ", label: "Multiple Choice", icon: ListTodo, comingSoon: false },
 ];
+
+// Verbal Background subsection (docs/verbal-background-subsection-plan.md
+// §2/§10): HR's three per-section settings, stored in the same
+// InterviewSection.config as time_budget_minutes and validated server-side
+// by SectionConfig (background budget <= half the section budget). VERBAL
+// sections only. Every change is saved immediately through the same
+// updateSection({config}) path the time budget uses, merging over the
+// current config so the two never clobber each other.
+const BACKGROUND_COUNT_MIN = 1;
+const BACKGROUND_COUNT_MAX = 6; // keep in step with backend BACKGROUND_QUESTION_COUNT_MAX
+const BACKGROUND_COUNT_DEFAULT = 3;
+const BACKGROUND_MINUTES_DEFAULT = 5;
+
+interface BackgroundSettingsProps {
+  section: NonNullable<JobDetail["definition"]>["sections"][number];
+  disabled: boolean;
+  onRefresh: () => Promise<void>;
+}
+
+function BackgroundSettings({ section, disabled, onRefresh }: BackgroundSettingsProps) {
+  const { t } = useTranslation();
+  const config = section.config ?? {};
+  const enabled = config.include_background === true;
+  const total: number | null = config.time_budget_minutes ?? null;
+  const [count, setCount] = useState<string>(String(config.background_question_count ?? BACKGROUND_COUNT_DEFAULT));
+  const [minutes, setMinutes] = useState<string>(String(config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT));
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [localError, setLocalError] = useState<string>("");
+
+  // Re-sync drafts when the server config changes (refresh after a save).
+  useEffect(() => {
+    setCount(String(config.background_question_count ?? BACKGROUND_COUNT_DEFAULT));
+    setMinutes(String(config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section.id, config.background_question_count, config.background_time_budget_minutes]);
+
+  const maxMinutes = total != null ? Math.floor(total / 2) : null;
+
+  const save = async (patch: Record<string, unknown>) => {
+    setStatus("saving");
+    setLocalError("");
+    try {
+      await adminClient.updateSection(section.id, { config: { ...config, ...patch } });
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 2000);
+      await onRefresh();
+    } catch {
+      setStatus("error");
+      setTimeout(() => setStatus("idle"), 3000);
+    }
+  };
+
+  const handleToggle = (checked: boolean) => {
+    void save({
+      include_background: checked,
+      background_question_count: config.background_question_count ?? BACKGROUND_COUNT_DEFAULT,
+      background_time_budget_minutes: config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT,
+    });
+  };
+
+  const commitCount = () => {
+    const parsed = parseInt(count, 10);
+    if (isNaN(parsed) || parsed < BACKGROUND_COUNT_MIN || parsed > BACKGROUND_COUNT_MAX) {
+      setCount(String(config.background_question_count ?? BACKGROUND_COUNT_DEFAULT));
+      return;
+    }
+    if (parsed !== config.background_question_count) void save({ background_question_count: parsed });
+  };
+
+  const commitMinutes = () => {
+    const parsed = parseInt(minutes, 10);
+    if (isNaN(parsed) || parsed < 1) {
+      setMinutes(String(config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT));
+      return;
+    }
+    // Same rule the backend enforces -- surface it here instead of a bare
+    // "failed to save".
+    if (maxMinutes != null && parsed > maxMinutes) {
+      setLocalError(t("sectionsEditor.backgroundTooLong", { max: maxMinutes }));
+      setMinutes(String(config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT));
+      return;
+    }
+    if (parsed !== config.background_time_budget_minutes) void save({ background_time_budget_minutes: parsed });
+  };
+
+  const bgMinutes = config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT;
+  const inputClass = "w-20 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60";
+
+  return (
+    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
+      <div className="flex items-start gap-3">
+        <FileText className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+        <div className="flex-1 min-w-0 space-y-1">
+          <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
+            <input
+              type="checkbox"
+              checked={enabled}
+              disabled={disabled || status === "saving"}
+              onChange={(e) => handleToggle(e.target.checked)}
+              className="h-4 w-4 rounded border-input accent-primary"
+            />
+            {t("sectionsEditor.backgroundToggle")}
+          </label>
+          <p className="text-xs text-muted-foreground">{t("sectionsEditor.backgroundHelp")}</p>
+        </div>
+        {status === "saving" && (
+          <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t("sectionsEditor.savingBudget")}
+          </span>
+        )}
+        {status === "saved" && <span className="text-xs text-green-600 font-medium shrink-0">{t("sectionsEditor.timeBudgetSaved")}</span>}
+        {status === "error" && <span className="text-xs text-destructive font-medium shrink-0">{t("sectionsEditor.backgroundSaveFailed")}</span>}
+      </div>
+
+      {enabled && (
+        <div className="ps-7 space-y-2">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <span className="whitespace-nowrap">{t("sectionsEditor.backgroundCount")}</span>
+              <input
+                type="number"
+                min={BACKGROUND_COUNT_MIN}
+                max={BACKGROUND_COUNT_MAX}
+                value={count}
+                disabled={disabled || status === "saving"}
+                onChange={(e) => setCount(e.target.value)}
+                onBlur={commitCount}
+                className={inputClass}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <span className="whitespace-nowrap">{t("sectionsEditor.backgroundMinutes")}</span>
+              <input
+                type="number"
+                min={1}
+                max={maxMinutes ?? undefined}
+                value={minutes}
+                disabled={disabled || status === "saving"}
+                onChange={(e) => setMinutes(e.target.value)}
+                onBlur={commitMinutes}
+                className={inputClass}
+              />
+            </label>
+          </div>
+          {localError && <p className="text-xs text-destructive">{localError}</p>}
+          <p className="text-xs text-muted-foreground">
+            {total != null
+              ? t("sectionsEditor.backgroundSummary", {
+                  total,
+                  background: bgMinutes,
+                  discussion: Math.max(0, total - bgMinutes),
+                })
+              : t("sectionsEditor.backgroundSummaryNoBudget")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SectionsEditor({ definition, onRefresh, status }: SectionsEditorProps) {
   const { t } = useTranslation();
@@ -373,6 +533,14 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                             <span className="text-xs text-destructive font-medium">{t('sectionsEditor.timeBudgetFailed')}</span>
                           )}
                         </div>
+                      )}
+
+                      {section.section_type === "VERBAL" && (
+                        <BackgroundSettings
+                          section={section}
+                          disabled={!isDraft || loadingAction !== null}
+                          onRefresh={onRefresh}
+                        />
                       )}
 
                       <QuestionEditor

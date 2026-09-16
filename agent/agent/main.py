@@ -27,6 +27,7 @@ from agent.interview.controller import InterviewController
 from agent.interview.voice_adapter import VoiceInterviewAdapter
 from agent.interview.groq_key_rotator import GroqKeyRotator
 from agent.interview.question_generator import generate_custom_question, build_contextual_fallback_question
+from agent.interview.background_generator import generate_background_questions
 
 # RT-B0: default logging.basicConfig() has no timestamp at all (its default
 # format is just "%(levelname)s:%(name)s:%(message)s"), making it impossible
@@ -122,8 +123,48 @@ def build_core_sections(session_data: dict) -> dict:
             # payloads (pre-WR-A) and existing test fixtures won't carry
             # this key at all, and it must not crash for them.
             time_budget_minutes=raw_section.get("time_budget_minutes"),
+            # Background subsection: HR's per-section settings, forwarded by
+            # /load's SectionPayload. Same defensive .get -- absent on every
+            # pre-existing payload and fixture, which must keep meaning "off".
+            include_background=bool(raw_section.get("include_background", False)),
+            background_question_count=raw_section.get("background_question_count"),
+            background_time_budget_minutes=raw_section.get("background_time_budget_minutes"),
         )
     return built_sections
+
+
+def attach_background_questions(built_sections: dict, background_questions: list) -> int:
+    """Background subsection (docs/verbal-background-subsection-plan.md §1):
+    prepend the generated, source="BACKGROUND" questions to the VERBAL
+    section's ordered list so they are walked first, by the same machinery
+    as the HR-approved ones. Idempotent: a second call with the list already
+    in place (or an empty list) changes nothing. Returns how many were
+    attached. Pure, so it has direct unit-test coverage like
+    build_core_sections above."""
+    verbal = built_sections.get("VERBAL")
+    if verbal is None or not background_questions:
+        return 0
+    if any(q.source == "BACKGROUND" for q in verbal.questions):
+        return 0
+    verbal.questions = list(background_questions) + list(verbal.questions)
+    return len(background_questions)
+
+
+def restore_background_questions(checkpoint: dict) -> list:
+    """Resume path: the background questions a session already generated
+    live in its checkpoint (section_progress.verbal.background_questions,
+    written by APIPersistence.save_checkpoint). Rebuilding them from there --
+    instead of generating again -- keeps the restored current_index and the
+    question_records pointing at the very same questions. [] when the
+    checkpoint predates the feature or the session had none."""
+    verbal = ((checkpoint or {}).get("section_progress") or {}).get("verbal") or {}
+    restored = []
+    for raw in verbal.get("background_questions") or []:
+        try:
+            restored.append(Question(**raw))
+        except Exception as error:  # noqa: BLE001 -- a bad snapshot must not kill the resume
+            logger.warning("[BG-GEN] Ignoring unreadable background question snapshot: %s", error)
+    return restored
 
 
 def build_criteria(session_data: dict) -> list:
@@ -257,6 +298,11 @@ async def entrypoint(ctx: JobContext):
         # list itself is always the fresh one built from /load above.
         verbal_checkpoint = (checkpoint.get("section_progress") or {}).get("verbal")
         if verbal_checkpoint and "VERBAL" in context.sections:
+            # Background questions first (they sit at the front of the
+            # list), THEN the pointer -- the pointer counts them.
+            restored_bg = attach_background_questions(context.sections, restore_background_questions(checkpoint))
+            if restored_bg:
+                logger.info("[BG-GEN] Restored %d background question(s) from checkpoint", restored_bg)
             context.sections["VERBAL"].current_index = verbal_checkpoint.get("current_index", 0)
             context.sections["VERBAL"].completed = verbal_checkpoint.get("completed", False)
 
@@ -336,6 +382,35 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Initialize Controller ─────────────────────────────────────────
     llm = GroqProvider()
+
+    # ─── Background subsection: generate once, on a fresh start ─────────
+    # docs/verbal-background-subsection-plan.md §2 "Agent (bootstrap)". Only
+    # when HR switched it on for this VERBAL section AND the CV profile has
+    # something to ground on; generation failure or an empty result simply
+    # means no background subsection -- the interview never waits on it
+    # beyond this one bounded call, and never blocks on it.
+    verbal_section = context.sections.get("VERBAL")
+    if (
+        not is_resuming
+        and verbal_section is not None
+        and verbal_section.include_background
+        and not verbal_section.background_questions
+    ):
+        generated = await generate_background_questions(
+            llm=llm,
+            role=context.role,
+            level=context.confirmed_level,
+            language=context.language,
+            job_description=context.job_description,
+            candidate_profile=context.candidate_profile,
+            count=verbal_section.background_question_count,
+        )
+        attached = attach_background_questions(context.sections, generated)
+        logger.info(
+            "[BG-GEN] Session %s: include_background=%s attached=%d verbal_total=%d",
+            context.session_id, verbal_section.include_background, attached, verbal_section.total_questions,
+        )
+
     controller = InterviewController(llm, persistence, context)
     async def generate_for_this_session():
         logger.info(

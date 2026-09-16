@@ -126,6 +126,12 @@ class SectionPayload(BaseModel):
     # session or a section that predates WR-A's publish-time requirement —
     # the agent runtime treats a missing budget defensively, not as a crash.
     time_budget_minutes: Optional[int] = None
+    # Background subsection (docs/verbal-background-subsection-plan.md §1):
+    # HR's per-VERBAL-section settings, sourced from InterviewSection.config.
+    # Absent/False for every legacy session and for CODING/MCQ.
+    include_background: bool = False
+    background_question_count: Optional[int] = None
+    background_time_budget_minutes: Optional[int] = None
     questions: List[QuestionPayload] = []
 
 
