@@ -110,12 +110,15 @@ async def test_room_token_is_gated_on_the_cv(published_public_job):
             tok = await c.post("/api/v1/livekit/token", json={"session_id": sid}, headers=auth)
             assert tok.status_code == 200 and tok.json()["token"]
 
-            # 7) a returning candidate (same email) finds the CV already on the application
+            # 7) a returning candidate (same email) starts fresh: no accounts for
+            #    public applicants (2026-09-16), nothing carries over -- the CV
+            #    must be uploaded again for the new session, and Start is gated.
             reg2 = (await c.post(f"/api/v1/apply/{job['public_token']}/register", json={"name": "Gate", "email": email})).json()
             job["sessions"].append(reg2["session"]["id"])
-            st2 = (await c.get(f"/api/v1/interviews/{reg2['session']['id']}/cv",
-                               headers={"Authorization": f"Bearer {reg2['access_token']}"})).json()
-            assert st2["has_resume"] is True and st2["resume_id"] == st["resume_id"]
+            auth2 = {"Authorization": f"Bearer {reg2['access_token']}"}
+            st2 = (await c.get(f"/api/v1/interviews/{reg2['session']['id']}/cv", headers=auth2)).json()
+            assert st2["has_resume"] is False
+            assert (await c.post("/api/v1/livekit/token", json={"session_id": reg2["session"]["id"]}, headers=auth2)).status_code == 409
 
 
 @pytest.mark.asyncio

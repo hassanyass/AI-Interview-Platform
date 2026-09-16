@@ -6,6 +6,7 @@ import InterviewSession from './pages/InterviewSession'
 
 import InvitePage from './pages/InvitePage'
 import ApplyPage from './pages/ApplyPage'
+import VerbalPreview from './routes/dev/VerbalPreview'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
 import JobCreatePage from './routes/admin/JobCreatePage'
@@ -67,6 +68,9 @@ function App() {
               <Route path="/" element={<Navigate to="/admin" replace />} />
               <Route path="/interviews/:id" element={<GuestOrAuthRoute><InterviewSession /></GuestOrAuthRoute>} />
               
+              {/* DEV-only visual harness for the verbal stage (routes/dev/VerbalPreview.tsx). */}
+              {import.meta.env.DEV && <Route path="/dev/verbal-preview" element={<VerbalPreview />} />}
+
               {/* Catch all */}
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>

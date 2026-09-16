@@ -90,6 +90,14 @@ async def register_public_applicant(
         candidate_profile_id=profile.id,
         resume_id=payload.resume_id,
     )
+    # No accounts for public applicants (2026-09-16): every registration is a
+    # fresh start. A returning email keeps its contact record (the profile
+    # row is unique per email, and HR reaches out through it) but nothing
+    # from an earlier visit is carried into this interview -- the name is
+    # the one just typed (update_name above) and the CV must be uploaded
+    # again for this session, so the previous application's resume link is
+    # dropped here. The legacy resume_id in the payload still wins if sent.
+    application.resume_id = payload.resume_id
 
     access_token = mint_guest_jwt(str(profile.id), email)
 

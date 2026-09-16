@@ -83,7 +83,7 @@
                                            "CODING":  "Coding",
                                            "MCQ":  "Multiple Choice"
                                        },
-                      "listening":  "Listening",
+                      "listening":  "Your turn",
                       "constraints":  "Constraints",
                       "micOn":  "Microphone on",
                       "retrieving":  "Retrieving assessment report...",
@@ -104,7 +104,9 @@
                       "live":  "Live",
                       "codeAnswer":  "Code answer",
                       "select":  "Select",
-                      "interviewerSpeaking":  "The interviewer is speaking. Listen for the next prompt.",
+                      "interviewerSpeakingHint":  "The interviewer is speaking. Listen for the next prompt.",
+                      "listeningHint":  "Your microphone is live -- speak whenever you're ready.",
+                      "interviewerSpeaking":  "Interviewer speaking",
                       "min":  "min",
                       "backgroundDiscussion":  "Background Discussion",
                       "subsection":  {
@@ -116,7 +118,9 @@
                                        "questionOf":  "Question {{index}} of {{total}}",
                                        "timeLeft":  "{{time}} left",
                                        "nowDiscussion":  "Background done — moving to the discussion questions",
-                                       "nowBackground":  "Starting with your background"
+                                       "nowBackground":  "Starting with your background",
+                                       "fromYourCv":  "From your CV",
+                                       "discussionQuestion":  "Discussion question"
                                     },
                       "submitOnceReady":  "Submit once you are ready to finish the technical problem.",
                       "micMuted":  "Microphone muted",

@@ -83,7 +83,7 @@
                                            "CODING":  "برمجة",
                                            "MCQ":  "اختيار من متعدد"
                                        },
-                      "listening":  "يستمع",
+                      "listening":  "دورك الآن",
                       "constraints":  "القيود",
                       "micOn":  "الميكروفون قيد التشغيل",
                       "retrieving":  "جاري استرداد تقرير التقييم...",
@@ -104,7 +104,9 @@
                       "live":  "مباشر",
                       "codeAnswer":  "كتابة الرمز",
                       "select":  "اختيار",
-                      "interviewerSpeaking":  "المحاور يتحدث. استمع للسؤال التالي.",
+                      "interviewerSpeakingHint":  "المُقابِل يتحدث الآن. استمع إلى السؤال التالي.",
+                      "listeningHint":  "الميكروفون يعمل — تحدث متى ما كنت جاهزًا.",
+                      "interviewerSpeaking":  "المُقابِل يتحدث",
                       "min":  "دقيقة",
                       "backgroundDiscussion":  "مناقشة الخلفية",
                       "subsection":  {
@@ -116,7 +118,9 @@
                                        "questionOf":  "السؤال {{index}} من {{total}}",
                                        "timeLeft":  "متبقٍ {{time}}",
                                        "nowDiscussion":  "انتهت الخلفية — ننتقل إلى أسئلة النقاش",
-                                       "nowBackground":  "نبدأ بخلفيتك"
+                                       "nowBackground":  "نبدأ بخلفيتك",
+                                       "fromYourCv":  "من سيرتك الذاتية",
+                                       "discussionQuestion":  "سؤال نقاش"
                                     },
                       "submitOnceReady":  "أرسل عندما تكون مستعدًا لإنهاء المشكلة الفنية.",
                       "micMuted":  "الميكروفون مكتوم",
