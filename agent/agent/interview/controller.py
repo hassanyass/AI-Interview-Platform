@@ -1010,14 +1010,21 @@ class InterviewController:
         verbal_subsection = None
         background_total = 0
         background_index = None
+        # discussion_index/total: the same counter for the discussion (HR)
+        # questions, so the two steps of the verbal stepper read alike.
+        discussion_total = 0
+        discussion_index = None
         if active is not None and active.section_type == "VERBAL":
             background_total = len(active.background_questions)
+            discussion_total = active.total_questions - background_total
             if background_total:
                 if self._is_background_question(active.current_question):
                     verbal_subsection = "BACKGROUND"
                     background_index = active.current_index + 1
                 else:
                     verbal_subsection = "DISCUSSION"
+            if active.current_question is not None and not self._is_background_question(active.current_question):
+                discussion_index = active.current_index - background_total + 1
 
         return {
             "session_id": ctx.session_id,
@@ -1055,6 +1062,8 @@ class InterviewController:
             "background_total": background_total,
             "background_index": background_index,
             "background_time_remaining_seconds": self._background_time_remaining(),
+            "discussion_index": discussion_index,
+            "discussion_total": discussion_total,
         }
 
     def _consume_pending_time_bonus(self) -> Optional[int]:

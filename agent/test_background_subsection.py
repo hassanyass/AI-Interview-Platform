@@ -291,6 +291,19 @@ def test_ui_state_fields_and_plain_verbal_has_no_subsection():
     assert "SKIP_BACKGROUND" not in ui["allowed_controls"]
 
 
+def test_ui_state_discussion_counter_mirrors_the_background_one():
+    c = _controller(n_bg=2, n_hr=3)
+    ui = c.generate_ui_state()
+    assert (ui["discussion_index"], ui["discussion_total"]) == (None, 3)   # still in background
+    c.context.sections["VERBAL"].current_index = 2
+    assert (c.generate_ui_state()["discussion_index"], c.generate_ui_state()["discussion_total"]) == (1, 3)
+    c.context.sections["VERBAL"].current_index = 4
+    assert c.generate_ui_state()["discussion_index"] == 3
+    plain = _controller(n_bg=0, n_hr=2)
+    plain.context.sections["VERBAL"].current_index = 1
+    assert (plain.generate_ui_state()["discussion_index"], plain.generate_ui_state()["discussion_total"]) == (2, 2)
+
+
 def test_background_records_carry_their_text_and_hr_records_do_not():
     async def scenario():
         c = _controller(n_bg=1, n_hr=2)
