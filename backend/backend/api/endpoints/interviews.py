@@ -1,15 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from backend.api.deps import db_dependency, current_user_dependency, get_current_admin
 from backend.models.profile import CandidateProfile
-from backend.models.interview import InterviewSession, InterviewConfiguration, InterviewDefinition, Job, InterviewConsent
+from backend.models.interview import InterviewSession, InterviewConfiguration, InterviewDefinition, Job, InterviewConsent, JobApplication
+from backend.models.profile import Resume
+from backend.services.resume_ingest import ingest_resume, profile_cv_summary
 from backend.schemas.interview import (
     InterviewSessionResponse,
     InterviewResultResponse,
     ConsentCreate,
     ConsentResponse,
+    SessionCvStatus,
+    CvSummary,
 )
 from backend.core.config import settings
 from backend.services.guest_jwt_service import mint_guest_jwt
@@ -108,6 +112,93 @@ async def get_interview(
             "candidate_name": candidate_name
         }
     )
+
+
+# ─── Candidate CV gate (Background subsection step 2) ────────────────────────
+# Register/redeem -> mandatory CV -> Start (ruling Q2). The room token is
+# only minted once the session's JobApplication has a resume_id; see
+# livekit.py's generate_livekit_token. These two endpoints are the entry
+# pages' (and the intro screen's) view of, and way through, that gate.
+
+async def _load_owned_session_with_application(db: AsyncSession, session_id: UUID, user_id: str):
+    try:
+        user_uuid = UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid User ID format")
+    result = await db.execute(select(InterviewSession).where(InterviewSession.id == session_id))
+    session = result.scalars().first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    if session.candidate_profile_id != user_uuid:
+        raise HTTPException(status_code=403, detail="Not authorized to access this interview session")
+    application = None
+    if session.application_id:
+        app_result = await db.execute(select(JobApplication).where(JobApplication.id == session.application_id))
+        application = app_result.scalars().first()
+    profile_result = await db.execute(select(CandidateProfile).where(CandidateProfile.id == user_uuid))
+    profile = profile_result.scalars().first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Candidate profile not found.")
+    return session, application, profile
+
+
+async def _cv_status(db: AsyncSession, session: InterviewSession, application, profile: CandidateProfile) -> SessionCvStatus:
+    resume = None
+    if application is not None and application.resume_id:
+        res = await db.execute(select(Resume).where(Resume.id == application.resume_id))
+        resume = res.scalars().first()
+    return SessionCvStatus(
+        session_id=session.id,
+        required=application is not None,
+        has_resume=resume is not None,
+        resume_id=resume.id if resume else None,
+        original_filename=resume.original_filename if resume else None,
+        extraction_status=resume.extraction_status if resume else None,
+        summary=CvSummary(**profile_cv_summary(profile)) if resume else None,
+    )
+
+
+@router.get("/{session_id}/cv", response_model=SessionCvStatus)
+async def get_session_cv(
+    session_id: UUID,
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency,
+):
+    """Whether this session still needs a CV, and what we read from the one
+    it has (an invited candidate whose application already carries a CV is
+    offered "use the CV we have" -- ruling Q1)."""
+    session, application, profile = await _load_owned_session_with_application(db, session_id, user_id)
+    return await _cv_status(db, session, application, profile)
+
+
+@router.post("/{session_id}/cv", response_model=SessionCvStatus)
+async def upload_session_cv(
+    session_id: UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = db_dependency,
+    user_id: str = current_user_dependency,
+):
+    """Upload (or replace) the CV for this session's application: same
+    ingestion as POST /resumes, then links JobApplication.resume_id. Allowed
+    only before the interview starts."""
+    session, application, profile = await _load_owned_session_with_application(db, session_id, user_id)
+    if application is None:
+        raise HTTPException(status_code=409, detail="This session has no job application to attach a CV to.")
+    if session.status != "CREATED":
+        raise HTTPException(status_code=409, detail="The CV can only be changed before the interview starts.")
+    resume = await ingest_resume(db, file, profile)
+    # ingest_resume commits (expire_on_commit) -- reload the rows loaded
+    # before it, or the next attribute access lazy-loads outside greenlet
+    # context (MissingGreenlet), the same lesson as public_invitations.py.
+    await db.refresh(application)
+    await db.refresh(session)
+    await db.refresh(profile)
+    application.resume_id = resume.id
+    await db.commit()
+    await db.refresh(application)
+    await db.refresh(session)
+    await db.refresh(profile)
+    return await _cv_status(db, session, application, profile)
 
 
 @router.post("/{session_id}/terminate", response_model=InterviewSessionResponse)

@@ -31,7 +31,6 @@ from backend.schemas.public_invitations import RedeemedSessionInfo
 from backend.services.candidate_profile_service import get_or_create_candidate_profile
 from backend.services.job_application_service import get_or_create_job_application
 from backend.services.guest_jwt_service import mint_guest_jwt
-from backend.api.endpoints.livekit import generate_livekit_token, TokenRequest
 
 logger = logging.getLogger(__name__)
 
@@ -110,10 +109,11 @@ async def register_public_applicant(
     db.add(session)
     await db.flush()
 
-    token_response = await generate_livekit_token(
-        TokenRequest(session_id=str(session.id)), db, str(profile.id)
-    )
-
+    # Background subsection step 2 (ruling Q2): the room token is NOT minted
+    # here any more. The candidate uploads a CV against this session next
+    # (POST /interviews/{id}/cv, authorised by access_token below), and the
+    # intro screen's Start requests the token from livekit.py, which is
+    # where the CV gate lives.
     await db.commit()
     await db.refresh(session)
 
@@ -126,6 +126,4 @@ async def register_public_applicant(
             status=session.status,
             created_at=session.created_at,
         ),
-        livekit_token=token_response.token,
-        livekit_url=token_response.url,
     )

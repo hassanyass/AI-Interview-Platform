@@ -13,8 +13,10 @@ export interface PublicRegisterResponse {
   access_token: string;
   token_type: string;
   session: RedeemedSessionInfo;
-  livekit_token: string;
-  livekit_url: string;
+  // Background subsection step 2: no longer minted at register (the room
+  // token is only issued once the application has a CV).
+  livekit_token?: string | null;
+  livekit_url?: string | null;
 }
 
 export async function getApplyContext(token: string): Promise<PublicApplyContext> {

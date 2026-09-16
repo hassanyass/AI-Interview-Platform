@@ -11,8 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../co
 import { Button } from "../components/ui/Button";
 import { LanguageToggle } from "../components/ui/LanguageToggle";
 import { useTranslation, Trans } from 'react-i18next';
+import { CvUploadStep } from "../features/candidate-entry/CvUploadStep";
 
-type Step = "loading" | "invalid" | "email" | "otp" | "redeeming";
+type Step = "loading" | "invalid" | "email" | "otp" | "redeeming" | "cv";
 
 export default function InvitePage() {
   const { t } = useTranslation();
@@ -29,6 +30,7 @@ export default function InvitePage() {
   // Guards against double-firing the redeem effect below (e.g. StrictMode's
   // double-invoke in dev, or `session` changing more than once).
   const hasRedeemedRef = useRef(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -50,7 +52,11 @@ export default function InvitePage() {
     setError("");
     try {
       const redeemResult = await redeemInvitation(token);
-      navigate(`/interviews/${redeemResult.session.id}`);
+      // Background subsection step 2 (ruling Q2): redeem -> mandatory CV ->
+      // Start. An invitee whose application already carries a CV is offered
+      // "use the CV we have" inside the step rather than forced to re-upload.
+      setSessionId(redeemResult.session.id);
+      setStep("cv");
     } catch (err: any) {
       hasRedeemedRef.current = false;
       setError(err.message || t('invite.failedToRedeem'));
@@ -227,7 +233,12 @@ export default function InvitePage() {
                 </form>
               )}
 
-              {step === "redeeming" ? (
+              {step === "cv" && sessionId ? (
+                <CvUploadStep
+                  sessionId={sessionId}
+                  onContinue={() => navigate(`/interviews/${sessionId}`)}
+                />
+              ) : step === "redeeming" ? (
                 <div className="flex flex-col items-center justify-center py-8 space-y-4 animate-in fade-in zoom-in-95 duration-500">
                   <div className="h-8 w-8 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
                   <p className="text-sm font-medium text-muted-foreground">{t('invite.starting')}</p>

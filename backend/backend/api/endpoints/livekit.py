@@ -9,7 +9,7 @@ from sqlalchemy import select
 from livekit import api
 
 from backend.api.deps import get_db, current_user_dependency
-from backend.models.interview import InterviewSession
+from backend.models.interview import InterviewSession, JobApplication
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -153,6 +153,24 @@ async def generate_livekit_token(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Interview session not found or you do not have access."
         )
+
+    # Background subsection step 2 (ruling Q2, docs/verbal-background-
+    # subsection-plan.md §11): a B2B session's room token is only issued
+    # once its JobApplication carries a CV. Checked at START only (status
+    # CREATED) -- a resume/reconnect of a session that already began is
+    # never blocked, and a legacy or admin test-drive session (no
+    # application) is not gated at all. Register/redeem no longer mint a
+    # room token for the same reason.
+    if session.status == "CREATED" and session.application_id:
+        app_result = await db.execute(
+            select(JobApplication).where(JobApplication.id == session.application_id)
+        )
+        application = app_result.scalar_one_or_none()
+        if application is not None and application.resume_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="CV_REQUIRED: upload your CV before starting the interview.",
+            )
 
     api_key = settings.LIVEKIT_API_KEY
     api_secret = settings.LIVEKIT_API_SECRET

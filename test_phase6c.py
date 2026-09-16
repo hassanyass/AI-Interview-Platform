@@ -129,7 +129,9 @@ async def test_phase6c_stop_condition_repeat_registration():
         assert first.status_code == 200, first.text
         first_body = first.json()
         assert first_body["access_token"]
-        assert first_body["livekit_token"]
+        # Background subsection step 2 (2026-09-16): no room token at register
+        # any more (CV step first; livekit.py gates the token on the CV).
+        assert first_body["livekit_token"] is None
 
         second = await client.post(
             f"/api/v1/apply/{public_token}/register",

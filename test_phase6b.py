@@ -85,8 +85,11 @@ async def test_phase6b_happy_path_redeem():
         assert redeem_resp.status_code == 200, redeem_resp.text
         body = redeem_resp.json()
         assert body["session"]["status"] == "CREATED"
-        assert body["livekit_token"]
-        assert body["livekit_url"]
+        # Background subsection step 2 (2026-09-16): redeem no longer mints a
+        # room token -- the CV step comes first, and livekit.py issues the
+        # token only once the application has a CV.
+        assert body["livekit_token"] is None
+        assert body["livekit_url"] is None
         session_id = body["session"]["id"]
 
         # Confirm the JobApplication reused is the SAME one 6A created.

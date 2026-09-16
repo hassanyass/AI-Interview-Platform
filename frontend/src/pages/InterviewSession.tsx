@@ -7,7 +7,9 @@ import { InterviewWorkspace } from '../features/interview-session/InterviewWorks
 import { IntroScreen } from '../features/interview-session/IntroScreen'
 import { SessionEndedScreen } from '../features/interview-session/SessionEndedScreen'
 import { FullscreenTerminatedScreen } from '../features/interview-session/FullscreenTerminatedScreen'
-import { getInterviewSession, getLiveKitToken, recordConsent, terminateInterview } from '../services/api/interviews'
+import { getInterviewSession, getLiveKitToken, getSessionCv, recordConsent, terminateInterview } from '../services/api/interviews'
+import { CvUploadStep } from '../features/candidate-entry/CvUploadStep'
+import { Card, CardContent } from '../components/ui/Card'
 import { requestFullscreen } from '../lib/fullscreen'
 import type { InterviewSessionResponse } from '../types/api'
 import '@livekit/components-styles'
@@ -28,6 +30,11 @@ export default function InterviewSession() {
   // mid-interview (IN_PROGRESS/DISCONNECTED after a refresh or reconnect)
   // skips straight back into the live workspace, unchanged from before.
   const [showIntro, setShowIntro] = useState(false)
+  // Background subsection step 2: a B2B session reached directly (refresh,
+  // bookmark) that still has no CV must go through the same CV step the
+  // entry pages show -- the backend refuses the room token otherwise
+  // (CV_REQUIRED), and that must never be a dead end.
+  const [cvMissing, setCvMissing] = useState(false)
   const [isEnding, setIsEnding] = useState(false)
   const [ended, setEnded] = useState(false)
   // Separate from `error` above: a failed Start/End action from the intro
@@ -95,6 +102,14 @@ export default function InterviewSession() {
           // Fresh session — show the intro screen and defer the actual
           // LiveKit connect (and therefore the agent joining/greeting)
           // until the candidate clicks Start Session.
+          try {
+            const cv = await getSessionCv(id);
+            setCvMissing(cv.required && !cv.has_resume);
+          } catch {
+            // Status unknown: let Start try; the backend's CV_REQUIRED
+            // reply is surfaced by handleStart as an inline error.
+            setCvMissing(false);
+          }
           setShowIntro(true);
           setLoading(false);
           return;
@@ -226,6 +241,19 @@ export default function InterviewSession() {
         </div>
         <h2 className="text-xl font-semibold mb-2">{t('intro.endedTitle')}</h2>
         <p className="text-muted-foreground max-w-md">{t('intro.endedDesc')}</p>
+      </div>
+    );
+  }
+
+  if (showIntro && session && cvMissing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
+        <Card className="w-full max-w-lg shadow-xl shadow-black/5 border-muted/60">
+          <CardContent className="p-6 space-y-4">
+            <p className="text-xs font-medium text-muted-foreground">{t('cv.requiredBeforeStart')}</p>
+            <CvUploadStep sessionId={session.id} onContinue={() => setCvMissing(false)} />
+          </CardContent>
+        </Card>
       </div>
     );
   }

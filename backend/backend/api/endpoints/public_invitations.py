@@ -31,7 +31,6 @@ from backend.schemas.public_invitations import (
     RedeemResponse,
 )
 from backend.services.job_application_service import get_or_create_job_application
-from backend.api.endpoints.livekit import generate_livekit_token, TokenRequest
 
 logger = logging.getLogger(__name__)
 
@@ -154,9 +153,6 @@ async def redeem_invitation(
         )
         existing_session = existing_result.scalars().first()
         if existing_session:
-            token_response = await generate_livekit_token(
-                TokenRequest(session_id=str(existing_session.id)), db, candidate_profile_id
-            )
             return RedeemResponse(
                 session=RedeemedSessionInfo(
                     id=existing_session.id,
@@ -165,8 +161,6 @@ async def redeem_invitation(
                     status=existing_session.status,
                     created_at=existing_session.created_at,
                 ),
-                livekit_token=token_response.token,
-                livekit_url=token_response.url,
             )
         # Defensive fallback: STARTED but no session found (shouldn't
         # normally happen) — self-heal by falling through to create one
@@ -206,10 +200,9 @@ async def redeem_invitation(
     db.add(session)
     await db.flush()
 
-    token_response = await generate_livekit_token(
-        TokenRequest(session_id=str(session.id)), db, candidate_profile_id
-    )
-
+    # Background subsection step 2 (ruling Q2): no room token at redeem --
+    # the CV step comes first, and the intro screen's Start requests the
+    # token from livekit.py, where the CV gate lives.
     invitation.status = "STARTED"
     await db.commit()
     await db.refresh(session)
@@ -222,6 +215,4 @@ async def redeem_invitation(
             status=session.status,
             created_at=session.created_at,
         ),
-        livekit_token=token_response.token,
-        livekit_url=token_response.url,
     )

@@ -27,5 +27,7 @@ class RedeemedSessionInfo(BaseModel):
 
 class RedeemResponse(BaseModel):
     session: RedeemedSessionInfo
-    livekit_token: str
-    livekit_url: str
+    # Background subsection step 2: no longer minted at redeem -- the room
+    # token is only issued once the application has a CV (livekit.py).
+    livekit_token: Optional[str] = None
+    livekit_url: Optional[str] = None
