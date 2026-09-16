@@ -132,6 +132,7 @@ class MockPersistence(InterviewPersistence):
                             q.model_dump(mode="json")
                             for q in context.sections["VERBAL"].background_questions
                         ],
+                        "background_deadline_epoch": context.background_deadline_epoch,
                     }
                     if "VERBAL" in context.sections else None
                 ),
@@ -292,6 +293,7 @@ class APIPersistence(InterviewPersistence):
                             q.model_dump(mode="json")
                             for q in context.sections["VERBAL"].background_questions
                         ],
+                        "background_deadline_epoch": context.background_deadline_epoch,
                     }
                     if "VERBAL" in context.sections else None
                 ),

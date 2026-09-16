@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Mic, MicOff, RefreshCcw, HelpCircle, SkipForward, LogOut, Loader2 } from "lucide-react";
+import { Mic, MicOff, RefreshCcw, HelpCircle, SkipForward, LogOut, Loader2, FastForward } from "lucide-react";
 import { EndSectionEarlyDialog } from "./EndSectionEarlyDialog";
 
 export type ControlState = "IDLE" | "PROCESSING" | "ENDING" | "ENDED";
@@ -170,6 +170,19 @@ export function InterviewController({
             isLoading={processingAction === "SKIP_QUESTION"}
             tooltip="Skip this question"
           />
+
+          {/* Verbal Background subsection: advertised by the agent only while a
+              CV-grounded background question is current (plan §2, ruling Q7). */}
+          {allowedControls.includes("SKIP_BACKGROUND") && (
+            <SecondaryButton
+              icon={<FastForward className="h-4 w-4" />}
+              label={processingAction === "SKIP_BACKGROUND" ? "Skipping..." : "Skip background"}
+              disabled={allDisabled || isProcessing}
+              onClick={() => handleAction("SKIP_BACKGROUND")}
+              isLoading={processingAction === "SKIP_BACKGROUND"}
+              tooltip="Skip the rest of the background questions and go to the discussion"
+            />
+          )}
 
           <SecondaryButton
             icon={<LogOut className="h-4 w-4" />}

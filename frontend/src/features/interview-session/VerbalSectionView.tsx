@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Code2, Mic, Send, Volume2, MessageSquare } from "lucide-react";
+import { Code2, Mic, Send, Volume2, MessageSquare, FileText, MessagesSquare } from "lucide-react";
 import { type InterviewerCharacterState } from "./InterviewerCharacter";
 import BlobCharacter from "./BlobCharacter";
 import type { RemoteAudioTrack } from "livekit-client";
@@ -78,6 +78,14 @@ export function VerbalSectionView({
   // interview doesn't need — the transcript is one click away, not gone.
   const [showTranscript, setShowTranscript] = useState(false);
 
+  // Verbal Background subsection (plan §3/§10): a two-segment indicator so
+  // the candidate knows which part they are in, with the background's own
+  // small countdown -- the header clock keeps the section total. Only
+  // rendered for a VERBAL section that actually has a background.
+  const subsection = backendState?.verbal_subsection ?? null;
+  const bgRemaining = backendState?.background_time_remaining_seconds;
+  const formatClock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
   return (
     <>
       <div className="col-span-full flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
@@ -92,6 +100,24 @@ export function VerbalSectionView({
               {isAgentSpeaking ? <Volume2 className="h-3 w-3" /> : <Mic className="h-3 w-3" />}
               {isAgentSpeaking ? t('workspace.interviewerSpeaking') : t('workspace.listening')}
             </span>
+            {subsection && (
+              <span className="inline-flex items-center overflow-hidden rounded-full border border-border text-xs" role="status" aria-label={t('workspace.subsection.label')}>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${subsection === "BACKGROUND" ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground"}`}>
+                  <FileText className="h-3 w-3" />
+                  {t('workspace.subsection.background')}
+                  {subsection === "BACKGROUND" && backendState?.background_total ? (
+                    <span className="opacity-80">{backendState.background_index}/{backendState.background_total}</span>
+                  ) : null}
+                  {subsection === "BACKGROUND" && bgRemaining != null ? (
+                    <span className="tabular-nums opacity-80" dir="ltr">· {formatClock(bgRemaining)}</span>
+                  ) : null}
+                </span>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 ${subsection === "DISCUSSION" ? "bg-primary text-primary-foreground font-semibold" : "text-muted-foreground"}`}>
+                  <MessagesSquare className="h-3 w-3" />
+                  {t('workspace.subsection.discussion')}
+                </span>
+              </span>
+            )}
           </div>
         </div>
         <button

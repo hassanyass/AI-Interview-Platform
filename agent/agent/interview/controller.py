@@ -80,6 +80,14 @@ class InterviewController:
         # candidate's first reply. Not persisted: a resume that lands in
         # BRIEFING simply re-greets, same as today.
         self._briefing_greeted = False
+        # Verbal Background subsection (docs/verbal-background-subsection-
+        # plan.md §2 "Live flow"): set by _advance_core_question() the
+        # moment the pointer moves off the LAST source="BACKGROUND"
+        # question onto the first discussion question; consumed by
+        # whichever path voices that question next (forced advance,
+        # voluntary TRANSITION, the chained turn after a skip) so the
+        # bridge is spoken exactly once, however the boundary was crossed.
+        self._pending_background_bridge = False
         self._custom_question: Optional[Question] = None
         self._question_generator: Optional[Callable[[], Awaitable[Question]]] = None
         self._question_fallback_builder: Optional[Callable[[], Question]] = None
@@ -346,6 +354,10 @@ class InterviewController:
         next_index = core_section.current_index + 1
         if next_index < len(core_section.questions):
             next_q = core_section.questions[next_index]
+            # Background -> Discussion boundary: a different bridge sentence,
+            # same verbatim-next-question composition.
+            if self._is_background_question(core_section.current_question) and not self._is_background_question(next_q):
+                return f"{messages['background_to_discussion']} {self._question_problem_text(next_q)}"
             return f"{messages['core_followups_exhausted_next']} {self._question_problem_text(next_q)}"
         return messages["core_followups_exhausted_last"]
 
@@ -358,6 +370,103 @@ class InterviewController:
             return spoken
         messages = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])
         return f"{messages['core_question_lead_in']} {text}"
+
+    # ─── Verbal Background subsection (docs/verbal-background-subsection-plan.md)
+    # Background questions are ordinary entries at the front of the VERBAL
+    # list tagged source="BACKGROUND" (main.py prepends them). Everything
+    # below is edge behaviour only: the sub-clock, the 1-follow-up cap / no
+    # time grant, the spoken bridge at the boundary, SKIP_BACKGROUND, and the
+    # UI-state fields. The ordered walk itself is untouched.
+
+    def _is_background_question(self, question: Optional[Question]) -> bool:
+        return question is not None and question.source == "BACKGROUND"
+
+    def _in_background_subsection(self) -> bool:
+        section = self._active_core_section()
+        return (
+            section is not None
+            and section.section_type == "VERBAL"
+            and self._is_background_question(section.current_question)
+        )
+
+    def _note_background_question_asked(self, section: OrderedSectionProgress) -> None:
+        """Start the background sub-clock (plan §10) the first time a
+        background question is actually voiced. Absolute deadline, so a
+        reconnect restores it unchanged (checkpointed in section_progress
+        .verbal). No budget configured -> no sub-clock; the question count
+        and the follow-up cap still bound the background."""
+        if (
+            self.context.background_deadline_epoch is None
+            and self._is_background_question(section.current_question)
+            and section.background_time_budget_minutes
+        ):
+            self.context.background_deadline_epoch = time.time() + section.background_time_budget_minutes * 60
+            logger.info(
+                "[BACKGROUND] Sub-clock started: %s min, %d background question(s)",
+                section.background_time_budget_minutes, len(section.background_questions),
+            )
+
+    def _background_time_remaining(self) -> Optional[int]:
+        if not self._in_background_subsection() or self.context.background_deadline_epoch is None:
+            return None
+        return max(0, int(self.context.background_deadline_epoch - time.time()))
+
+    def _background_time_expired(self) -> bool:
+        remaining = self._background_time_remaining()
+        return remaining is not None and remaining <= 0
+
+    def _compose_background_bridge(self, key: str, section: OrderedSectionProgress) -> str:
+        """The localised bridge + the first discussion question verbatim
+        (when one exists). Mirrors _compose_forced_core_advance_text's
+        shape; `key` picks which bridge sentence."""
+        messages = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])
+        next_q = section.current_question
+        if next_q is not None and not self._is_background_question(next_q):
+            return f"{messages[key]} {self._question_problem_text(next_q)}"
+        return messages[key]
+
+    def _finish_background(self, remaining_outcome: QuestionOutcome, bridge_key: str, skip_current: bool = False) -> StructuredAction:
+        """Close out the background subsection right now: the current
+        background question is recorded COMPLETED if it was asked (or with
+        `remaining_outcome` if it never was, or always when `skip_current` --
+        the candidate chose to skip it too), every later background
+        question gets `remaining_outcome`, and the pointer lands on the
+        first discussion question, which is spoken verbatim after the
+        bridge and marked asked. Runs _advance_core_question() in a loop --
+        the same bookkeeping every other advance uses -- and then the same
+        WAITING_ROOM/CLOSING branching as the rest of the controller for
+        the (defensive) case of a section with nothing after the
+        background."""
+        section = self._active_core_section()
+        if section is None:
+            return StructuredAction(action=ActionEnum.ACKNOWLEDGE, response="", reason="No active core section.", should_transition=False)
+        just_finished = section
+        first = True
+        while self._is_background_question(section.current_question):
+            if first and section.current_question_asked and not skip_current:
+                self._advance_core_question()
+            else:
+                self._advance_core_question(outcome_override=remaining_outcome)
+            first = False
+        self._pending_background_bridge = False
+        next_section = self._active_core_section()
+        if next_section is None:
+            self._transition_to(InterviewPhase.CLOSING)
+        elif just_finished.completed:
+            self._transition_to(InterviewPhase.WAITING_ROOM)
+        response = self._compose_background_bridge(bridge_key, section)
+        if section.current_question is not None and not section.completed:
+            section.current_question_asked = True
+        logger.info("[BACKGROUND] Subsection closed (%s); now at question id=%s",
+                    remaining_outcome.value, section.current_question.id if section.current_question else None)
+        return StructuredAction(
+            action=ActionEnum.TRANSITION,
+            response=response,
+            reason=f"Background subsection ended ({remaining_outcome.value}); moved to the discussion questions.",
+            # Bookkeeping already done above -- same "don't transition twice"
+            # convention as SKIP_QUESTION / PROCEED_TO_NEXT_SECTION.
+            should_transition=False,
+        )
 
     def _question_title_text(self, question: Optional[Question]) -> str:
         if not question:
@@ -470,6 +579,19 @@ class InterviewController:
         # WELCOME_PROMPT ("acknowledge, then TRANSITION"). Placed after the
         # control-intent check so an END/REPEAT said during the greeting is
         # still handled in BRIEFING.
+        # Verbal Background subsection (plan §10): the background sub-clock
+        # ends the subsection at the next turn boundary, gracefully -- the
+        # candidate's last answer is already in the history; the controller
+        # speaks the bridge + the first discussion question itself (same
+        # deterministic path as the forced advance) instead of running an
+        # LLM turn on a subsection that is over.
+        if self._background_time_expired():
+            logger.info("[BACKGROUND] Sub-clock expired -- bridging to the discussion questions.")
+            handled = self._finish_background(QuestionOutcome.TIME_EXPIRED, "background_time_up")
+            self.append_message("assistant", handled.response)
+            await self.persistence.save_checkpoint(self.context)
+            return handled
+
         if (
             self.context.current_phase == InterviewPhase.BRIEFING
             and self._briefing_greeted
@@ -658,6 +780,13 @@ class InterviewController:
                 action.response = self._ensure_verbatim_core_question(
                     action.response, first_turn_section.current_question
                 )
+                # The boundary was crossed by a SKIP_QUESTION on the last
+                # background question (that path chains an LLM turn to ask
+                # the next one): put the bridge in front, once.
+                if self._pending_background_bridge:
+                    messages = SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])
+                    action.response = f"{messages['background_to_discussion']} {self._question_problem_text(first_turn_section.current_question)}"
+                    self._pending_background_bridge = False
 
         phase_before_apply = self.context.current_phase
 
@@ -685,6 +814,30 @@ class InterviewController:
             ):
                 action.response = f"{action.response.rstrip()} {self._question_problem_text(opening_section.current_question)}".strip()
                 opening_section.current_question_asked = True
+                self._note_background_question_asked(opening_section)
+
+        # Verbal Background subsection: the model chose TRANSITION on the last
+        # background question (satisfied before the cap). The pointer is now
+        # on the first discussion question and nothing has voiced it -- the
+        # voice path does not chain a turn on TRANSITION -- so, exactly like
+        # the WELCOME hop above, append the bridge + the question verbatim
+        # and mark it asked. The forced-advance path composed its own text
+        # (with the bridge) before _apply_action ran; only the flag is
+        # consumed there.
+        if self._pending_background_bridge:
+            bridged_section = self._active_core_section()
+            if forced_core_advance:
+                self._pending_background_bridge = False
+            elif (
+                bridged_section is not None
+                and bridged_section.current_question is not None
+                and not self._is_background_question(bridged_section.current_question)
+                and not bridged_section.current_question_asked
+                and action.action == ActionEnum.TRANSITION
+            ):
+                action.response = f"{action.response.rstrip()} {self._compose_background_bridge('background_to_discussion', bridged_section)}".strip()
+                bridged_section.current_question_asked = True
+                self._pending_background_bridge = False
 
         # A1: the forced-advance text above already voiced the next core
         # question verbatim, so it has been asked -- flag it so the LLM's
@@ -812,6 +965,11 @@ class InterviewController:
                     allowed_controls.remove(stale_control.value)
             if core_section.section_type == "MCQ" and CandidateControlAction.REQUEST_HINT.value in allowed_controls:
                 allowed_controls.remove(CandidateControlAction.REQUEST_HINT.value)
+        # Verbal Background subsection: SKIP_BACKGROUND is a button only while
+        # a background question is current (the phase table allows it for
+        # all of BACKGROUND; process_ui_command re-checks the same condition).
+        if not self._in_background_subsection() and CandidateControlAction.SKIP_BACKGROUND.value in allowed_controls:
+            allowed_controls.remove(CandidateControlAction.SKIP_BACKGROUND.value)
 
         # UI-specific explicit control injection
         if sub_phase in ("READING", "THINKING", "APPROACH", "CODING"):
@@ -843,6 +1001,23 @@ class InterviewController:
             "current_index": completed_count + 1 if active is not None else None,
             "current_section_type": active.section_type if active is not None else None,
         }
+
+        # Verbal Background subsection (plan §2 "UI state", additive):
+        # verbal_subsection is "BACKGROUND" while a background question is
+        # current, "DISCUSSION" for the rest of a VERBAL section that HAD a
+        # background, and null otherwise (a plain VERBAL section shows no
+        # two-segment indicator). background_index is 1-based.
+        verbal_subsection = None
+        background_total = 0
+        background_index = None
+        if active is not None and active.section_type == "VERBAL":
+            background_total = len(active.background_questions)
+            if background_total:
+                if self._is_background_question(active.current_question):
+                    verbal_subsection = "BACKGROUND"
+                    background_index = active.current_index + 1
+                else:
+                    verbal_subsection = "DISCUSSION"
 
         return {
             "session_id": ctx.session_id,
@@ -876,6 +1051,10 @@ class InterviewController:
             # moment once), null otherwise. `total` is the running tally.
             "time_bonus_granted_seconds": self._consume_pending_time_bonus(),
             "time_bonus_total_seconds": ctx.followup_time_bonus_seconds_total,
+            "verbal_subsection": verbal_subsection,
+            "background_total": background_total,
+            "background_index": background_index,
+            "background_time_remaining_seconds": self._background_time_remaining(),
         }
 
     def _consume_pending_time_bonus(self) -> Optional[int]:
@@ -1270,6 +1449,22 @@ class InterviewController:
                 response="",
                 reason="Candidate explicitly ended interview. Yielding to LLM for closing.",
                 should_transition=True,
+                detected_candidate_control=control,
+            )
+
+        if control == CandidateControlAction.SKIP_BACKGROUND:
+            # Verbal Background subsection (ruling Q7): skip the rest of the
+            # background -- every remaining background question, including
+            # the current one, is recorded SKIPPED -- and go straight to the
+            # discussion questions, bridge + first question verbatim. Outside
+            # the background it is a no-op (rejected the same way a skip is).
+            if self._in_background_subsection():
+                return self._finish_background(QuestionOutcome.SKIPPED, "background_skipped", skip_current=True)
+            return StructuredAction(
+                action=ActionEnum.ACKNOWLEDGE,
+                response=msgs["core_section_no_skip"],
+                reason="SKIP_BACKGROUND outside the background subsection; nothing to skip.",
+                should_transition=False,
                 detected_candidate_control=control,
             )
 
@@ -1750,7 +1945,13 @@ class InterviewController:
             current_q = core_section.current_question
             if current_q is None or current_q.competency is None:
                 return 0
-            return {"normal": 2, "limited": 1, "very_limited": 0}[self._time_tier()]
+            tier_cap = {"normal": 2, "limited": 1, "very_limited": 0}[self._time_tier()]
+            # Verbal Background subsection (plan §10, ruling Q3): a warm-up,
+            # not a second interview -- at most ONE follow-up per background
+            # question, still throttled by the time tier.
+            if self._is_background_question(current_q):
+                return min(1, tier_cap)
+            return tier_cap
 
         phase = self.context.current_phase
         if phase == InterviewPhase.BACKGROUND:
@@ -1792,6 +1993,7 @@ class InterviewController:
                 if core_section.current_question_asked
                 else QuestionOutcome.TIME_EXPIRED
             )
+            is_background = self._is_background_question(current_q)
             self.context.question_records.append(QuestionRecord(
                 question_id=current_q.id,
                 outcome=outcome,
@@ -1799,9 +2001,20 @@ class InterviewController:
                 followups_used=self.context.followups_used,
                 assistance_records=list(self.context.assistance_records),
                 evaluation=self.context.evaluation_signals[-1] if self.context.evaluation_signals else None,
+                # Verbal Background subsection: a generated question's id
+                # resolves to no DB row, so its record carries the text.
+                question_title=current_q.title if is_background else None,
+                question_text=self._question_problem_text(current_q) if is_background else None,
+                competency=current_q.competency if is_background else None,
+                subsection="BACKGROUND" if is_background else None,
             ))
+        else:
+            is_background = False
         core_section.current_index += 1
         core_section.current_question_asked = False
+        # Boundary: off the last background question onto a discussion one.
+        if is_background and not self._is_background_question(core_section.current_question) and core_section.current_question is not None:
+            self._pending_background_bridge = True
         self.context.hints_used = 0
         self.context.followups_used = 0
         self.context.assistance_records = []
@@ -2204,6 +2417,11 @@ class InterviewController:
         evidence = {
             "role": self.context.role,
             "level": self.context.confirmed_level,
+            # Verbal Background subsection (plan §2 "Evaluation"): the parsed
+            # CV is the reference the spoken account is checked against
+            # (cv_alignment criterion). Same dict /load delivers; it is the
+            # extractor's bounded field set, not raw CV text.
+            "candidate_profile": self.context.candidate_profile or {},
             "technical_submission": self.context.technical_submission,
             "question_records": [r.model_dump(mode="json") for r in self.context.question_records],
             "question_eval_criteria": question_eval_criteria,
@@ -2268,6 +2486,10 @@ class InterviewController:
                 core_section is not None
                 and core_section.section_type == "VERBAL"
                 and VERBAL_FOLLOWUP_TIME_BONUS_SECONDS > 0
+                # Verbal Background subsection (plan §10): NO grant during the
+                # background -- the grant protects the assessed questions'
+                # time; the background is a fixed-size warm-up.
+                and not self._is_background_question(core_section.current_question)
             ):
                 self._total_duration_sec += VERBAL_FOLLOWUP_TIME_BONUS_SECONDS
                 self.context.followup_time_bonus_seconds_total += VERBAL_FOLLOWUP_TIME_BONUS_SECONDS
@@ -2296,6 +2518,7 @@ class InterviewController:
             core_section = self._active_core_section()
             if core_section is not None:
                 core_section.current_question_asked = True
+                self._note_background_question_asked(core_section)
 
         if action.evaluation:
             self.context.evaluation_signals.append(action.evaluation)

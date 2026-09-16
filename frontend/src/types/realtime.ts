@@ -1,6 +1,6 @@
 import type { InterviewPhase } from "./api";
 
-export type AllowedControl = "REQUEST_HINT" | "CHANGE_QUESTION" | "SKIP_QUESTION" | "END_INTERVIEW" | "SUBMIT_CODE" | "SUBMIT_MCQ_ANSWER" | "END_SECTION_EARLY" | "PROCEED_TO_NEXT_SECTION";
+export type AllowedControl = "REQUEST_HINT" | "CHANGE_QUESTION" | "SKIP_QUESTION" | "END_INTERVIEW" | "SUBMIT_CODE" | "SUBMIT_MCQ_ANSWER" | "END_SECTION_EARLY" | "PROCEED_TO_NEXT_SECTION" | "SKIP_BACKGROUND";
 
 /** PR-B/PR-D/Part 2: browser-detected integrity telemetry — always-on,
  *  never gated by allowed_controls (unlike AllowedControl above, which is
@@ -77,6 +77,16 @@ export interface StateUpdatePayload {
     current_index: number | null; // 1-based
     current_section_type: string | null;
   };
+  /** Verbal Background subsection (docs/verbal-background-subsection-plan.md
+   *  §2 "UI state"), all additive. `verbal_subsection` is "BACKGROUND"
+   *  while a CV-grounded background question is current, "DISCUSSION" for
+   *  the rest of a VERBAL section that had one, null otherwise.
+   *  `background_index` is 1-based; `background_time_remaining_seconds` is
+   *  the background sub-clock, null outside the background. */
+  verbal_subsection?: "BACKGROUND" | "DISCUSSION" | null;
+  background_total?: number;
+  background_index?: number | null;
+  background_time_remaining_seconds?: number | null;
 }
 
 export interface RealtimeMessage<T> {

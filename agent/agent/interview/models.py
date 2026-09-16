@@ -59,6 +59,12 @@ class CandidateControlAction(str, enum.Enum):
     REQUEST_CLARIFICATION = "REQUEST_CLARIFICATION"
     REQUEST_HINT = "REQUEST_HINT"
     END_SECTION_EARLY = "END_SECTION_EARLY"
+    # Verbal Background subsection (docs/verbal-background-subsection-plan.md
+    # §2, ruling Q7): skip the REST of the CV-grounded background questions
+    # and go straight to the discussion questions. Only meaningful while a
+    # source="BACKGROUND" question is current; per-question SKIP_QUESTION
+    # keeps working inside the background as well.
+    SKIP_BACKGROUND = "SKIP_BACKGROUND"
 
 
 # ─── Assistance Tracking ──────────────────────────────────────────────────────
@@ -126,6 +132,16 @@ class QuestionRecord(BaseModel):
     clarifications_used: int = 0
     assistance_records: List[AssistanceRecord] = []
     evaluation: Optional["EvaluationSignal"] = None
+    # Verbal Background subsection: a generated (source="BACKGROUND")
+    # question exists only inside its own session -- its id resolves to no
+    # InterviewQuestion row -- so the record carries the text itself for
+    # evaluation and the results page. None for every HR question (their
+    # id resolves as before). Additive keys in the checkpoint's
+    # question_records dicts; the backend stores them as-is.
+    question_title: Optional[str] = None
+    question_text: Optional[str] = None
+    competency: Optional[str] = None
+    subsection: Optional[str] = None  # "BACKGROUND" | None
 
 
 # ─── Section Progress ─────────────────────────────────────────────────────────
@@ -361,6 +377,13 @@ class InterviewRuntimeContext(BaseModel):
     # deliberately NOT part of the checkpoint payload (persistence.py sends
     # an explicit field list) and never crosses the /internal/* contract.
     followup_time_bonus_seconds_total: int = 0
+    # Verbal Background subsection (plan §10): the background sub-clock's
+    # absolute deadline (unix epoch seconds), set when the first background
+    # question is asked, None before/without one. Absolute so a reconnect
+    # restores it unchanged (persistence.py writes it into section_progress
+    # .verbal; main.py restores it) -- the wall clock keeps running while
+    # the candidate is away, exactly like the section clock.
+    background_deadline_epoch: Optional[float] = None
     
     # Section tracking
     interview_plan: Optional[InterviewPlan] = None

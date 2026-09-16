@@ -304,6 +304,8 @@ async def entrypoint(ctx: JobContext):
             if restored_bg:
                 logger.info("[BG-GEN] Restored %d background question(s) from checkpoint", restored_bg)
             context.sections["VERBAL"].current_index = verbal_checkpoint.get("current_index", 0)
+            # Background sub-clock: absolute deadline, so it simply resumes.
+            context.background_deadline_epoch = verbal_checkpoint.get("background_deadline_epoch")
             context.sections["VERBAL"].completed = verbal_checkpoint.get("completed", False)
 
         # Restore conversation history from persisted messages

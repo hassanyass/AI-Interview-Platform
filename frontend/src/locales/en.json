@@ -107,6 +107,11 @@
                       "interviewerSpeaking":  "The interviewer is speaking. Listen for the next prompt.",
                       "min":  "min",
                       "backgroundDiscussion":  "Background Discussion",
+                      "subsection":  {
+                                       "label":  "Interview part",
+                                       "background":  "Background",
+                                       "discussion":  "Discussion"
+                                    },
                       "submitOnceReady":  "Submit once you are ready to finish the technical problem.",
                       "micMuted":  "Microphone muted",
                       "writeSolution":  "Write your solution here...",

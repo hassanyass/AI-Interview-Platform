@@ -3568,9 +3568,10 @@ def test_bg_checkpoint_round_trip_restores_same_questions_and_pointer():
 
 def test_bg_questions_walk_first_as_ordinary_core_questions():
     """Through the controller: a background question is asked verbatim
-    first, and the existing forced advance carries the walk into the HR
-    questions after it -- the shipped deterministic machinery, no special
-    casing (the background-specific cap/bridge belong to step 3)."""
+    first, and the forced advance carries the walk into the HR questions
+    after it. Step 3 added the background-specific edges this walk now
+    reflects: the cap is ONE follow-up during the background, and the
+    boundary is spoken with the Background -> Discussion bridge."""
     from agent.main import build_core_sections, attach_background_questions
     from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
 
@@ -3583,16 +3584,16 @@ def test_bg_questions_walk_first_as_ordinary_core_questions():
         controller.context.time_remaining_seconds = 1200
         controller.context.sections = built
         section = built["VERBAL"]
-        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
 
         first = await controller.process_candidate_input(None)
         assert first.response.endswith("What did you own as Senior ML Engineer?")
         assert section.current_question.source == "BACKGROUND"
 
-        await _drive(controller, "I owned the ML platform.", "Also the deployment pipeline.")
-        forced = await controller.process_candidate_input("And monitoring.")
+        await _drive(controller, "I owned the ML platform.")  # the one allowed follow-up
+        forced = await controller.process_candidate_input("Also the deployment pipeline.")
         assert forced.action == ActionEnum.TRANSITION
-        assert forced.response.endswith("Tell me about ownership.")
+        assert forced.response == f"{SYSTEM_MESSAGES['en']['background_to_discussion']} Tell me about ownership."
         assert section.current_question.id == "hr-1" and section.current_index == 1
         assert controller.context.question_records[-1].question_id == bg[0].id
 

@@ -38,7 +38,14 @@ SYSTEM_MESSAGES = {
         "core_followups_exhausted_last": "Thank you, that covers this question.",
         # A3: spoken before the verbatim HR question when the model paraphrased
         # it on the first turn. Neutral on purpose -- valid for any position.
-        "core_question_lead_in": "Here's your question."
+        "core_question_lead_in": "Here's your question.",
+        # Verbal Background subsection (docs/verbal-background-subsection-plan.md
+        # §2 "Live flow"): spoken by the CONTROLLER at the Background ->
+        # Discussion boundary, however it is crossed; the first discussion
+        # question is appended verbatim after each of these.
+        "background_to_discussion": "Thanks, that gives me a good picture of your background. Now let's move on to the discussion questions.",
+        "background_skipped": "Sure, we'll skip the rest of the background and go straight to the discussion questions.",
+        "background_time_up": "Thanks, that gives me a good picture. Let's move on to the discussion questions."
     },
     "ar": {
         "end_interview": "شكرًا لوقتك اليوم. بننهي المقابلة هنا وبنتواصل معك قريبًا. طاب يومك!",
@@ -54,7 +61,10 @@ SYSTEM_MESSAGES = {
         "core_move_to_technical_unavailable": "المقابلة عندها ترتيب محدد، ما فيه قسم تقني منفصل نقفز له — خلّنا نكمل بالسؤال الحالي.",
         "core_followups_exhausted_next": "شكراً لك. خلّنا ننتقل للسؤال التالي.",
         "core_followups_exhausted_last": "شكراً لك، هذا يكفي لهذا السؤال.",
-        "core_question_lead_in": "إليك سؤالك."
+        "core_question_lead_in": "إليك سؤالك.",
+        "background_to_discussion": "شكراً لك، صارت عندي صورة واضحة عن خلفيتك. خلّنا ننتقل الآن لأسئلة النقاش.",
+        "background_skipped": "تمام، بنتخطى باقي أسئلة الخلفية وننتقل مباشرة لأسئلة النقاش.",
+        "background_time_up": "شكراً لك، صارت عندي صورة واضحة. خلّنا ننتقل لأسئلة النقاش."
     }
 }
 # ─── Core Interviewer Identity ────────────────────────────────────────────────

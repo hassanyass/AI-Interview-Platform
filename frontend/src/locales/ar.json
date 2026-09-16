@@ -107,6 +107,11 @@
                       "interviewerSpeaking":  "المحاور يتحدث. استمع للسؤال التالي.",
                       "min":  "دقيقة",
                       "backgroundDiscussion":  "مناقشة الخلفية",
+                      "subsection":  {
+                                       "label":  "جزء المقابلة",
+                                       "background":  "الخلفية",
+                                       "discussion":  "النقاش"
+                                    },
                       "submitOnceReady":  "أرسل عندما تكون مستعدًا لإنهاء المشكلة الفنية.",
                       "micMuted":  "الميكروفون مكتوم",
                       "writeSolution":  "اكتب حلك هنا...",
