@@ -159,7 +159,16 @@ export default function InterviewSession() {
       try {
         await recordConsent(id, {
           disclosure_language: language,
-          disclosure_text: t('intro.consent.body', { lng: language }),
+          // Step 2 (docs/interview-start-ux-plan.md): the fullscreen rule is
+          // part of what the candidate acknowledged, so it is part of the
+          // stored disclosure too.
+          disclosure_text: [
+            t('intro.consent.body', { lng: language }),
+            t('intro.fullscreen.body', { lng: language }),
+            t('intro.fullscreen.point1', { lng: language }),
+            t('intro.fullscreen.point2', { lng: language }),
+            t('intro.fullscreen.point3', { lng: language }),
+          ].join("\n"),
         });
       } catch (consentErr: any) {
         setIntroError(consentErr.message || t('intro.consent.recordFailed'));

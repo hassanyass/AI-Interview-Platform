@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, LogOut, PlayCircle, Shield, CheckCircle2 } from "lucide-react";
+import { Loader2, LogOut, PlayCircle, Shield, CheckCircle2, Maximize2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { EndInterviewDialog } from "./EndInterviewDialog";
@@ -129,7 +129,32 @@ export function IntroScreen({
             )}
           </div>
 
-          {/* ── Row 3: Consent + Start — full-width card ── */}
+          {/* ── Row 3: Fullscreen mode — what happens when Start is pressed
+              (docs/interview-start-ux-plan.md, step 2). Stated up front, in
+              its own card, because it is the one rule that can END the
+              interview: the 10-second grace and the termination consequence
+              were previously only implied by the consent paragraph. ── */}
+          <div className="rounded-2xl bg-white border border-slate-200 p-6 sm:p-8 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                <Maximize2 className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-bold text-slate-900 text-base mb-1">{t("intro.fullscreen.title")}</h2>
+                <p className="text-sm leading-relaxed text-slate-500">{t("intro.fullscreen.body")}</p>
+                <ul className="mt-4 space-y-2.5">
+                  {[t("intro.fullscreen.point1"), t("intro.fullscreen.point2"), t("intro.fullscreen.point3")].map((point, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-slate-700">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">{i + 1}</span>
+                      <span className="leading-relaxed">{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 4: Consent + Start — full-width card ── */}
           {/* PR-A: recording/monitoring consent — plain-language disclosure
               of exactly what's captured (docs/proctoring-architecture.md).
               Start Session stays disabled until checked. */}
@@ -166,11 +191,11 @@ export function IntroScreen({
             <div className="flex flex-wrap items-center gap-3 mb-6 text-xs text-slate-500">
               <div className={`flex items-center gap-1.5 ${isDeviceReady ? "text-emerald-600" : "text-slate-400"}`}>
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Devices checked
+                {t("intro.readyDevices")}
               </div>
               <div className={`flex items-center gap-1.5 ${hasConsented ? "text-emerald-600" : "text-slate-400"}`}>
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Consent given
+                {t("intro.readyConsent")}
               </div>
             </div>
 
@@ -182,7 +207,7 @@ export function IntroScreen({
                 disabled={!canStart}
                 className="inline-flex w-full sm:w-auto min-w-[220px] items-center justify-center gap-2.5 rounded-xl bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md"
               >
-                {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+                {isStarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Maximize2 className="h-4 w-4" />}
                 {isStarting ? t("intro.starting") : t("intro.startButton")}
               </button>
 

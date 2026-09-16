@@ -384,7 +384,7 @@
         "rule3": "Speak clearly and naturally; the AI will listen and respond.",
         "tipMic": "Make sure your microphone is on and you're in a quiet space.",
         "tipSections": "The interview is split into sections, with a short break in between each one.",
-        "startButton": "Start Session",
+        "startButton": "Start in fullscreen",
         "starting": "Connecting…",
         "endLink": "End before starting",
         "ending": "Ending…",
@@ -395,13 +395,22 @@
         "consent": {
             "title": "Recording & monitoring",
             "body": "To help our hiring team review this interview fairly, we may record video and monitor certain in-app activity while you're in session, including: fullscreen-exit events (if you leave fullscreen) and focus-loss events (if you switch away from this tab or window). This is used only to support our hiring team's review — nothing about you is judged or decided automatically.",
-            "checkboxLabel": "I understand and consent to this recording and monitoring.",
+            "checkboxLabel": "I understand the fullscreen rule and consent to this recording and monitoring.",
             "recordFailed": "Failed to record your consent. Please try again."
         },
         "devices": {
             "error": "We couldn't access your camera or microphone. Check your browser permissions and reload; the interview can still run audio-only.",
             "released": "Devices checked — camera and microphone will be handed to the interview room."
         },
+        "fullscreen": {
+            "title": "The interview runs in fullscreen",
+            "body": "When you press Start, this page switches to fullscreen and stays there until the interview ends. This keeps you focused and gives the hiring team confidence that the session was completed without distractions.",
+            "point1": "If you leave fullscreen (Esc, switching windows or tabs), a 10-second countdown appears — return to fullscreen to continue.",
+            "point2": "If you don't return in time, the interview ends and is recorded as terminated. It can't be resumed.",
+            "point3": "Fullscreen is required to start. Closing the tab also ends the interview."
+        },
+        "readyDevices": "Devices checked",
+        "readyConsent": "Rules acknowledged",
         "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
     }
 }
