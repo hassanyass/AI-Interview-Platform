@@ -110,7 +110,13 @@
                       "subsection":  {
                                        "label":  "Interview part",
                                        "background":  "Background",
-                                       "discussion":  "Discussion"
+                                       "discussion":  "Discussion",
+                                       "partBackground":  "Part 1 of 2 — Background (from your CV)",
+                                       "partDiscussion":  "Part 2 of 2 — Discussion",
+                                       "questionOf":  "Question {{index}} of {{total}}",
+                                       "timeLeft":  "{{time}} left",
+                                       "nowDiscussion":  "Background done — moving to the discussion questions",
+                                       "nowBackground":  "Starting with your background"
                                     },
                       "submitOnceReady":  "Submit once you are ready to finish the technical problem.",
                       "micMuted":  "Microphone muted",

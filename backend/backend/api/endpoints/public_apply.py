@@ -81,7 +81,9 @@ async def register_public_applicant(
     # step to protect independently). Reading job.title/seniority/language
     # is safe throughout since nothing commits before the final commit
     # below.
-    profile = await get_or_create_candidate_profile(db, email=email, full_name=payload.name)
+    # update_name: the name typed on THIS form is what the interviewer
+    # greets the candidate by, even for an email we have seen before.
+    profile = await get_or_create_candidate_profile(db, email=email, full_name=payload.name, update_name=True)
     application = await get_or_create_job_application(
         db,
         job_id=job.id,

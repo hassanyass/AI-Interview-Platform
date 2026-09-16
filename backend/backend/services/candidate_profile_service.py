@@ -28,13 +28,19 @@ async def get_or_create_candidate_profile(
     *,
     email: str,
     full_name: str | None = None,
+    update_name: bool = False,
 ) -> CandidateProfile:
     """Find a CandidateProfile by email, or create one.
 
     Does not commit — see module docstring. `full_name` is only used if a
     new profile is created; an existing profile's name is left as-is (the
     caller doesn't necessarily know the candidate's real name yet — e.g.
-    an admin creating an invitation from just an email address).
+    an admin creating an invitation from just an email address) -- UNLESS
+    `update_name` is set. Public self-registration sets it (2026-09-16):
+    the candidate just typed their own name and the interviewer greets
+    them by it, so a stale name from an earlier registration under the
+    same email must not win (live finding: "Hi khaled" for a candidate
+    who had just registered as Ali).
     """
     normalized_email = email.lower()
 
@@ -43,6 +49,9 @@ async def get_or_create_candidate_profile(
     )
     profile = result.scalar_one_or_none()
     if profile:
+        cleaned = (full_name or "").strip()
+        if update_name and cleaned and cleaned != profile.full_name:
+            profile.full_name = cleaned
         return profile
 
     try:

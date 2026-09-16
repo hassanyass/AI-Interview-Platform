@@ -148,3 +148,23 @@ async def test_cv_endpoints_enforce_ownership_and_session_state(published_public
             assert r.status_code == 409
             # ...and a session already past START is never gated on resume
             assert (await c.post("/api/v1/livekit/token", json={"session_id": b["session"]["id"]}, headers=auth_b)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_public_register_uses_the_name_typed_this_time(published_public_job):
+    """Live finding 2026-09-16: a returning email kept its old stored name
+    ("Hi khaled" for a candidate who registered as Ali). Public
+    registration now refreshes full_name from the form."""
+    job = published_public_job
+    email = f"cv-name-{uuid.uuid4().hex[:8]}@example.dev"
+    job["emails"].append(email)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        first = (await c.post(f"/api/v1/apply/{job['public_token']}/register", json={"name": "Khaled", "email": email})).json()
+        second = (await c.post(f"/api/v1/apply/{job['public_token']}/register", json={"name": "Ali", "email": email})).json()
+        job["sessions"] += [first["session"]["id"], second["session"]["id"]]
+        sess = (await c.get(f"/api/v1/interviews/{second['session']['id']}",
+                            headers={"Authorization": f"Bearer {second['access_token']}"})).json()
+    assert sess["candidate_name"] == "Ali"
+    async with AsyncSessionLocal() as db:
+        name = (await db.execute(select(CandidateProfile.full_name).where(CandidateProfile.email == email))).scalar_one()
+    assert name == "Ali"

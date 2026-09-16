@@ -35,6 +35,18 @@ from agent.interview.background_generator import generate_background_questions
 # Python's default asctime already includes milliseconds when no datefmt is
 # given, so adding %(asctime)s here is sufficient for latency work.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+# Windows consoles default to cp1252; a CV or question with a character
+# outside it (a non-breaking hyphen, an em dash) made the stream handler
+# raise "--- Logging error ---" with a full traceback on every such line,
+# burying real errors (live finding, 2026-09-16). Replace rather than
+# crash the handler; file/JSON sinks are unaffected.
+for _handler in logging.getLogger().handlers:
+    _stream = getattr(_handler, "stream", None)
+    if _stream is not None and hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(errors="replace")
+        except (ValueError, AttributeError):
+            pass
 logger = logging.getLogger("agent")
 
 # Agent lease renewal interval (seconds)

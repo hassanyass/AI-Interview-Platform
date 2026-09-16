@@ -110,7 +110,13 @@
                       "subsection":  {
                                        "label":  "جزء المقابلة",
                                        "background":  "الخلفية",
-                                       "discussion":  "النقاش"
+                                       "discussion":  "النقاش",
+                                       "partBackground":  "الجزء 1 من 2 — الخلفية (من سيرتك الذاتية)",
+                                       "partDiscussion":  "الجزء 2 من 2 — النقاش",
+                                       "questionOf":  "السؤال {{index}} من {{total}}",
+                                       "timeLeft":  "متبقٍ {{time}}",
+                                       "nowDiscussion":  "انتهت الخلفية — ننتقل إلى أسئلة النقاش",
+                                       "nowBackground":  "نبدأ بخلفيتك"
                                     },
                       "submitOnceReady":  "أرسل عندما تكون مستعدًا لإنهاء المشكلة الفنية.",
                       "micMuted":  "الميكروفون مكتوم",
