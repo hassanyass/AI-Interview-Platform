@@ -117,7 +117,16 @@ export function IntroScreen({
             <p className="text-xs text-slate-500 mb-5">
               Confirm your devices are working before you begin.
             </p>
-            <DevicePreview onReady={(hasCamera, hasMic) => setIsDeviceReady(true)} />
+            {/* Camera-stays-on fix (2026-09-16): the preview is unmounted the
+                moment Start is pressed, so its own capture is released BEFORE
+                LiveKit opens the camera for the interview -- never two
+                captures on the same device, and nothing left running if the
+                start fails. */}
+            {isStarting ? (
+              <p className="text-sm text-slate-500">{t("intro.devices.released")}</p>
+            ) : (
+              <DevicePreview onReady={() => setIsDeviceReady(true)} />
+            )}
           </div>
 
           {/* ── Row 3: Consent + Start — full-width card ── */}

@@ -379,6 +379,10 @@
             "checkboxLabel": "I understand and consent to this recording and monitoring.",
             "recordFailed": "Failed to record your consent. Please try again."
         },
+        "devices": {
+            "error": "We couldn't access your camera or microphone. Check your browser permissions and reload; the interview can still run audio-only.",
+            "released": "Devices checked — camera and microphone will be handed to the interview room."
+        },
         "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
     }
 }

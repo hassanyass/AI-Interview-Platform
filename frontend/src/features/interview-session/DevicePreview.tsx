@@ -10,6 +10,13 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
   const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  // Camera-stays-on fix (2026-09-16): the cleanup below used to read the
+  // `stream` STATE, which the mount-time closure captured as null -- so the
+  // preview's tracks were never stopped and the camera/mic kept running
+  // for the life of the page, through and after the interview (a second
+  // capture, independent of LiveKit's, which releaseLocalMedia() could
+  // never reach). A ref sees the real stream at cleanup time.
+  const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [micLevel, setMicLevel] = useState(0);
   const [hasCamera, setHasCamera] = useState(false);
@@ -34,6 +41,7 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
           return;
         }
 
+        streamRef.current = mediaStream;
         setStream(mediaStream);
         // NOTE: do NOT set videoRef.current.srcObject here — the <video>
         // element is not in the DOM yet at this point because it renders
@@ -81,8 +89,10 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
       if (audioContext && audioContext.state !== "closed") {
         audioContext.close().catch(console.error);
       }
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
+      const live = streamRef.current;
+      streamRef.current = null;
+      if (live) {
+        live.getTracks().forEach(track => track.stop());
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
