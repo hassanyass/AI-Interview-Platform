@@ -20,7 +20,6 @@ import { isFullscreenActive, requestFullscreen } from "../../lib/fullscreen";
 import { terminateInterview } from "../../services/api/interviews";
 import { useFaceDetectionMonitor } from "./useFaceDetectionMonitor";
 import { SelfViewVideo } from "./SelfViewVideo";
-import { TimeBonusIndicator } from "./TimeBonusIndicator";
 
 const AgentConnectingScreen = () => {
   const { t } = useTranslation();
@@ -655,11 +654,11 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
                     time_remaining_seconds update (effect above), so the
                     number jumps correctly on its own; this only adds the
                     *moment* so a grant reads as earned, not as a glitch. */}
-                <TimeBonusIndicator
-                  formattedTime={formatTime(displaySeconds)}
-                  grantedSeconds={state?.time_bonus_granted_seconds}
-                  totalSeconds={state?.time_bonus_total_seconds}
-                />
+                {/* Redesign 2026-09-16: the header clock updates silently (it
+                    re-seeds on every time_remaining_seconds update, so a grant
+                    simply shows up in the digits); the "+2:00" moment now lives
+                    beside the discussion time in the verbal stepper. */}
+                {formatTime(displaySeconds)}
               </span>
             )}
             
@@ -761,6 +760,7 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
           )
         ) : (
           <VerbalSectionView
+            formattedTime={formatTime(displaySeconds)}
             question={question}
             isCompleted={isCompleted}
             isAgentSpeaking={isAgentSpeaking}

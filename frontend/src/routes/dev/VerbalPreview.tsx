@@ -13,6 +13,7 @@ export default function VerbalPreview() {
   const [subsection, setSubsection] = useState<"BACKGROUND" | "DISCUSSION" | null>("BACKGROUND");
   const [speaking, setSpeaking] = useState(true);
   const [bgIndex, setBgIndex] = useState(1);
+  const [bonus, setBonus] = useState(0);
   const transcriptRef = useRef<HTMLDivElement>(null!) as React.RefObject<HTMLDivElement>;
 
   const question = subsection === "BACKGROUND"
@@ -28,6 +29,8 @@ export default function VerbalPreview() {
     time_remaining_seconds: 598, verbal_subsection: subsection, background_total: subsection ? 3 : 0,
     background_index: subsection === "BACKGROUND" ? bgIndex : null,
     background_time_remaining_seconds: subsection === "BACKGROUND" ? 298 : null,
+    discussion_index: subsection === "DISCUSSION" ? 1 : null, discussion_total: subsection ? 2 : 0,
+    time_bonus_granted_seconds: bonus ? 120 : null, time_bonus_total_seconds: bonus,
   } as unknown as StateUpdatePayload;
 
   return (
@@ -54,6 +57,7 @@ export default function VerbalPreview() {
         <button className="underline" onClick={() => setSubsection(null)}>plain verbal</button>
         <button className="underline" onClick={() => setBgIndex((i) => (i % 3) + 1)}>next bg question</button>
         <button className="underline" onClick={() => setSpeaking((v) => !v)}>toggle speaking</button>
+        <button className="underline" onClick={() => setBonus((b) => b + 120)}>grant +2:00</button>
       </div>
       <main className="mx-auto grid w-full flex-1 min-h-0 max-w-[1440px] grid-cols-1 gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-6 lg:overflow-hidden">
         <VerbalSectionView
@@ -76,6 +80,7 @@ export default function VerbalPreview() {
           hasNextSection={false}
           visibleTranscripts={[]}
           transcriptRef={transcriptRef}
+          formattedTime={bonus ? `${9 + Math.floor(bonus / 60)}:58` : "09:58"}
         />
       </main>
       <div className="sticky bottom-0 z-20 w-full border-t bg-background/95 px-4 py-3 text-center text-xs text-muted-foreground">(controls bar renders here in the real workspace)</div>

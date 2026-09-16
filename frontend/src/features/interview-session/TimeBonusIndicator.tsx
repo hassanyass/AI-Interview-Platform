@@ -22,7 +22,7 @@ import { useTranslation } from "react-i18next";
  * chip without the rise/pulse.
  */
 
-const MOMENT_MS = 2600;
+const MOMENT_MS = 4000;
 
 function formatBonus(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -34,10 +34,18 @@ export function TimeBonusIndicator({
   formattedTime,
   grantedSeconds,
   totalSeconds,
+  tone = "default",
+  showTally = true,
 }: {
   formattedTime: string;
   grantedSeconds?: number | null;
   totalSeconds?: number;
+  /** "onPrimary": rendered inside the filled (primary) step of the verbal
+   *  stepper, where the maroon chip would vanish -- white-on-red instead. */
+  tone?: "default" | "onPrimary";
+  /** The running "+4:00 added" tally; off inside the stepper (the moment
+   *  is what matters there, the tally would crowd the step). */
+  showTally?: boolean;
 }) {
   const { t } = useTranslation();
   const total = totalSeconds ?? 0;
@@ -62,12 +70,14 @@ export function TimeBonusIndicator({
           key={total}
           role="status"
           aria-live="polite"
-          className="rounded-full border border-secondary/25 bg-secondary/10 px-2 py-0.5 text-xs font-semibold text-secondary motion-safe:[animation:himma-bonus-rise_300ms_ease-out_both]"
+          className={`rounded-full px-2 py-0.5 text-xs font-semibold motion-safe:[animation:himma-bonus-rise_300ms_ease-out_both] ${
+            tone === "onPrimary" ? "bg-white text-primary shadow-sm" : "border border-secondary/25 bg-secondary/10 text-secondary"
+          }`}
         >
           {formatBonus(moment)}
         </span>
       )}
-      {moment == null && total > 0 && (
+      {showTally && moment == null && total > 0 && (
         <span className="text-[11px] font-medium text-secondary/80" title={t("workspace.timeBonusTitle")}>
           {t("workspace.timeBonusAdded", { time: formatBonus(total) })}
         </span>

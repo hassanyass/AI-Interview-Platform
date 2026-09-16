@@ -5,6 +5,7 @@ import { type InterviewerCharacterState } from "./InterviewerCharacter";
 import BlobCharacter from "./BlobCharacter";
 import type { RemoteAudioTrack } from "livekit-client";
 import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../types/realtime";
+import { TimeBonusIndicator } from "./TimeBonusIndicator";
 
 /**
  * VerbalSectionView — the pre-existing shared layout, extracted verbatim
@@ -43,6 +44,9 @@ interface VerbalSectionViewProps {
   hasNextSection: boolean;
   visibleTranscripts: Array<{ id: string; speaker: string; text: string }>;
   transcriptRef: React.RefObject<HTMLDivElement>;
+  /** The workspace's ticking section clock (mm:ss) -- shown in the
+   *  discussion step, with the "+2:00" moment beside it. */
+  formattedTime?: string;
 }
 
 export function VerbalSectionView({
@@ -71,6 +75,7 @@ export function VerbalSectionView({
   hasNextSection,
   visibleTranscripts,
   transcriptRef,
+  formattedTime,
 }: VerbalSectionViewProps) {
   const { t } = useTranslation();
   // Hidden by default: keeps the blob avatar centered in a single full-width
@@ -111,32 +116,64 @@ export function VerbalSectionView({
   const inBackground = subsection === "BACKGROUND";
   const bgTotal = backendState?.background_total ?? 0;
   const bgIndex = backendState?.background_index ?? null;
+  const discTotal = backendState?.discussion_total ?? 0;
+  const discIndex = backendState?.discussion_index ?? null;
+
+  // The background sub-clock arrives once per state update (each turn);
+  // tick it locally in between so it reads like a clock, re-seeding on
+  // every update the agent sends. Same idea as the workspace's section
+  // clock (displaySeconds), which arrives here already ticking.
+  const [bgTick, setBgTick] = useState<number | null>(null);
+  useEffect(() => {
+    setBgTick(bgRemaining ?? null);
+    if (bgRemaining == null) return;
+    const id = window.setInterval(() => setBgTick((v) => (v == null ? v : Math.max(0, v - 1))), 1000);
+    return () => window.clearInterval(id);
+  }, [bgRemaining]);
+
+  // One step, two states -- identical anatomy for Background and Discussion:
+  // number/check, label, question counter, time chip.
+  const step = (opts: { n: number; active: boolean; done: boolean; label: string; counter: string | null; time: React.ReactNode }) => (
+    <li
+      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${opts.active ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/60 text-muted-foreground"}`}
+      aria-current={opts.active ? "step" : undefined}
+    >
+      <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${opts.active ? "bg-white/20" : "bg-background"}`}>
+        {opts.done ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : opts.n}
+      </span>
+      <span className="font-semibold">{opts.label}</span>
+      {opts.counter && <span className="text-xs opacity-90">{opts.counter}</span>}
+      {opts.time && (
+        <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums ${opts.active ? "bg-white/15" : "bg-background/70"}`} dir="ltr">
+          {opts.time}
+        </span>
+      )}
+    </li>
+  );
 
   const stepper = subsection ? (
     <ol className="flex min-w-0 flex-wrap items-center gap-1.5" aria-label={t('workspace.subsection.label')}>
-      <li
-        className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${inBackground ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/60 text-muted-foreground"}`}
-        aria-current={inBackground ? "step" : undefined}
-      >
-        <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${inBackground ? "bg-white/20" : "bg-background"}`}>
-          {inBackground ? "1" : <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
-        </span>
-        <span className="font-semibold">{t('workspace.subsection.background')}</span>
-        {inBackground && bgTotal > 0 && bgIndex != null && (
-          <span className="text-xs opacity-90">{bgIndex}/{bgTotal}</span>
-        )}
-        {inBackground && bgRemaining != null && (
-          <span className="rounded-md bg-white/15 px-1.5 py-0.5 text-xs font-semibold tabular-nums" dir="ltr">{formatClock(bgRemaining)}</span>
-        )}
-      </li>
+      {step({
+        n: 1, active: inBackground, done: !inBackground,
+        label: t('workspace.subsection.background'),
+        counter: inBackground && bgTotal > 0 && bgIndex != null ? `${bgIndex}/${bgTotal}` : null,
+        time: inBackground && bgTick != null ? formatClock(bgTick) : null,
+      })}
       <li aria-hidden="true" className="px-0.5 text-muted-foreground/60">›</li>
-      <li
-        className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${!inBackground ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/60 text-muted-foreground"}`}
-        aria-current={!inBackground ? "step" : undefined}
-      >
-        <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${!inBackground ? "bg-white/20" : "bg-background"}`}>2</span>
-        <span className="font-semibold">{t('workspace.subsection.discussion')}</span>
-      </li>
+      {step({
+        n: 2, active: !inBackground, done: false,
+        label: t('workspace.subsection.discussion'),
+        counter: !inBackground && discTotal > 0 && discIndex != null ? `${discIndex}/${discTotal}` : null,
+        time: !inBackground && formattedTime ? (
+          <TimeBonusIndicator
+            formattedTime={formattedTime}
+            grantedSeconds={backendState?.time_bonus_granted_seconds}
+            totalSeconds={backendState?.time_bonus_total_seconds}
+            tone="onPrimary"
+            showTally={false}
+          />
+        ) : null,
+      })}
     </ol>
   ) : (
     <div className="flex min-w-0 items-center gap-2">

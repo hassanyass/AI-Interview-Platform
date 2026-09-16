@@ -87,6 +87,9 @@ export interface StateUpdatePayload {
   background_total?: number;
   background_index?: number | null;
   background_time_remaining_seconds?: number | null;
+  /** Position within the discussion (HR) questions, 1-based; null outside it. */
+  discussion_index?: number | null;
+  discussion_total?: number;
 }
 
 export interface RealtimeMessage<T> {
