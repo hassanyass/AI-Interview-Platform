@@ -39,6 +39,87 @@ const BACKGROUND_COUNT_MAX = 6; // keep in step with backend BACKGROUND_QUESTION
 const BACKGROUND_COUNT_DEFAULT = 3;
 const BACKGROUND_MINUTES_DEFAULT = 5;
 
+// Section setup panel (docs/interview-start-ux-plan.md, step 1): every
+// section type gets the same anatomy -- a summary strip, then titled rows
+// (label + hint on the left, controls on the right): Timing, Background
+// conversation (VERBAL only), Questions. One input width, one status
+// style, one place to read the whole section.
+const SETUP_INPUT = "w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60";
+
+function SetupRow({ icon, title, hint, status, children }: {
+  icon: React.ReactNode; title: string; hint?: string;
+  status?: "idle" | "saving" | "saved" | "error" | undefined; children: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="grid gap-3 rounded-lg border border-border bg-background p-4 sm:grid-cols-[220px_minmax(0,1fr)] sm:gap-6">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">{icon}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{title}</p>
+          {hint && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
+        </div>
+      </div>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {children}
+          {status === "saving" && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />{t('sectionsEditor.savingBudget')}</span>
+          )}
+          {status === "saved" && <span className="text-xs font-medium text-green-600">{t('sectionsEditor.timeBudgetSaved')}</span>}
+          {status === "error" && <span className="text-xs font-medium text-destructive">{t('sectionsEditor.saveFailed')}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One line that reads the whole section, and whether it can publish. */
+function useSectionSummary(section: NonNullable<JobDetail["definition"]>["sections"][number]) {
+  const { t } = useTranslation();
+  const cfg = section.config ?? {};
+  const total: number | null = cfg.time_budget_minutes ?? null;
+  const questions = section.questions?.length ?? 0;
+  const typeLabel = t(`sectionsEditor.${section.section_type.toLowerCase()}`);
+  const bgOn = section.section_type === "VERBAL" && cfg.include_background === true;
+  const bgMin = cfg.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT;
+  const bgCount = cfg.background_question_count ?? BACKGROUND_COUNT_DEFAULT;
+  const problems: string[] = [];
+  if (total == null) problems.push(t('sectionsEditor.summaryNoBudget'));
+  if (questions === 0) problems.push(t('sectionsEditor.summaryNoQuestions'));
+  const questionsLabel = section.section_type === "VERBAL"
+    ? t('sectionsEditor.summaryDiscussionQuestions', { count: questions })
+    : t('sectionsEditor.summaryQuestions', { count: questions });
+  // The card header already names the type; the line reads the numbers.
+  let text: string;
+  if (total == null) {
+    text = t('sectionsEditor.summaryNoBudgetLine', { questions: questionsLabel });
+  } else if (bgOn) {
+    text = t('sectionsEditor.summaryWithBackground', { total, background: bgMin, bgCount, discussion: Math.max(0, total - bgMin), questions: questionsLabel });
+  } else {
+    text = t('sectionsEditor.summaryPlain', { total, questions: questionsLabel });
+  }
+  return { text, ok: problems.length === 0, problems, typeLabel };
+}
+
+function SectionSummaryLine({ section }: { section: NonNullable<JobDetail["definition"]>["sections"][number] }) {
+  const { text, ok } = useSectionSummary(section);
+  return <p className={`text-xs ${ok ? "text-muted-foreground" : "text-amber-700"}`}>{text}</p>;
+}
+
+function SectionSummaryStrip({ section }: { section: NonNullable<JobDetail["definition"]>["sections"][number] }) {
+  const { t } = useTranslation();
+  const { text, ok, problems } = useSectionSummary(section);
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 rounded-lg px-4 py-2.5 text-sm ${ok ? "bg-muted/50 text-foreground" : "bg-amber-50 text-amber-900 border border-amber-200"}`}>
+      <span className="font-medium">{text}</span>
+      <span className={`text-xs ${ok ? "text-muted-foreground" : "font-medium"}`}>
+        {ok ? t('sectionsEditor.summaryReady') : problems.join(" · ")}
+      </span>
+    </div>
+  );
+}
+
 interface BackgroundSettingsProps {
   section: NonNullable<JobDetail["definition"]>["sections"][number];
   disabled: boolean;
@@ -111,79 +192,44 @@ function BackgroundSettings({ section, disabled, onRefresh }: BackgroundSettings
     if (parsed !== config.background_time_budget_minutes) void save({ background_time_budget_minutes: parsed });
   };
 
-  const bgMinutes = config.background_time_budget_minutes ?? BACKGROUND_MINUTES_DEFAULT;
-  const inputClass = "w-20 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60";
 
   return (
-    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-3">
-      <div className="flex items-start gap-3">
-        <FileText className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
-        <div className="flex-1 min-w-0 space-y-1">
-          <label className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
-            <input
-              type="checkbox"
-              checked={enabled}
-              disabled={disabled || status === "saving"}
-              onChange={(e) => handleToggle(e.target.checked)}
-              className="h-4 w-4 rounded border-input accent-primary"
-            />
-            {t("sectionsEditor.backgroundToggle")}
-          </label>
-          <p className="text-xs text-muted-foreground">{t("sectionsEditor.backgroundHelp")}</p>
-        </div>
-        {status === "saving" && (
-          <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {t("sectionsEditor.savingBudget")}
-          </span>
-        )}
-        {status === "saved" && <span className="text-xs text-green-600 font-medium shrink-0">{t("sectionsEditor.timeBudgetSaved")}</span>}
-        {status === "error" && <span className="text-xs text-destructive font-medium shrink-0">{t("sectionsEditor.backgroundSaveFailed")}</span>}
-      </div>
-
+    <SetupRow
+      icon={<FileText className="h-4 w-4" />}
+      title={t("sectionsEditor.backgroundTitle")}
+      hint={t("sectionsEditor.backgroundHelp")}
+      status={status}
+    >
+      <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-checked={enabled}
+          checked={enabled}
+          disabled={disabled || status === "saving"}
+          onChange={(e) => handleToggle(e.target.checked)}
+          className="h-4 w-4 rounded border-input accent-primary"
+        />
+        {enabled ? t("sectionsEditor.backgroundOn") : t("sectionsEditor.backgroundOff")}
+      </label>
       {enabled && (
-        <div className="ps-7 space-y-2">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <span className="whitespace-nowrap">{t("sectionsEditor.backgroundCount")}</span>
-              <input
-                type="number"
-                min={BACKGROUND_COUNT_MIN}
-                max={BACKGROUND_COUNT_MAX}
-                value={count}
-                disabled={disabled || status === "saving"}
-                onChange={(e) => setCount(e.target.value)}
-                onBlur={commitCount}
-                className={inputClass}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm text-foreground">
-              <span className="whitespace-nowrap">{t("sectionsEditor.backgroundMinutes")}</span>
-              <input
-                type="number"
-                min={1}
-                max={maxMinutes ?? undefined}
-                value={minutes}
-                disabled={disabled || status === "saving"}
-                onChange={(e) => setMinutes(e.target.value)}
-                onBlur={commitMinutes}
-                className={inputClass}
-              />
-            </label>
-          </div>
-          {localError && <p className="text-xs text-destructive">{localError}</p>}
-          <p className="text-xs text-muted-foreground">
-            {total != null
-              ? t("sectionsEditor.backgroundSummary", {
-                  total,
-                  background: bgMinutes,
-                  discussion: Math.max(0, total - bgMinutes),
-                })
-              : t("sectionsEditor.backgroundSummaryNoBudget")}
-          </p>
-        </div>
+        <>
+          <label className="inline-flex items-center gap-2 text-sm text-foreground">
+            <span className="whitespace-nowrap">{t("sectionsEditor.backgroundCount")}</span>
+            <input type="number" min={BACKGROUND_COUNT_MIN} max={BACKGROUND_COUNT_MAX} value={count}
+              disabled={disabled || status === "saving"} onChange={(e) => setCount(e.target.value)} onBlur={commitCount} className={SETUP_INPUT} />
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm text-foreground">
+            <span className="whitespace-nowrap">{t("sectionsEditor.backgroundMinutes")}</span>
+            <input type="number" min={1} max={maxMinutes ?? undefined} value={minutes}
+              disabled={disabled || status === "saving"} onChange={(e) => setMinutes(e.target.value)} onBlur={commitMinutes} className={SETUP_INPUT} />
+            <span className="text-xs text-muted-foreground">{t("sectionsEditor.min")}</span>
+          </label>
+          {localError && <p className="basis-full text-xs text-destructive">{localError}</p>}
+          {total == null && <p className="basis-full text-xs text-muted-foreground">{t("sectionsEditor.backgroundSummaryNoBudget")}</p>}
+        </>
       )}
-    </div>
+    </SetupRow>
   );
 }
 
@@ -453,9 +499,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                       </div>
                       <div>
                         <h3 className="font-semibold text-foreground">{t(`sectionsEditor.${typeConfig.value.toLowerCase()}`)}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          {t('sectionsEditor.order')}: {section.order_index} &middot; {questionCount} {t('sectionsEditor.questions')}
-                        </p>
+                        {!isExpanded && <SectionSummaryLine section={section} />}
                       </div>
                       {isExpanded ? (
                         <ChevronUp className="h-4 w-4 text-muted-foreground ms-2" />
@@ -500,14 +544,17 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                   </div>
 
                   {isExpanded && (
-                    <div className="pt-4 mt-4 border-t border-border space-y-5">
-                      {/* Time budget input — DRAFT only, saved on blur */}
-                      {isDraft && (
-                        <div className="flex items-center gap-3">
-                          <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <label htmlFor={`time-budget-${section.id}`} className="text-sm font-medium text-foreground whitespace-nowrap">
-                            {t('sectionsEditor.timeBudget')}
-                          </label>
+                    <div className="mt-4 space-y-3 border-t border-border pt-4">
+                      <SectionSummaryStrip section={section} />
+
+                      <SetupRow
+                        icon={<Clock className="h-4 w-4" />}
+                        title={t('sectionsEditor.timingTitle')}
+                        hint={t('sectionsEditor.timingHint')}
+                        status={(timeBudgets ?? {})[section.id]?.status}
+                      >
+                        <label htmlFor={`time-budget-${section.id}`} className="inline-flex items-center gap-2 text-sm text-foreground">
+                          <span className="whitespace-nowrap">{t('sectionsEditor.timeBudget')}</span>
                           <input
                             id={`time-budget-${section.id}`}
                             type="number"
@@ -517,23 +564,12 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                             value={(timeBudgets ?? {})[section.id]?.draft ?? ""}
                             onChange={(e) => handleTimeBudgetChange(section.id, e.target.value)}
                             onBlur={() => handleTimeBudgetSave(section.id)}
-                            disabled={loadingAction !== null || (timeBudgets ?? {})[section.id]?.status === "saving"}
-                            className="w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60"
+                            disabled={!isDraft || loadingAction !== null || (timeBudgets ?? {})[section.id]?.status === "saving"}
+                            className={SETUP_INPUT}
                           />
-                          {(timeBudgets ?? {})[section.id]?.status === "saving" && (
-                            <span className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              {t('sectionsEditor.savingBudget')}
-                            </span>
-                          )}
-                          {(timeBudgets ?? {})[section.id]?.status === "saved" && (
-                            <span className="text-xs text-green-600 font-medium">{t('sectionsEditor.timeBudgetSaved')}</span>
-                          )}
-                          {(timeBudgets ?? {})[section.id]?.status === "error" && (
-                            <span className="text-xs text-destructive font-medium">{t('sectionsEditor.timeBudgetFailed')}</span>
-                          )}
-                        </div>
-                      )}
+                          <span className="text-xs text-muted-foreground">{t('sectionsEditor.min')}</span>
+                        </label>
+                      </SetupRow>
 
                       {section.section_type === "VERBAL" && (
                         <BackgroundSettings
@@ -543,13 +579,24 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                         />
                       )}
 
-                      <QuestionEditor
-                        sectionId={section.id}
-                        sectionType={section.section_type}
-                        questions={section.questions ?? []}
-                        onRefresh={onRefresh}
-                        status={status}
-                      />
+                      <div className="rounded-lg border border-border bg-background p-4">
+                        <div className="flex items-start gap-3">
+                          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><Icon className="h-4 w-4" /></span>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground">
+                              {t(`sectionsEditor.questionsTitle.${section.section_type}`)} <span className="font-normal text-muted-foreground">({questionCount})</span>
+                            </p>
+                            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{t(`sectionsEditor.questionsHint.${section.section_type}`)}</p>
+                          </div>
+                        </div>
+                        <QuestionEditor
+                          sectionId={section.id}
+                          sectionType={section.section_type}
+                          questions={section.questions ?? []}
+                          onRefresh={onRefresh}
+                          status={status}
+                        />
+                      </div>
                     </div>
                   )}
                 </CardContent>
