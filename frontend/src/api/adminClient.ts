@@ -130,6 +130,8 @@ export interface QuestionRecordDetail {
   hints_used: number;
   followups_used: number;
   clarifications_used: number;
+  /** "BACKGROUND" for a CV-grounded opening question, absent otherwise. */
+  subsection?: string | null;
 }
 
 export interface EvaluationDetail {

@@ -418,6 +418,10 @@ class QuestionRecordDetail(BaseModel):
     hints_used: int = 0
     followups_used: int = 0
     clarifications_used: int = 0
+    # Verbal Background subsection: "BACKGROUND" for a CV-grounded opening
+    # question (its title/text/competency come from the record itself --
+    # generated per session, no InterviewQuestion row), None otherwise.
+    subsection: Optional[str] = None
 
 
 class IntegrityEventResponse(BaseModel):

@@ -1178,16 +1178,22 @@ async def get_candidate_result(
     question_records = []
     for r in raw_question_records:
         q = questions_by_id.get(r.get("question_id"))
+        # Verbal Background subsection: a generated background question has
+        # no InterviewQuestion row -- the record carries its own text
+        # (question_title/question_text/competency/subsection, written by the
+        # agent's _advance_core_question). Used as the fallback whenever the
+        # id does not resolve, so a legacy record stays exactly as before.
         question_records.append(QuestionRecordDetail(
             question_id=r.get("question_id", ""),
-            title=q.title if q else None,
-            text=q.text if q else None,
-            competency=q.competency if q else None,
+            title=q.title if q else r.get("question_title"),
+            text=q.text if q else r.get("question_text"),
+            competency=q.competency if q else r.get("competency"),
             order_index=q.order_index if q else None,
             outcome=r.get("outcome", "UNKNOWN"),
             hints_used=r.get("hints_used", 0),
             followups_used=r.get("followups_used", 0),
             clarifications_used=r.get("clarifications_used", 0),
+            subsection=r.get("subsection"),
         ))
 
     return EvaluationDetailResponse(
@@ -1335,6 +1341,24 @@ async def regenerate_evaluation(
         for c in resolved_criteria
     ]
 
+    # Verbal Background subsection (plan §2 "Evaluation"): the same profile
+    # dict /load hands the agent, so both evaluators judge cv_alignment
+    # against identical evidence.
+    profile = session.profile
+    candidate_profile = {
+        "full_name": profile.full_name,
+        "email": profile.email,
+        "education": profile.education,
+        "years_of_experience": profile.years_of_experience,
+        "skills": profile.skills,
+        "programming_languages": profile.programming_languages,
+        "frameworks": profile.frameworks,
+        "projects": profile.projects,
+        "professional_title": profile.professional_title,
+        "recommended_level": profile.recommended_level,
+        "confirmed_level": profile.confirmed_level,
+    } if profile else {}
+
     try:
         generated = await generate_evaluation(
             role=session.role or "",
@@ -1344,6 +1368,7 @@ async def regenerate_evaluation(
             technical_submission=technical_submission,
             question_eval_criteria=question_eval_criteria,
             criteria=criteria,
+            candidate_profile=candidate_profile,
         )
     except Exception:
         logger.exception("Failed to regenerate evaluation for session %s", session_id)

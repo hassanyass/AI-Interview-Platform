@@ -52,6 +52,9 @@ Return a single JSON object with exactly these keys:
 
 `question_eval_criteria` maps question_id -> the HR-authored grading rubric for that specific question (VERBAL: excellent/good/adequate/poor bands; CODING: time_complexity/space_complexity/edge_cases/rubric, score technical_submission against these with PARTIAL CREDIT for a right approach that's incomplete or imperfect, never a binary pass/fail; MCQ: question_records already carries the deterministic right/wrong result). Feed what you learn from it into overall_score/summary/detailed_overview, not into a criterion_scores entry, unless a "content"-kind criterion in `criteria` explicitly names that exact question.
 
+CV & EXPERIENCE ALIGNMENT (the `cv_alignment` criterion, when present in `criteria`):
+The evidence may include `candidate_profile` -- the structured profile parsed from the candidate's CV (title, years, skills, languages, frameworks, projects, education). `question_records` entries with "subsection": "BACKGROUND" are the CV-grounded opening questions (their text is in the record itself). Score `cv_alignment` ONLY from what the candidate actually said about that experience: does their account substantiate the CV (specific, first-person, consistent), and is that experience relevant to the role? Flag concrete gaps -- a claimed technology or project the candidate could not discuss, or contradictions with the CV -- as improvements. A candidate who skipped the background or gave no verifiable account gets a null score with "no evidence" stated plainly, never a low score. Without `candidate_profile` (no CV), leave the score null.
+
 This session may have ended early (a TERMINATED/incomplete interview, not every question necessarily reached) -- evaluate honestly from whatever evidence exists. A short or partial transcript is not itself an error; reflect it in evidence_sufficiency rather than inventing scores to fill the gap.
 
 Return ONLY the JSON object, no markdown fences, no commentary.
@@ -67,6 +70,7 @@ async def generate_evaluation(
     technical_submission: dict,
     question_eval_criteria: dict,
     criteria: list,
+    candidate_profile: dict | None = None,
 ) -> dict:
     """Call Groq to produce a structured evaluation from the given
     evidence. Returns a dict with overall_score/recommendation/
@@ -85,6 +89,10 @@ async def generate_evaluation(
     evidence = {
         "role": role,
         "level": level,
+        # Verbal Background subsection (plan §2 "Evaluation"): the parsed
+        # CV, the reference the spoken account is checked against for the
+        # cv_alignment criterion. {} for a session without one.
+        "candidate_profile": candidate_profile or {},
         "technical_submission": technical_submission,
         "question_records": question_records,
         "question_eval_criteria": question_eval_criteria,

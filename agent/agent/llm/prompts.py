@@ -538,6 +538,16 @@ a job with nothing configured), produce an empty criterion_scores list -- still 
 evidence_sufficiency, summary, and detailed_overview from the transcript/question_records/technical_submission as
 before; an empty criterion_scores list is not an error.
 
+CV & EXPERIENCE ALIGNMENT (the `cv_alignment` criterion, when present in `criteria`):
+The evidence may include `candidate_profile` -- the structured profile parsed from the candidate's CV (title, years,
+skills, languages, frameworks, projects, education). `question_records` entries with "subsection": "BACKGROUND" are
+the CV-grounded opening questions (their text is carried in the record itself). Score `cv_alignment` ONLY from what
+the candidate actually said about that experience: does their account substantiate the CV (specific, first-person,
+consistent), and is that experience relevant to the role? Flag concrete gaps -- a claimed technology or project the
+candidate could not discuss, or contradictions with the CV -- as improvements. A candidate who skipped the background
+or gave no verifiable account gets a null score with "no evidence" stated plainly, never a low score. Without
+`candidate_profile` (no CV), leave the score null.
+
 GRADED, PARTIAL-CREDIT-AWARE SCORING (per-question rubric):
 The evidence includes `question_eval_criteria`, a map of question_id -> the HR-authored grading rubric for that
 specific question, alongside `question_records` (which question was answered, in what outcome) and
