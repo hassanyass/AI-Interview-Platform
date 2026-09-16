@@ -63,6 +63,22 @@
             "requiredBeforeStart":  "Your CV is required before the interview can start."
            },
     "workspace":  {
+                      "start":  {
+                                "header":  "Setting up",
+                                "title":  "Preparing your interview",
+                                "subtitle":  "This usually takes about 15 seconds. Your microphone stays muted until you unmute it.",
+                                "connecting":  "Connecting to the interview room",
+                                "joining":  "Your interviewer is joining",
+                                "preparing":  "Preparing your questions",
+                                "preparingCv":  "Reading your CV and preparing your questions",
+                                "starting":  "Starting",
+                                "tip1":  "You can re-read any question in the transcript during the interview.",
+                                "tip2":  "Answer naturally — the interviewer waits for you to finish before responding.",
+                                "tip3":  "You can skip a question if you prefer; it will be marked as skipped.",
+                                "slow":  "Taking a little longer than usual — still working on it.",
+                                "stuck":  "This is taking too long. Reloading the page will reconnect you without losing your place.",
+                                "reload":  "Reload"
+                             },
                       "session":  "Interview session",
                       "reviewing":  "Reviewing your answers...",
                       "finalizedTurns":  "Finalized conversation turns",

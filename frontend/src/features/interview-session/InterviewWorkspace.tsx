@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocalParticipant, useRoomContext, useTracks } from "@livekit/components-react";
+import { useLocalParticipant, useRoomContext, useTracks, useConnectionState, useRemoteParticipants } from "@livekit/components-react";
+import { ConnectionState } from "livekit-client";
 import { Track, type RemoteAudioTrack } from "livekit-client";
-import { Loader2, Timer, LogOut, Video, VideoOff, Maximize2, Minimize2 } from "lucide-react";
+import { Loader2, Timer, LogOut, Video, VideoOff, Maximize2, Minimize2, CheckCircle2, RefreshCw } from "lucide-react";
 import { InterviewRealtimeService } from "../../services/livekit/InterviewRealtimeService";
 import { useInterviewStore } from "../../stores/InterviewContext";
 import type { InterviewSessionResponse } from "../../types/api";
@@ -21,20 +22,45 @@ import { terminateInterview } from "../../services/api/interviews";
 import { useFaceDetectionMonitor } from "./useFaceDetectionMonitor";
 import { SelfViewVideo } from "./SelfViewVideo";
 
-const AgentConnectingScreen = () => {
-  const { t } = useTranslation();
-  const [progress, setProgress] = useState(15);
-  const [status, setStatus] = useState(t('workspace.connecting'));
+/**
+ * Start sequence (docs/interview-start-ux-plan.md, step 3). The previous
+ * loader advanced on fixed timers (0.8 s / 2.2 s) that had nothing to do
+ * with what was happening, then sat at 80 % for the 10-15 s the agent
+ * actually needs (room connect, /load, CV-grounded question generation,
+ * the legacy TECH-GEN call, the greeting). This one is staged on real
+ * signals -- room connection state, the agent participant appearing, the
+ * first state_update -- with copy that says what is being prepared and
+ * that waiting is expected, a rotating reassurance line, a "taking longer"
+ * note after 20 s and a reload action after 60 s.
+ */
+const START_STAGES = ["connecting", "joining", "preparing", "starting"] as const;
+type StartStage = typeof START_STAGES[number];
+const STAGE_PROGRESS: Record<StartStage, number> = { connecting: 15, joining: 40, preparing: 70, starting: 100 };
 
-  useEffect(() => {
-    const timer1 = setTimeout(() => { setProgress(45); setStatus(t('workspace.initializing')); }, 800);
-    const timer2 = setTimeout(() => { setProgress(80); setStatus(t('workspace.preparing')); }, 2200);
-    return () => { clearTimeout(timer1); clearTimeout(timer2); };
-  }, []);
+export function useStartStage(hasState: boolean): StartStage {
+  const connectionState = useConnectionState();
+  const remotes = useRemoteParticipants();
+  // The agent joins as a remote participant; the candidate is the only
+  // local one. Any remote participant means the interviewer is in the room.
+  const agentPresent = remotes.length > 0;
+  if (hasState) return "starting";
+  if (connectionState !== ConnectionState.Connected) return "connecting";
+  if (!agentPresent) return "joining";
+  return "preparing";
+}
+
+export function StartSequenceView({ stage, hasCv, elapsedSeconds }: { stage: StartStage; hasCv: boolean; elapsedSeconds: number }) {
+  const { t } = useTranslation();
+  const tips = [t('workspace.start.tip1'), t('workspace.start.tip2'), t('workspace.start.tip3')];
+  const tip = tips[Math.floor(elapsedSeconds / 4) % tips.length];
+  const slow = elapsedSeconds >= 20;
+  const stuck = elapsedSeconds >= 60;
+  const label = stage === "preparing"
+    ? (hasCv ? t('workspace.start.preparingCv') : t('workspace.start.preparing'))
+    : t(`workspace.start.${stage}`);
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-background text-foreground">
-      {/* Skeleton Header matching the actual workspace header */}
       <header className="border-b bg-card">
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -43,28 +69,59 @@ const AgentConnectingScreen = () => {
             </div>
             <div className="min-w-0 ms-4 ps-4 border-s">
               <p className="truncate text-sm font-semibold text-foreground">{t('workspace.session')}</p>
-              <p className="text-xs text-muted-foreground">{t('workspace.connectingShort')}</p>
+              <p className="text-xs text-muted-foreground">{t('workspace.start.header')}</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Centered Progress Card */}
       <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-1">{t('workspace.starting')}</h2>
-          <p className="text-sm text-muted-foreground mb-6">{status}</p>
+        <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-sm sm:p-8" role="status" aria-live="polite">
+          <h2 className="text-lg font-semibold text-foreground">{t('workspace.start.title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('workspace.start.subtitle')}</p>
 
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
-              style={{ width: `${progress}%` }}
-            />
+          <ol className="mt-6 space-y-3">
+            {START_STAGES.map((name, i) => {
+              const current = START_STAGES.indexOf(stage);
+              const done = i < current;
+              const active = i === current;
+              const text = name === "preparing" ? (hasCv ? t('workspace.start.preparingCv') : t('workspace.start.preparing')) : t(`workspace.start.${name}`);
+              return (
+                <li key={name} className={`flex items-center gap-3 text-sm ${active ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${done ? "bg-success/15 text-success" : active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground/60"}`}>
+                    {done ? <CheckCircle2 className="h-4 w-4" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px] font-bold">{i + 1}</span>}
+                  </span>
+                  <span>{text}</span>
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all duration-700 ease-out" style={{ width: `${STAGE_PROGRESS[stage]}%` }} />
           </div>
+          <p className="sr-only">{label}</p>
+
+          <p className="mt-4 text-xs text-muted-foreground">{stuck ? t('workspace.start.stuck') : slow ? t('workspace.start.slow') : tip}</p>
+          {stuck && (
+            <button type="button" onClick={() => window.location.reload()} className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">
+              <RefreshCw className="h-3.5 w-3.5" /> {t('workspace.start.reload')}
+            </button>
+          )}
         </div>
       </main>
     </div>
   );
+}
+
+const AgentConnectingScreen = ({ hasCv }: { hasCv: boolean }) => {
+  const stage = useStartStage(false);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setElapsed((v) => v + 1), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return <StartSequenceView stage={stage} hasCv={hasCv} elapsedSeconds={elapsed} />;
 };
 
 const ReportLoadingState = () => {
@@ -604,7 +661,7 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
   }
 
   if (!state?.phase) {
-    return <AgentConnectingScreen />;
+    return <AgentConnectingScreen hasCv={Boolean(session.resume_id)} />;
   }
 
   return (

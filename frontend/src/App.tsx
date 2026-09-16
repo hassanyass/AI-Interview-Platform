@@ -8,6 +8,7 @@ import InvitePage from './pages/InvitePage'
 import ApplyPage from './pages/ApplyPage'
 import VerbalPreview from './routes/dev/VerbalPreview'
 import SectionsPreview from './routes/dev/SectionsPreview'
+import StartPreview from './routes/dev/StartPreview'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
 import JobCreatePage from './routes/admin/JobCreatePage'
@@ -72,6 +73,7 @@ function App() {
               {/* DEV-only visual harness for the verbal stage (routes/dev/VerbalPreview.tsx). */}
               {import.meta.env.DEV && <Route path="/dev/verbal-preview" element={<VerbalPreview />} />}
               {import.meta.env.DEV && <Route path="/dev/sections-preview" element={<SectionsPreview />} />}
+              {import.meta.env.DEV && <Route path="/dev/start-preview" element={<StartPreview />} />}
 
               {/* Catch all */}
               <Route path="*" element={<Navigate to="/admin" replace />} />
