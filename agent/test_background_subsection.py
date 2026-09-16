@@ -341,3 +341,85 @@ def test_kickoff_hop_starts_subclock_and_asks_first_background_question():
         assert c.context.background_deadline_epoch is not None
         assert c.generate_ui_state()["verbal_subsection"] == "BACKGROUND"
     run(scenario())
+
+
+# ── skip, from the greeting to the end ───────────────────────────────────────
+
+def _first_turn_llm(c):
+    """Model that ASKs (paraphrasing) on any core first turn, greets in BRIEFING."""
+    def generate(*_a, **_k):
+        if c.context.current_phase == InterviewPhase.BRIEFING:
+            return StructuredAction(action=ActionEnum.ASK, response="Hi, ready?", reason="")
+        if c.context.current_phase == InterviewPhase.CLOSING:
+            return StructuredAction(action=ActionEnum.END, response="Thanks, goodbye.", reason="")
+        return StructuredAction(action=ActionEnum.ASK, response="(paraphrase)", reason="")
+    c._generate_next_action = AsyncMock(side_effect=generate)
+
+
+def test_skip_on_the_greeting_hops_into_the_first_background_question():
+    async def scenario():
+        c = _controller(n_bg=2, n_hr=1, phase=InterviewPhase.CREATED)
+        _first_turn_llm(c)
+        c.start_interview()
+        await c.process_candidate_input(None)  # greeting
+        assert c.context.current_phase == InterviewPhase.BRIEFING
+
+        skipped = await c.process_ui_command("SKIP_QUESTION")
+        assert skipped.action == ActionEnum.TRANSITION
+        assert skipped.response == EN["skip_intro"]
+        assert c.context.current_phase == InterviewPhase.BACKGROUND
+        assert c.context.question_records == []  # nothing was skipped, only the intro
+
+        # the voice adapter chains a turn after a successful skip
+        chained = await c.process_candidate_input("")
+        assert chained.response.endswith("Background question 1?")
+        assert c.context.sections["VERBAL"].current_question_asked is True
+        assert c.context.background_deadline_epoch is not None
+        assert c.generate_ui_state()["verbal_subsection"] == "BACKGROUND"
+    run(scenario())
+
+
+def test_skip_all_the_way_from_greeting_to_completed():
+    """Skip on the greeting, skip every background question (bridge on the
+    boundary), skip the only discussion question -> CLOSING -> COMPLETED.
+    No waiting room with a single section."""
+    async def scenario():
+        c = _controller(n_bg=2, n_hr=1, phase=InterviewPhase.CREATED)
+        _first_turn_llm(c)
+        c.start_interview()
+        await c.process_candidate_input(None)
+        await c.process_ui_command("SKIP_QUESTION")           # intro
+        await c.process_candidate_input("")                    # chained: bg-1 asked
+
+        s1 = await c.process_ui_command("SKIP_QUESTION")       # bg-1 skipped
+        assert s1.response == EN["skip_question"]
+        t2 = await c.process_candidate_input("")               # chained: bg-2 asked
+        assert t2.response.endswith("Background question 2?")
+
+        await c.process_ui_command("SKIP_QUESTION")            # bg-2 skipped -> boundary
+        t3 = await c.process_candidate_input("")               # chained: bridge + HR-1
+        assert t3.response == f"{EN['background_to_discussion']} HR question 1?"
+        assert c.generate_ui_state()["verbal_subsection"] == "DISCUSSION"
+
+        last = await c.process_ui_command("SKIP_QUESTION")     # HR-1 skipped -> section done
+        assert last.action == ActionEnum.TRANSITION
+        assert c.context.current_phase == InterviewPhase.CLOSING
+        end = await c.process_candidate_input("")              # chained: closing turn
+        assert end.action == ActionEnum.END
+        assert c.context.current_phase == InterviewPhase.COMPLETED
+        assert [(r.question_id, r.outcome) for r in c.context.question_records] == [
+            ("bg-1", QuestionOutcome.SKIPPED), ("bg-2", QuestionOutcome.SKIPPED), ("hr-1", QuestionOutcome.SKIPPED)]
+    run(scenario())
+
+
+def test_skip_on_the_greeting_of_a_legacy_session_is_unchanged():
+    """No HR content -> the old free-form flow keeps its own skip semantics."""
+    async def scenario():
+        c = _controller(n_bg=0, n_hr=0, phase=InterviewPhase.CREATED)
+        c.context.sections = {}
+        _first_turn_llm(c)
+        c.start_interview()
+        await c.process_candidate_input(None)
+        out = await c.process_ui_command("SKIP_QUESTION")
+        assert c.context.current_phase != InterviewPhase.BACKGROUND or out.response != EN["skip_intro"]
+    run(scenario())

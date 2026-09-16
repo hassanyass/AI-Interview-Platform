@@ -39,6 +39,8 @@ SYSTEM_MESSAGES = {
         # A3: spoken before the verbatim HR question when the model paraphrased
         # it on the first turn. Neutral on purpose -- valid for any position.
         "core_question_lead_in": "Here's your question.",
+        # Skip pressed on the greeting: hop straight into the questions.
+        "skip_intro": "Sure, let's get straight to the questions.",
         # Verbal Background subsection (docs/verbal-background-subsection-plan.md
         # §2 "Live flow"): spoken by the CONTROLLER at the Background ->
         # Discussion boundary, however it is crossed; the first discussion
@@ -62,6 +64,7 @@ SYSTEM_MESSAGES = {
         "core_followups_exhausted_next": "شكراً لك. خلّنا ننتقل للسؤال التالي.",
         "core_followups_exhausted_last": "شكراً لك، هذا يكفي لهذا السؤال.",
         "core_question_lead_in": "إليك سؤالك.",
+        "skip_intro": "تمام، خلّنا ننتقل مباشرة للأسئلة.",
         "background_to_discussion": "شكراً لك، صارت عندي صورة واضحة عن خلفيتك. خلّنا ننتقل الآن لأسئلة النقاش.",
         "background_skipped": "تمام، بنتخطى باقي أسئلة الخلفية وننتقل مباشرة لأسئلة النقاش.",
         "background_time_up": "شكراً لك، صارت عندي صورة واضحة. خلّنا ننتقل لأسئلة النقاش."

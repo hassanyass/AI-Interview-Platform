@@ -1471,6 +1471,34 @@ class InterviewController:
         if control in (CandidateControlAction.SKIP_QUESTION, CandidateControlAction.SKIP_SECTION):
             core_section = self._active_core_section()
 
+            # Skip the intro (live finding 2026-09-16): a candidate who presses
+            # Skip on the greeting -- before a core question is active --
+            # used to get the "let's stick with it" rejection and had no way
+            # forward except answering the greeting. For a B2B session with
+            # content waiting, SKIP_QUESTION here means "get me to the
+            # questions": hop BRIEFING -> WELCOME -> BACKGROUND (the same
+            # handshake the reply turn performs) and acknowledge. The voice
+            # path chains a turn after a successful skip, and that turn's
+            # first-turn ASK asks question 1 verbatim (A3 guard) -- the same
+            # mechanics every mid-section skip already relies on, so the
+            # background clock, cap and bridge all follow unchanged.
+            if (
+                control == CandidateControlAction.SKIP_QUESTION
+                and self.context.current_phase in (InterviewPhase.BRIEFING, InterviewPhase.WELCOME)
+                and self._has_pending_core_content()
+            ):
+                if self.context.current_phase == InterviewPhase.BRIEFING:
+                    self._transition_to(InterviewPhase.WELCOME)
+                self._transition_to(InterviewPhase.BACKGROUND)
+                logger.info("[SKIP] Intro skipped by the candidate -- straight to the first core question.")
+                return StructuredAction(
+                    action=ActionEnum.TRANSITION,
+                    response=msgs["skip_intro"],
+                    reason="Candidate skipped the introduction; the chained turn asks the first core question.",
+                    should_transition=False,
+                    detected_candidate_control=control,
+                )
+
             # 2026-08-27 policy reversal (explicit, confirmed with the user
             # — partially reverses Issue 6's "core question integrity: never
             # skipped live", the same way END_SECTION_EARLY already

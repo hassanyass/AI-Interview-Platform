@@ -9,6 +9,7 @@ from agent.interview.models import (
     InterviewPhase,
     InterviewRuntimeContext,
     OrderedSectionProgress,
+    QuestionOutcome,
 )
 from agent.interview.persistence import MockPersistence
 from agent.interview.questions import QUESTION_BANK
@@ -255,19 +256,27 @@ def _b2b_controller_with_active_verbal_section(phase: InterviewPhase = Interview
     return InterviewController(object(), MockPersistence(), context)
 
 
-def test_skip_question_is_noop_when_core_section_active():
+def test_skip_question_skips_the_active_core_question():
+    """Policy history: written for Issue 6 ("core questions can never be
+    skipped live"), reversed on 2026-08-27 (SKIP_QUESTION genuinely skips
+    the current core question) and, for the intro phases, on 2026-09-16
+    (Skip on the greeting hops straight to the first question -- live
+    finding). The test now pins the CURRENT policy; the old assertions were
+    stale since the first reversal."""
     async def scenario():
         controller = _b2b_controller_with_active_verbal_section()
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
         assert action is not None
+        assert action.action == ActionEnum.TRANSITION
         assert action.should_transition is False
-        assert action.response == SYSTEM_MESSAGES["en"]["core_section_no_skip"]
-        # Nothing about the core section or phase moved.
-        assert controller.context.current_phase == InterviewPhase.BACKGROUND
-        assert controller.context.sections["VERBAL"].completed is False
-        assert controller.context.sections["VERBAL"].current_index == 0
+        assert action.response == SYSTEM_MESSAGES["en"]["skip_question"]
+        # The helper's section has ONE question: skipping it ends the only
+        # section, so the interview moves to CLOSING (no waiting room).
+        assert controller.context.current_phase == InterviewPhase.CLOSING
+        assert controller.context.sections["VERBAL"].completed is True
+        assert controller.context.question_records[-1].outcome == QuestionOutcome.SKIPPED
 
     asyncio.run(scenario())
 
@@ -285,12 +294,14 @@ def test_skip_question_is_noop_when_core_section_pending_during_briefing():
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
+        # 2026-09-16: Skip on the greeting = "get me to the questions".
         assert action is not None
         assert action.should_transition is False
-        assert action.response == SYSTEM_MESSAGES["en"]["core_section_no_skip"]
+        assert action.response == SYSTEM_MESSAGES["en"]["skip_intro"]
         # Must NOT have cascaded into WELCOME/BACKGROUND/TECHNICAL_INTRO.
-        assert controller.context.current_phase == InterviewPhase.BRIEFING
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
         assert controller.context.sections["VERBAL"].completed is False
+        assert controller.context.sections["VERBAL"].current_index == 0  # nothing skipped, only the intro
 
     asyncio.run(scenario())
 
@@ -301,8 +312,8 @@ def test_skip_question_is_noop_when_core_section_pending_during_welcome():
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
-        assert action.response == SYSTEM_MESSAGES["en"]["core_section_no_skip"]
-        assert controller.context.current_phase == InterviewPhase.WELCOME
+        assert action.response == SYSTEM_MESSAGES["en"]["skip_intro"]  # 2026-09-16: hop, not a rejection
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
         assert controller.context.sections["VERBAL"].completed is False
 
     asyncio.run(scenario())
@@ -333,7 +344,7 @@ def test_skip_question_arabic_message_when_core_section_active():
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
-        assert action.response == SYSTEM_MESSAGES["ar"]["core_section_no_skip"]
+        assert action.response == SYSTEM_MESSAGES["ar"]["skip_question"]  # real skip, localised
 
     asyncio.run(scenario())
 
