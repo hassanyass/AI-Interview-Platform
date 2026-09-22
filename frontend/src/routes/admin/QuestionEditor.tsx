@@ -261,7 +261,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
             placeholder={t('questionEditor.starterCodePlaceholder')}
             value={form.starterCode}
             onChange={(e) => setForm({ ...form, starterCode: e.target.value })}
-            className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm font-mono"
+            className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm font-mono"
             rows={4}
           />
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('questionEditor.supportedLanguages')}</label>
@@ -270,14 +270,14 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
             placeholder={t('questionEditor.supportedLanguagesPlaceholder')}
             value={form.supportedLanguages}
             onChange={(e) => setForm({ ...form, supportedLanguages: e.target.value })}
-            className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+            className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
           />
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('questionEditor.constraints')}</label>
           <textarea
             placeholder={t('questionEditor.constraintsPlaceholder')}
             value={form.constraints}
             onChange={(e) => setForm({ ...form, constraints: e.target.value })}
-            className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+            className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
             rows={2}
           />
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('questionEditor.hints')}</label>
@@ -285,7 +285,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
             placeholder={t('questionEditor.hintsPlaceholder')}
             value={form.hints}
             onChange={(e) => setForm({ ...form, hints: e.target.value })}
-            className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+            className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
             rows={2}
           />
         </div>
@@ -293,10 +293,11 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
     }
     if (sectionType === "MCQ") {
       return (
-        <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-          <label className="flex items-center gap-2 text-xs font-medium text-foreground">
+        <div className="space-y-2 rounded-md border border-border bg-muted/20 p-2 sm:p-3">
+          <label className="flex min-h-11 items-center gap-2 text-xs font-medium text-foreground sm:min-h-0">
             <input
               type="checkbox"
+              className="h-5 w-5 accent-primary sm:h-4 sm:w-4"
               checked={form.isMultiSelect}
               onChange={(e) => setMultiSelect(form, setForm, e.target.checked)}
             />
@@ -309,7 +310,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                   type="button"
                   onClick={() => toggleCorrect(form, setForm, option.id)}
                   title={t('questionEditor.markCorrect')}
-                  className={form.correctIds.includes(option.id) ? "text-green-600 shrink-0" : "text-muted-foreground shrink-0"}
+                  aria-pressed={form.correctIds.includes(option.id)} aria-label={t('questionEditor.markCorrect')} className={`touch-target -ms-2 flex shrink-0 items-center justify-center rounded-md ${form.correctIds.includes(option.id) ? "text-green-600" : "text-muted-foreground"}`}
                 >
                   {form.correctIds.includes(option.id) ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
                 </button>
@@ -318,21 +319,22 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                   placeholder={t('questionEditor.optionPlaceholder')}
                   value={option.text}
                   onChange={(e) => updateOptionText(form, setForm, option.id, e.target.value)}
-                  className="flex-1 bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+                  className="flex-1 min-w-0 bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
                 />
                 <button
                   type="button"
                   onClick={() => removeOption(form, setForm, option.id)}
                   disabled={form.options.length <= 2}
-                  className="p-1 text-muted-foreground hover:text-destructive disabled:opacity-30 shrink-0"
+                  className="touch-target -me-2 flex shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-destructive disabled:opacity-30"
                   title={t('questionEditor.removeOption')}
+                  aria-label={t('questionEditor.removeOption')}
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             ))}
           </div>
-          <Button variant="outline" onClick={() => addOption(form, setForm)} className="h-7 px-2.5 text-xs inline-flex items-center gap-1">
+          <Button variant="outline" onClick={() => addOption(form, setForm)} className="h-10 px-3 text-xs inline-flex items-center gap-1 sm:h-7 sm:px-2.5">
             <Plus className="h-3.5 w-3.5" />
             {t('questionEditor.addOption')}
           </Button>
@@ -343,7 +345,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
   };
 
   return (
-    <div className="mt-4 ps-4 border-s-2 border-border space-y-3">
+    <div className="mt-4 space-y-3 sm:ps-4 sm:border-s-2 sm:border-border">
       {error && (
         <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-2 rounded-md text-xs">
           {error}
@@ -358,13 +360,13 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
             max={20}
             value={numToGenerate}
             onChange={(e) => setNumToGenerate(Number(e.target.value))}
-            className="w-16 bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+            className="h-11 w-16 bg-background border border-input rounded-md px-2 text-base sm:h-9 sm:text-sm" aria-label={t('questionEditor.generateCount')}
           />
           <Button
-            variant="default"
+            variant="primary"
             onClick={handleGenerate}
             disabled={loadingAction !== null}
-            className="ai-button inline-flex items-center gap-1.5 px-4 py-1.5 h-9 text-xs font-medium"
+            className="ai-button inline-flex h-11 items-center gap-1.5 px-4 text-xs font-medium sm:h-9"
           >
             {loadingAction === "generate" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -377,7 +379,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
             variant="outline"
             onClick={openAddManual}
             disabled={loadingAction !== null || isAddingManual}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 text-xs"
+            className="inline-flex h-11 items-center gap-1.5 px-3 text-xs sm:h-8"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>{t('questionEditor.addManually')}</span>
@@ -393,20 +395,20 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
               placeholder={t('questionEditor.title')}
               value={addForm.title}
               onChange={(e) => setAddForm({ ...addForm, title: e.target.value })}
-              className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
             />
             <input
               type="text"
               placeholder={t('questionEditor.competencyOpt')}
               value={addForm.competency}
               onChange={(e) => setAddForm({ ...addForm, competency: e.target.value })}
-              className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
             />
             <textarea
               placeholder={textLabel}
               value={addForm.text}
               onChange={(e) => setAddForm({ ...addForm, text: e.target.value })}
-              className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
               rows={2}
             />
             {renderTypeFields(addForm, setAddForm)}
@@ -414,7 +416,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
               <Button
                 onClick={handleAddManual}
                 disabled={loadingAction === "add-manual" || !isConfigComplete(sectionType, addForm)}
-                className="h-7 px-3 text-xs flex items-center gap-1.5"
+                className="h-11 flex-1 px-3 text-xs flex items-center justify-center gap-1.5 sm:h-7 sm:flex-none"
               >
                 {loadingAction === "add-manual" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 <span>{t('questionEditor.add')}</span>
@@ -423,7 +425,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                 variant="ghost"
                 onClick={() => { setIsAddingManual(false); setAddForm(EMPTY_FORM); }}
                 disabled={loadingAction === "add-manual"}
-                className="h-7 px-3 text-xs"
+                className="h-11 flex-1 px-3 text-xs sm:h-7 sm:flex-none"
               >
                 {t('questionEditor.cancel')}
               </Button>
@@ -445,19 +447,19 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                       type="text"
                       value={editForm.title}
                       onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                      className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+                      className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
                     />
                     <input
                       type="text"
                       value={editForm.competency}
                       onChange={(e) => setEditForm({ ...editForm, competency: e.target.value })}
-                      className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+                      className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
                       placeholder={t('questionEditor.competencyOpt')}
                     />
                     <textarea
                       value={editForm.text}
                       onChange={(e) => setEditForm({ ...editForm, text: e.target.value })}
-                      className="w-full bg-background border border-input rounded-md px-2 py-1.5 text-sm"
+                      className="w-full bg-background border border-input rounded-md px-3 py-2 text-base sm:px-2 sm:py-1.5 sm:text-sm"
                       rows={2}
                       placeholder={textLabel}
                     />
@@ -466,7 +468,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                       <Button
                         onClick={() => handleSaveEdit(q.id)}
                         disabled={loadingAction === `edit-${q.id}` || !isConfigComplete(sectionType, editForm)}
-                        className="h-7 px-3 text-xs flex items-center gap-1"
+                        className="h-11 flex-1 px-3 text-xs flex items-center justify-center gap-1 sm:h-7 sm:flex-none"
                       >
                         {loadingAction === `edit-${q.id}` ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -479,7 +481,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                         variant="ghost"
                         onClick={cancelEdit}
                         disabled={loadingAction === `edit-${q.id}`}
-                        className="h-7 px-3 text-xs flex items-center gap-1"
+                        className="h-11 flex-1 px-3 text-xs flex items-center justify-center gap-1 sm:h-7 sm:flex-none"
                       >
                         <X className="h-3.5 w-3.5" />
                         <span>{t('questionEditor.cancel')}</span>
@@ -526,20 +528,22 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                       )}
                     </div>
                   {isDraft && (
-                    <div className="flex items-center gap-1 shrink-0 ms-2">
+                    <div className="flex items-center shrink-0 ms-1 -me-2 sm:ms-2 sm:me-0">
                       <button
                         onClick={() => startEdit(q)}
                         disabled={loadingAction !== null}
-                        className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30"
+                        className="touch-target flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30"
                         title={t('questionEditor.edit')}
+                        aria-label={t('questionEditor.edit')}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={() => handleRegenerate(q.id)}
                         disabled={loadingAction !== null}
-                        className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30"
+                        className="touch-target flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30"
                         title={t('questionEditor.regenerate')}
+                        aria-label={t('questionEditor.regenerate')}
                       >
                         {loadingAction === `regenerate-${q.id}` ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -550,8 +554,9 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                       <button
                         onClick={() => handleDelete(q.id)}
                         disabled={loadingAction !== null}
-                        className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-md disabled:opacity-30"
+                        className="touch-target flex items-center justify-center text-red-500 hover:bg-red-500/10 rounded-md disabled:opacity-30"
                         title={t('questionEditor.delete')}
+                        aria-label={t('questionEditor.delete')}
                       >
                         {loadingAction === `delete-${q.id}` ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />

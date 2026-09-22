@@ -45,7 +45,7 @@ export default function ConfirmDeleteModal({
             <AlertCircle className="h-5 w-5 text-red-500" />
             <h2 className="text-xl font-bold tracking-tight text-foreground">{title}</h2>
           </div>
-          <button onClick={onClose} disabled={isDeleting} className="p-2 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+          <button onClick={onClose} disabled={isDeleting} aria-label="Cancel" className="touch-target -me-2 flex items-center justify-center text-muted-foreground hover:bg-muted rounded-full transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -58,9 +58,9 @@ export default function ConfirmDeleteModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border/50 bg-muted/10 flex justify-end gap-3">
-          <Button variant="outline" onClick={onClose} disabled={isDeleting}>Cancel</Button>
-          <Button onClick={handleConfirm} disabled={isDeleting} className="min-w-[120px] bg-red-500 hover:bg-red-600 text-white">
+        <div className="px-6 py-4 border-t border-border/50 bg-muted/10 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={onClose} disabled={isDeleting} className="h-11 sm:h-10">Cancel</Button>
+          <Button onClick={handleConfirm} disabled={isDeleting} className="h-11 min-w-[120px] bg-red-500 hover:bg-red-600 text-white sm:h-10">
             {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmLabel}
           </Button>
         </div>

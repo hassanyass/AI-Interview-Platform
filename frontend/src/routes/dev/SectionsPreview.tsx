@@ -28,7 +28,7 @@ export default function SectionsPreview() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="border-b bg-amber-50 px-4 py-1.5 text-xs text-amber-800"><strong>DEV PREVIEW</strong> — section setup panel with mock data (saves will fail).</div>
+      <div data-responsive-ignore className="border-b bg-amber-50 px-4 py-1.5 text-xs text-amber-800"><strong>DEV PREVIEW</strong> — section setup panel with mock data (saves will fail).</div>
       <div className="mx-auto max-w-4xl p-6">
         <SectionsEditor jobId="job-preview" definition={definition} onRefresh={async () => {}} status="DRAFT" />
       </div>

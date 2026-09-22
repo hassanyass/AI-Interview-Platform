@@ -26,7 +26,9 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
     let active = true;
     let audioContext: AudioContext | null = null;
     let analyzer: AnalyserNode | null = null;
-    let dataArray: Uint8Array | null = null;
+    // TS 5.9+/6 lib typing: getByteFrequencyData wants Uint8Array<ArrayBuffer>,
+    // and a bare `Uint8Array` annotation widens to ArrayBufferLike.
+    let dataArray: Uint8Array<ArrayBuffer> | null = null;
     let animationFrame: number;
 
     async function setupDevices() {

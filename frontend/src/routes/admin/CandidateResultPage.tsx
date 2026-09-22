@@ -243,7 +243,7 @@ export default function CandidateResultPage() {
     return (
       <div className="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-md flex flex-col gap-4 items-start">
         <p>{error || "An unexpected error occurred."}</p>
-        <Button variant="outline" onClick={fetchResult}>Retry</Button>
+        <Button variant="outline" onClick={() => fetchResult()}>Retry</Button>
       </div>
     );
   }

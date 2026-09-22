@@ -9,6 +9,8 @@ import ApplyPage from './pages/ApplyPage'
 import VerbalPreview from './routes/dev/VerbalPreview'
 import SectionsPreview from './routes/dev/SectionsPreview'
 import StartPreview from './routes/dev/StartPreview'
+import AdminPreview from './routes/dev/AdminPreview'
+import WorkspacePreview from './routes/dev/WorkspacePreview'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
 import JobCreatePage from './routes/admin/JobCreatePage'
@@ -74,6 +76,9 @@ function App() {
               {import.meta.env.DEV && <Route path="/dev/verbal-preview" element={<VerbalPreview />} />}
               {import.meta.env.DEV && <Route path="/dev/sections-preview" element={<SectionsPreview />} />}
               {import.meta.env.DEV && <Route path="/dev/start-preview" element={<StartPreview />} />}
+              {/* Responsive plan R0 (docs/responsive-design-plan.md): real admin shell / real workspace chrome without a backend. */}
+              {import.meta.env.DEV && <Route path="/dev/admin-preview" element={<AdminPreview />} />}
+              {import.meta.env.DEV && <Route path="/dev/workspace-preview" element={<WorkspacePreview />} />}
 
               {/* Catch all */}
               <Route path="*" element={<Navigate to="/admin" replace />} />

@@ -4,6 +4,7 @@ import { Users, Globe, Link as LinkIcon, Check, Copy, Send, Loader2, AlertCircle
 import { Card, CardContent } from "../../components/ui/Card";
 import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
+import { ResponsiveTable } from "../../components/ui/ResponsiveTable";
 import { useTranslation } from "react-i18next";
 import InvitationComposer from "./InvitationComposer";
 
@@ -108,8 +109,9 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
 
   return (
     <div className="space-y-6 mt-10">
-      <div className="flex items-center justify-between gap-4 mb-4 pb-2 border-b border-border/50">
-        <div>
+      {/* R2-B: block header stacks below sm; the action is full-width there. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4 pb-3 border-b border-border/50">
+        <div className="min-w-0">
           <h2 className="text-xl font-bold tracking-tight text-foreground">{t('candidateAccess.title')}</h2>
           <p className="text-sm text-muted-foreground">{t('candidateAccess.manageAccessDescription')}</p>
         </div>
@@ -117,7 +119,7 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
           onClick={handleTestDrive} 
           disabled={isTestingDrive} 
           variant="outline" 
-          className="gap-2 shrink-0 border-primary/20 hover:bg-primary/5 text-primary rounded-xl font-semibold"
+          className="h-11 w-full gap-2 border-primary/20 hover:bg-primary/5 text-primary rounded-xl font-semibold sm:h-10 sm:w-auto sm:shrink-0"
         >
           {isTestingDrive ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4 fill-current" />}
           {t('candidateAccess.testInterview')}
@@ -168,7 +170,7 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
                   
                   {/* Selection Indicator */}
                   {!isPublic && (
-                    <div className="absolute top-4 right-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
+                    <div className="absolute top-4 end-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
                       <Check className="h-3 w-3 stroke-[3]" />
                     </div>
                   )}
@@ -201,7 +203,7 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
                   
                   {/* Selection Indicator */}
                   {isPublic && (
-                    <div className="absolute top-4 right-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
+                    <div className="absolute top-4 end-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
                       <Check className="h-3 w-3 stroke-[3]" />
                     </div>
                   )}
@@ -234,7 +236,7 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
                     </span>
                   </Button>
                   <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="flex-none">
-                    <Button variant="secondary" className="w-11 h-11 p-0 rounded-xl bg-secondary text-secondary-foreground hover:bg-secondary/90 shadow-sm" title="Open in new tab">
+                    <Button variant="secondary" className="w-11 h-11 p-0 rounded-xl bg-secondary text-secondary-foreground hover:bg-secondary/90 shadow-sm" title={t('candidateAccess.openInNewTab')} aria-label={t('candidateAccess.openInNewTab')}>
                       <Globe className="h-4 w-4" />
                     </Button>
                   </a>
@@ -316,39 +318,37 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
               </div>
             ) : (
               <div className="max-h-[350px] overflow-y-auto">
-                <table className="w-full text-sm text-left">
-                  <thead className="bg-white sticky top-0 border-b border-border/50 shadow-sm z-10">
-                    <tr>
-                      <th className="font-semibold text-muted-foreground px-6 py-3">{t('candidateAccess.email')}</th>
-                      <th className="font-semibold text-muted-foreground px-6 py-3">{t('candidateAccess.status')}</th>
-                      <th className="font-semibold text-muted-foreground px-6 py-3 text-right">{t('candidateAccess.date')}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/40">
-                    {invitations.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-muted/10 transition-colors">
-                        <td className="px-6 py-4 truncate max-w-[200px] font-medium" title={inv.candidate_email}>
-                          {inv.candidate_email}
-                        </td>
-                        <td className="px-6 py-4">
-                          <Badge variant={
-                            inv.status === "STARTED" ? "success" : 
-                            inv.status === "INVITED" ? "default" : "secondary"
-                          } className="text-xs rounded-full px-2.5 py-0.5 capitalize shadow-sm">
-                            {inv.status.toLowerCase()}
-                          </Badge>
-                        </td>
-                        <td className="px-6 py-4 text-muted-foreground text-right tabular-nums text-xs">
-                          {new Date(inv.created_at).toLocaleDateString(undefined, { 
-                            year: 'numeric', 
-                            month: 'short', 
-                            day: 'numeric' 
-                          })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {/* R2-B: table from md, one card per invitation below it
+                    (email as the title, status + date as fields) -- no
+                    three-column cram on a phone, logical alignment in RTL. */}
+                <ResponsiveTable
+                  rows={invitations}
+                  rowKey={(inv) => inv.id}
+                  caption={t('candidateAccess.invitationsSent')}
+                  columns={[
+                    {
+                      key: "email", header: t('candidateAccess.email'), primary: true,
+                      className: "max-w-[260px]",
+                      cell: (inv) => <span className="block truncate font-medium" title={inv.candidate_email}>{inv.candidate_email}</span>,
+                    },
+                    {
+                      key: "status", header: t('candidateAccess.status'),
+                      cell: (inv) => (
+                        <Badge variant={inv.status === "STARTED" ? "success" : inv.status === "INVITED" ? "default" : "secondary"} className="text-xs rounded-full px-2.5 py-0.5 capitalize shadow-sm">
+                          {inv.status.toLowerCase()}
+                        </Badge>
+                      ),
+                    },
+                    {
+                      key: "date", header: t('candidateAccess.date'), className: "text-end",
+                      cell: (inv) => (
+                        <span className="text-muted-foreground tabular-nums text-xs">
+                          {new Date(inv.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </span>
+                      ),
+                    },
+                  ]}
+                />
               </div>
             )}
           </CardContent>

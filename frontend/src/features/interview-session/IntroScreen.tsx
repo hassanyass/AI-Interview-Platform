@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, LogOut, PlayCircle, Shield, CheckCircle2, Maximize2 } from "lucide-react";
+import { Loader2, LogOut, Shield, CheckCircle2, Maximize2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { EndInterviewDialog } from "./EndInterviewDialog";

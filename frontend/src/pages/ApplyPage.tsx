@@ -6,7 +6,7 @@ import {
   registerApplicant,
   type PublicApplyContext,
 } from "../services/api/publicApply";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
+import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { LanguageToggle } from "../components/ui/LanguageToggle";
 import { useTranslation } from "react-i18next";

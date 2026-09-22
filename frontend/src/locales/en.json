@@ -176,9 +176,18 @@
                         "signOut":  "Sign Out",
                         "adminPortal":  "Admin Portal",
                         "jobs":  "Jobs",
-                        "settings":  "Settings"
+                        "settings":  "Settings",
+                        "openMenu":  "Open menu",
+                        "menu":  "Menu"
                     },
+    "jobStatus":  {
+                     "published":  "Published",
+                     "draft":  "Draft",
+                     "paused":  "Paused"
+                 },
     "jobsList":  {
+                                        "results":  "Results",
+                                        "deleteJob":  "Delete job",
                      "manage":  "Manage",
                      "loading":  "Loading jobs...",
                      "getStarted":  "Get started by creating your first job posting to define the interview configuration.",
@@ -225,6 +234,13 @@
                       "respPlaceholder":  "Lead a team of 4 engineers\nArchitect backend services"
                   },
     "jobDetail":  {
+                                          "pauseJob":  "Pause job",
+                                          "resumeJob":  "Resume job",
+                                          "unpublish":  "Unpublish",
+                                          "viewResults":  "View results",
+                                          "delete":  "Delete",
+                                          "moreActions":  "More actions",
+                                          "actions":  "Job actions",
                       "publishConfirm":  "Publish this job? This is irreversible — there is no un-publish, and structural edits (sections/questions) will be locked afterward.",
                       "retry":  "Retry",
                       "publish":  "Publish",
@@ -236,6 +252,17 @@
                       "jobNotFoundDesc":  "The job you are looking for does not exist or has been deleted.",
                       "unexpectedError":  "An unexpected error occurred."
                   },
+    "criteriaEditor":  {
+                     "title":  "Assessment Criteria",
+                     "description":  "Configure the behavioral dimensions the AI will evaluate, and how much each counts toward the criteria-weighted score.",
+                     "save":  "Save criteria",
+                     "saved":  "Criteria saved successfully.",
+                     "weight":  "Weight",
+                     "none":  "No behavioral criteria found.",
+                     "autoManaged":  "Content-specific criteria (auto-managed)",
+                     "failedToLoad":  "Failed to load criteria",
+                     "failedToSave":  "Failed to save criteria"
+                 },
     "sectionsEditor":  {
                            "comingSoon":  " (coming soon)",
                            "failedToAdd":  "Failed to add section.",
@@ -294,6 +321,7 @@
                            "summaryReady":  "Ready to publish"
                        },
     "questionEditor":  {
+                                                    "generateCount":  "Number of questions to generate",
                            "regenerate":  "Regenerate",
                            "delete":  "Delete",
                            "noQuestions":  "No questions yet.",
@@ -330,6 +358,7 @@
                            "hasStarterCode":  "Starter code provided"
                        },
     "candidateAccess":  {
+                                                      "openInNewTab":  "Open in new tab",
                             "invitationsSent":  "Invitations Sent",
                             "date":  "Date",
                             "failedToInvite":  "Failed to invite candidate.",

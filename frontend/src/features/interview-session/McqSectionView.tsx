@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, Circle, ListTodo, Mic, Send, Timer, Volume2 } from "lucide-react";
-import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../types/realtime";
+import type { ActiveQuestion } from "../../types/realtime";
 
 interface McqOption { id: string; text: string }
 
@@ -19,38 +19,24 @@ interface McqOption { id: string; text: string }
 interface McqSectionViewProps {
   question: ActiveQuestion;
   isAgentSpeaking: boolean;
-  isMicrophoneEnabled: boolean;
   mcqOptions: McqOption[];
   selectedOptionIds: string[];
   onToggleOption: (id: string) => void;
   mcqIsMultiSelect: boolean;
   mcqSubmitted: boolean;
   onMcqSubmit: () => void;
-  allowedControls: AllowedControl[];
-  isCompleted: boolean;
-  onToggleMicrophone: () => void;
-  onSendControl: (control: string) => void;
-  backendState: StateUpdatePayload | null;
-  hasNextSection: boolean;
   formattedTime: string;
 }
 
 export function McqSectionView({
   question,
   isAgentSpeaking,
-  isMicrophoneEnabled,
   mcqOptions,
   selectedOptionIds,
   onToggleOption,
   mcqIsMultiSelect,
   mcqSubmitted,
   onMcqSubmit,
-  allowedControls,
-  isCompleted,
-  onToggleMicrophone,
-  onSendControl,
-  backendState,
-  hasNextSection,
   formattedTime,
 }: McqSectionViewProps) {
   const { t } = useTranslation();

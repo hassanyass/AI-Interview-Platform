@@ -6,7 +6,6 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/Card";
 import { AiCoreIcon } from "../../components/ui/AiCoreIcon";
-import { useTranslation } from "react-i18next";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
 
 /**
@@ -35,7 +34,6 @@ function recommendationTone(recommendation: string | undefined): { text: string;
 }
 
 export default function JobResultsPage() {
-  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [results, setResults] = useState<JobResultsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);

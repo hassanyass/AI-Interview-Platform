@@ -7,7 +7,7 @@ import {
   redeemInvitation,
   type InvitationPublicContext,
 } from "../services/api/publicInvitations";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
+import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { LanguageToggle } from "../components/ui/LanguageToggle";
 import { useTranslation, Trans } from 'react-i18next';
@@ -243,7 +243,7 @@ export default function InvitePage() {
                   <div className="h-8 w-8 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
                   <p className="text-sm font-medium text-muted-foreground">{t('invite.starting')}</p>
                 </div>
-              ) : (step === "otp" || step === "redeeming") && (
+              ) : step === "otp" && (
                 <form onSubmit={handleVerifyOtp} className="space-y-4 animate-in fade-in duration-300">
                   <p className="text-sm text-muted-foreground">
                     <Trans i18nKey="invite.otpDesc" values={{ email }}>

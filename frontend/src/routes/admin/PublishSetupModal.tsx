@@ -32,7 +32,7 @@ export default function PublishSetupModal({ isOpen, onClose, onConfirm }: Publis
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
           <h2 className="text-xl font-bold tracking-tight text-foreground">{t('publishSetup.title')}</h2>
-          <button onClick={onClose} disabled={isPublishing} className="p-2 text-muted-foreground hover:bg-muted rounded-full transition-colors">
+          <button onClick={onClose} disabled={isPublishing} aria-label={t('publishSetup.cancel')} className="touch-target -me-2 flex items-center justify-center text-muted-foreground hover:bg-muted rounded-full transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -70,7 +70,7 @@ export default function PublishSetupModal({ isOpen, onClose, onConfirm }: Publis
                 
                 {/* Selection Indicator */}
                 {!isPublic && (
-                  <div className="absolute top-4 right-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
+                  <div className="absolute top-4 end-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
                     <Check className="h-3 w-3 stroke-[3]" />
                   </div>
                 )}
@@ -103,7 +103,7 @@ export default function PublishSetupModal({ isOpen, onClose, onConfirm }: Publis
                 
                 {/* Selection Indicator */}
                 {isPublic && (
-                  <div className="absolute top-4 right-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
+                  <div className="absolute top-4 end-4 h-5 w-5 rounded-full bg-primary flex items-center justify-center text-white shadow-sm">
                     <Check className="h-3 w-3 stroke-[3]" />
                   </div>
                 )}
@@ -113,9 +113,9 @@ export default function PublishSetupModal({ isOpen, onClose, onConfirm }: Publis
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border/50 bg-muted/10 flex justify-end gap-3">
-          <Button variant="outline" onClick={onClose} disabled={isPublishing}>{t('publishSetup.cancel')}</Button>
-          <Button onClick={handleConfirm} disabled={isPublishing} className="min-w-[140px]">
+        <div className="px-6 py-4 border-t border-border/50 bg-muted/10 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button variant="outline" onClick={onClose} disabled={isPublishing} className="h-11 sm:h-10">{t('publishSetup.cancel')}</Button>
+          <Button onClick={handleConfirm} disabled={isPublishing} className="h-11 min-w-[140px] sm:h-10">
             {isPublishing ? <Loader2 className="h-4 w-4 animate-spin" /> : t('publishSetup.confirm')}
           </Button>
         </div>

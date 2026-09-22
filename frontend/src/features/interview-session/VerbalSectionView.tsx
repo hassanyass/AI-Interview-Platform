@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Code2, Mic, Send, Volume2, MessageSquare, FileText, MessagesSquare, CheckCircle2 } from "lucide-react";
+import { Code2, Mic, Send, Volume2, MessageSquare, CheckCircle2 } from "lucide-react";
 import { type InterviewerCharacterState } from "./InterviewerCharacter";
 import BlobCharacter from "./BlobCharacter";
 import type { RemoteAudioTrack } from "livekit-client";
-import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../types/realtime";
+import type { ActiveQuestion, StateUpdatePayload } from "../../types/realtime";
 import { TimeBonusIndicator } from "./TimeBonusIndicator";
 
 /**
@@ -22,7 +22,6 @@ interface VerbalSectionViewProps {
   question: ActiveQuestion | null | undefined;
   isCompleted: boolean;
   isAgentSpeaking: boolean;
-  isMicrophoneEnabled: boolean;
   isTechnical: boolean;
   hasEditor: boolean;
   characterState: InterviewerCharacterState;
@@ -35,15 +34,12 @@ interface VerbalSectionViewProps {
   codingConfigConstraints?: string;
   codeStatus: string | null;
   onCodeSubmit: () => void;
-  currentSectionType: string | null | undefined;
   ReportLoadingState: React.ComponentType;
-  allowedControls: AllowedControl[];
-  onToggleMicrophone: () => void;
-  onSendControl: (control: string) => void;
   backendState: StateUpdatePayload | null;
-  hasNextSection: boolean;
   visibleTranscripts: Array<{ id: string; speaker: string; text: string }>;
-  transcriptRef: React.RefObject<HTMLDivElement>;
+  // React 19's useRef<T>(null) yields RefObject<T | null>; accept that
+  // shape directly instead of forcing a cast at the call site.
+  transcriptRef: React.RefObject<HTMLDivElement | null>;
   /** The workspace's ticking section clock (mm:ss) -- shown in the
    *  discussion step, with the "+2:00" moment beside it. */
   formattedTime?: string;
@@ -53,7 +49,6 @@ export function VerbalSectionView({
   question,
   isCompleted,
   isAgentSpeaking,
-  isMicrophoneEnabled,
   isTechnical,
   hasEditor,
   characterState,
@@ -66,13 +61,8 @@ export function VerbalSectionView({
   codingConfigConstraints,
   codeStatus,
   onCodeSubmit,
-  currentSectionType,
   ReportLoadingState,
-  allowedControls,
-  onToggleMicrophone,
-  onSendControl,
   backendState,
-  hasNextSection,
   visibleTranscripts,
   transcriptRef,
   formattedTime,

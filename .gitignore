@@ -64,3 +64,7 @@ agent/.groq_key_state_*.json
 /AGENTS.md
 /docs/transition-phase-SKILL.md
 /docs/transition-phase.workflow.md
+
+# Responsive harness output (frontend/scripts/responsive-shots.cjs) --
+# screenshots + report, regenerated per run
+frontend/.responsive/

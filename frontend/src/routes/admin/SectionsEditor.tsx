@@ -44,7 +44,7 @@ const BACKGROUND_MINUTES_DEFAULT = 5;
 // (label + hint on the left, controls on the right): Timing, Background
 // conversation (VERBAL only), Questions. One input width, one status
 // style, one place to read the whole section.
-const SETUP_INPUT = "w-24 rounded-md border border-input bg-background px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60";
+const SETUP_INPUT = "w-24 rounded-md border border-input bg-background px-3 py-2 text-base tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-60 sm:py-1.5 sm:text-sm";
 
 function SetupRow({ icon, title, hint, status, children }: {
   icon: React.ReactNode; title: string; hint?: string;
@@ -208,7 +208,7 @@ function BackgroundSettings({ section, disabled, onRefresh }: BackgroundSettings
           checked={enabled}
           disabled={disabled || status === "saving"}
           onChange={(e) => handleToggle(e.target.checked)}
-          className="h-4 w-4 rounded border-input accent-primary"
+          className="h-5 w-5 rounded border-input accent-primary sm:h-4 sm:w-4"
         />
         {enabled ? t("sectionsEditor.backgroundOn") : t("sectionsEditor.backgroundOff")}
       </label>
@@ -404,14 +404,15 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
 
   return (
     <div className="space-y-4 mt-8">
-      <div className="flex items-center justify-between">
+      {/* R2-B: block header stacks below sm; the action is full-width there. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold">{t('sectionsEditor.title')}</h2>
         {isDraft && (
           <Button
             variant="secondary"
             onClick={() => setIsAdding(true)}
             disabled={availableTypes.length === 0 || isAdding || loadingAction !== null}
-            className="inline-flex items-center gap-2"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 sm:h-10 sm:w-auto sm:shrink-0"
           >
             <Plus className="h-4 w-4" />
             <span>{t('sectionsEditor.addSection')}</span>
@@ -451,7 +452,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
               <Button
                 onClick={handleAddSection}
                 disabled={loadingAction === "add" || !selectableTypes.some((t) => t.value === selectedType)}
-                className="flex items-center gap-2"
+                className="flex h-11 flex-1 items-center justify-center gap-2 sm:h-10 sm:flex-none"
               >
                 {loadingAction === "add" && <Loader2 className="h-4 w-4 animate-spin" />}
                 <span>{t('sectionsEditor.add')}</span>
@@ -460,6 +461,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                 variant="outline"
                 onClick={() => setIsAdding(false)}
                 disabled={loadingAction === "add"}
+                className="h-11 flex-1 sm:h-10 sm:flex-none"
               >
                 {t('sectionsEditor.cancel')}
               </Button>
@@ -489,49 +491,54 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                 className="hover:border-primary/30 transition-colors"
               >
                 <CardContent className="p-4 m-0">
-                  <div className="flex items-center justify-between">
+                  {/* R2-B: two-line row. Line 1 = type + title (the expand
+                      target) and the reorder/delete cluster (44px, labelled);
+                      line 2 = the summary sentence on its own full-width line,
+                      so it no longer wraps in a narrow column beside the arrows. */}
+                  <div className="flex items-center justify-between gap-2">
                     <button
                       onClick={() => setExpandedSectionId(isExpanded ? null : section.id)}
-                      className="flex items-center gap-4 text-start flex-1 min-w-0"
+                      aria-expanded={isExpanded}
+                      className="flex min-h-11 items-center gap-3 text-start flex-1 min-w-0 sm:gap-4"
                     >
                       <div className="bg-primary/10 p-2 rounded-md text-primary shrink-0">
                         <Icon className="h-5 w-5" />
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-foreground">{t(`sectionsEditor.${typeConfig.value.toLowerCase()}`)}</h3>
-                        {!isExpanded && <SectionSummaryLine section={section} />}
-                      </div>
+                      <h3 className="min-w-0 font-semibold text-foreground">{t(`sectionsEditor.${typeConfig.value.toLowerCase()}`)}</h3>
                       {isExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground ms-2" />
+                        <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground ms-2" />
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                       )}
                     </button>
 
                     {isDraft && (
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center shrink-0">
                         <button
                           onClick={() => handleSwap(index, index - 1)}
                           disabled={index === 0 || loadingAction !== null}
-                          className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30 disabled:hover:bg-transparent"
+                          className="touch-target flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30 disabled:hover:bg-transparent"
                           title={t('sectionsEditor.moveUp')}
+                          aria-label={t('sectionsEditor.moveUp')}
                         >
                           <ArrowUp className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleSwap(index, index + 1)}
                           disabled={index === sections.length - 1 || loadingAction !== null}
-                          className="p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30 disabled:hover:bg-transparent"
+                          className="touch-target flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground rounded-md disabled:opacity-30 disabled:hover:bg-transparent"
                           title={t('sectionsEditor.moveDown')}
+                          aria-label={t('sectionsEditor.moveDown')}
                         >
                           <ArrowDown className="h-4 w-4" />
                         </button>
-                        <div className="w-px h-6 bg-border mx-2"></div>
+                        <div className="w-px h-6 bg-border mx-1 sm:mx-2"></div>
                         <button
                           onClick={() => handleDelete(section.id)}
                           disabled={loadingAction !== null}
-                          className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-30"
+                          className="touch-target flex items-center justify-center text-red-500 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-30"
                           title={t('sectionsEditor.deleteSection')}
+                          aria-label={t('sectionsEditor.deleteSection')}
                         >
                           {loadingAction === `delete-${section.id}` ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -542,6 +549,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                       </div>
                     )}
                   </div>
+                  {!isExpanded && <div className="mt-1 ps-12 sm:ps-[3.75rem]"><SectionSummaryLine section={section} /></div>}
 
                   {isExpanded && (
                     <div className="mt-4 space-y-3 border-t border-border pt-4">

@@ -50,7 +50,7 @@ export default function VerbalPreview() {
           </div>
         </div>
       </header>
-      <div className="border-b bg-amber-50 px-4 py-1.5 text-xs text-amber-800 flex flex-wrap gap-3 items-center">
+      <div data-responsive-ignore className="border-b bg-amber-50 px-4 py-1.5 text-xs text-amber-800 flex flex-wrap gap-3 items-center">
         <strong>DEV PREVIEW</strong>
         <button className="underline" onClick={() => setSubsection("BACKGROUND")}>background</button>
         <button className="underline" onClick={() => setSubsection("DISCUSSION")}>discussion</button>
@@ -64,20 +64,14 @@ export default function VerbalPreview() {
           question={question as any}
           isCompleted={false}
           isAgentSpeaking={speaking}
-          isMicrophoneEnabled={!speaking}
           isTechnical={false}
           hasEditor={false}
           characterState={speaking ? "speaking" : "listening"}
           agentAudioTrack={undefined}
           code="" setCode={() => {}} selectedLanguage="" setSelectedLanguage={() => {}}
           hasConfigStarterCode={false} codeStatus={null} onCodeSubmit={() => {}}
-          currentSectionType="VERBAL"
           ReportLoadingState={() => null}
-          allowedControls={state.allowed_controls}
-          onToggleMicrophone={() => {}}
-          onSendControl={() => {}}
           backendState={state}
-          hasNextSection={false}
           visibleTranscripts={[]}
           transcriptRef={transcriptRef}
           formattedTime={bonus ? `${9 + Math.floor(bonus / 60)}:58` : "09:58"}

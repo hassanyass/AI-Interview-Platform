@@ -17,7 +17,9 @@ export type InterviewPhase =
   | "WAITING_ROOM";
 
 
-export type InterviewStatus = "PENDING" | "IN_PROGRESS" | "DISCONNECTED" | "COMPLETED" | "TERMINATED" | "FAILED";
+// "CREATED" is the backend's real initial status (interview_sessions.status
+// default; internal.py VALID_STATUSES) — InterviewSession.tsx branches on it.
+export type InterviewStatus = "CREATED" | "PENDING" | "IN_PROGRESS" | "DISCONNECTED" | "COMPLETED" | "TERMINATED" | "FAILED";
 
 export type QuestionOutcome = "UNASKED" | "COMPLETED" | "SKIPPED" | "CHANGED";
 
