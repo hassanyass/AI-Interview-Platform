@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     """Deployment environment. Anything but local/test enables the boot-time safety checks."""
     APP_VERSION: str = "0.1.0"
     """Reported by /health and /version."""
+    LOG_FORMAT: Literal["json", "text", "auto"] = "auto"
+    """auto = text when ENVIRONMENT is local/test, json otherwise. One line per event, request/session ids on every line (core/logging.py)."""
+    LOG_LEVEL: str = "INFO"
+    METRICS_ENABLED: bool = True
+    """Expose GET /metrics (Prometheus text). Protect it at the network layer; it is unauthenticated."""
     BACKEND_CORS_ORIGINS: str = (
         '["http://localhost:5173", "http://127.0.0.1:5173", '
         '"http://localhost:5174", "http://127.0.0.1:5174"]'
@@ -176,6 +181,12 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.ENVIRONMENT in ("local", "test")
+
+    @property
+    def log_format(self) -> str:
+        if self.LOG_FORMAT != "auto":
+            return self.LOG_FORMAT
+        return "text" if self.is_local else "json"
 
     @model_validator(mode="after")
     def _empty_model_means_default(self) -> "Settings":

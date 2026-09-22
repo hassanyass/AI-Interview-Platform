@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from sqlalchemy.sql import text
 
 if sys.platform == "win32":
@@ -14,12 +14,16 @@ if sys.platform == "win32":
 from backend.core import background
 from backend.core.config import settings
 from backend.core.errors import install_exception_handlers
+from backend.core.logging import configure_logging
+from backend.core.metrics import MetricsMiddleware, background_tasks_pending, ready_check_failures_total, render_metrics
 from backend.core.request_id import RequestIdMiddleware
 from backend.db.session import engine
 from backend.api.endpoints import profiles, resumes, interviews, livekit, internal, admin, invitations, public_invitations, public_apply
 from backend.services.sessions.finalization import disconnect_auto_finalize_sweep_loop
 
-logging.basicConfig(level=logging.INFO)
+# H3: one handler, one format (json outside local/test), request/session
+# ids on every line; uvicorn's loggers routed through the same formatter.
+configure_logging(log_format=settings.log_format, level=settings.LOG_LEVEL, environment=settings.ENVIRONMENT)
 logger = logging.getLogger(__name__)
 
 _disconnect_sweep_task: asyncio.Task | None = None
@@ -60,6 +64,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
 )
+# Request metrics (core/metrics.py): labelled by route template, never raw path.
+if settings.METRICS_ENABLED:
+    app.add_middleware(MetricsMiddleware, routes_provider=lambda: app.routes)
 # Correlation id on every request/response (core/request_id.py). Added last
 # = outermost, so the id exists even for requests CORS itself answers.
 app.add_middleware(RequestIdMiddleware)
@@ -101,6 +108,7 @@ async def readiness_check():
     except Exception as e:  # noqa: BLE001 -- any failure means not ready; the reason is reported, not raised
         logger.error("Readiness: database check failed: %s", e)
         checks["database"] = "error"
+        ready_check_failures_total.labels("database").inc()
     ready = all(v == "ok" for v in checks.values())
     body = {"status": "ready" if ready else "not_ready", "checks": checks, "version": app.version}
     return JSONResponse(status_code=200 if ready else 503, content=body)
@@ -109,3 +117,13 @@ async def readiness_check():
 @app.get("/version")
 async def version():
     return {"version": app.version}
+
+
+if settings.METRICS_ENABLED:
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics():
+        """Prometheus text exposition. Unauthenticated: keep it off the public
+        ingress (docs/handover/observability.md)."""
+        background_tasks_pending.set(background.pending())
+        body, content_type = render_metrics()
+        return Response(content=body, media_type=content_type)

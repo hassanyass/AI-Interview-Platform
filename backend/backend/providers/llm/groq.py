@@ -6,6 +6,7 @@ from typing import Sequence
 
 from groq import AsyncGroq
 
+from backend.core.metrics import timed_provider_call
 from backend.providers.llm.base import ChatMessage, LLMProvider
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ class GroqLLMProvider(LLMProvider):
             max_retries=max_retries,
         )
 
+    @timed_provider_call("groq", "complete_json")
     async def complete_json(
         self,
         messages: Sequence[ChatMessage],

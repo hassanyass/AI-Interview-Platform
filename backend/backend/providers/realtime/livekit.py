@@ -8,6 +8,7 @@ from datetime import timedelta
 import aiohttp
 from livekit import api
 
+from backend.core.metrics import timed_provider_call
 from backend.providers.realtime.base import RealtimeProvider, RecordingStart
 from backend.providers.storage.base import S3Destination
 
@@ -51,6 +52,7 @@ class LiveKitProvider(RealtimeProvider):
         token.with_grants(api.VideoGrants(room_join=True, room=room))
         return token.to_jwt()
 
+    @timed_provider_call("livekit", "start_room_recording")
     async def start_room_recording(self, *, room: str, output_path: str, destination: S3Destination) -> RecordingStart:
         req = api.RoomCompositeEgressRequest(
             room_name=room,
@@ -95,6 +97,7 @@ class LiveKitProvider(RealtimeProvider):
         finally:
             await lkapi.aclose()
 
+    @timed_provider_call("livekit", "stop_recording")
     async def stop_recording(self, egress_id: str) -> None:
         lkapi = self._api()
         try:
@@ -102,6 +105,7 @@ class LiveKitProvider(RealtimeProvider):
         finally:
             await lkapi.aclose()
 
+    @timed_provider_call("livekit", "delete_room")
     async def delete_room(self, room: str) -> None:
         lkapi = self._api()
         try:

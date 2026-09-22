@@ -248,6 +248,10 @@ class APIPersistence(InterviewPersistence):
         self._session = None  # aiohttp session
         # (method, path, kwargs) of writes that failed after retries; FIFO.
         self._outbox: list[tuple[str, str, dict]] = []
+        # H3: correlation. Every call carries X-Request-ID = <session>.<agent>.<n>;
+        # the backend logs it on each line, so one interview is one grep on
+        # both sides. The session id is taken from the URL of each call.
+        self._request_seq = 0
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
@@ -267,6 +271,14 @@ class APIPersistence(InterviewPersistence):
     def _url(self, session_id: str, path: str) -> str:
         return f"{self.backend_url}/api/v1/internal/interviews/{session_id}/{path}"
 
+    def request_id_for(self, url: str, seq: int) -> str:
+        """<session_id>.<agent_id>.<seq> -- only [A-Za-z0-9._:-], as the
+        backend's RequestIdMiddleware accepts."""
+        marker = "/internal/interviews/"
+        i = url.find(marker)
+        session = url[i + len(marker):].split("/", 1)[0] if i != -1 else "nosession"
+        return f"{session}.{self.agent_id}.{seq}"
+
     # ── transport ──────────────────────────────────────────────────────────
 
     async def _request(self, method: str, url: str, **kwargs) -> tuple[Optional[int], Any]:
@@ -277,6 +289,10 @@ class APIPersistence(InterviewPersistence):
         import aiohttp
         http = await self._get_session()
         last_error: Optional[BaseException] = None
+        self._request_seq += 1
+        headers = dict(kwargs.pop("headers", None) or {})
+        headers.setdefault("X-Request-ID", self.request_id_for(url, self._request_seq))
+        kwargs["headers"] = headers
         for attempt in range(self.retry_attempts + 1):
             try:
                 async with http.request(method, url, **kwargs) as resp:

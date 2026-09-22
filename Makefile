@@ -2,7 +2,7 @@
 # same targets. docs/production-hardening-plan.md H0-D.
 PY ?= .venv/bin/python
 
-.PHONY: help install lock up down test test-backend test-agent test-legacy lint typecheck migrate
+.PHONY: help install lock up down test test-backend test-agent test-legacy lint typecheck migrate cli
 
 help:
 	@echo "install   - install backend + agent runtime deps and dev tooling into .venv, npm ci"
@@ -13,6 +13,7 @@ help:
 	@echo "lint      - oxlint (frontend)"
 	@echo "typecheck - tsc -b (frontend)"
 	@echo "migrate   - alembic upgrade head against DATABASE_URL"
+	@echo "cli       - python -m backend.cli $(ARGS)   e.g. make cli ARGS=\"finalize-stuck-sessions --dry-run\""
 
 install:
 	$(PY) -m pip install -r backend/requirements.txt -r agent/requirements.txt -r requirements-dev.txt
@@ -52,3 +53,6 @@ typecheck:
 
 migrate:
 	cd backend && ../$(PY) -m alembic upgrade head
+
+cli:
+	PYTHONPATH=backend $(PY) -m backend.cli $(ARGS)

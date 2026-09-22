@@ -8,6 +8,7 @@ import asyncio
 import boto3
 from botocore.config import Config
 
+from backend.core.metrics import timed_provider_call
 from backend.providers.storage.base import ObjectStorage, S3Destination, StorageError
 
 
@@ -59,6 +60,7 @@ class S3CompatibleStorage(ObjectStorage):
             )
         return self._client
 
+    @timed_provider_call("s3", "put")
     async def put(self, key: str, data: bytes, *, content_type: str) -> None:
         try:
             await asyncio.to_thread(
@@ -67,6 +69,7 @@ class S3CompatibleStorage(ObjectStorage):
         except Exception as e:  # noqa: BLE001 -- botocore raises assorted classes; callers see one StorageError
             raise StorageError(f"put {key!r} failed: {e}") from e
 
+    @timed_provider_call("s3", "delete")
     async def delete(self, key: str) -> None:
         try:
             await asyncio.to_thread(self._s3().delete_object, Bucket=self._bucket, Key=key)

@@ -8,11 +8,13 @@ the full lifecycle including disconnect/reconnect and completion.
 import asyncio
 import hashlib
 import logging
+import sys
 import uuid as uuid_mod
 
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
 
 from agent.config import get_settings, load_env_files, reset_settings
+from agent.logging_setup import bind_session, configure_worker_logging
 from agent.interview.persistence import APIPersistence, LeaseState
 from agent.runtime.bootstrap import build_context
 from agent.runtime.teardown import finalize_session, mark_disconnected_after_failure
@@ -28,24 +30,10 @@ from agent.providers.factory import build_llm, build_stt, build_tts, prewarm, va
 from agent.interview.question_generator import generate_custom_question, build_contextual_fallback_question
 from agent.interview.background_generator import generate_background_questions
 
-# RT-B0: default logging.basicConfig() has no timestamp at all (its default
-# format is just "%(levelname)s:%(name)s:%(message)s"), making it impossible
-# to compute any latency delta from logs alone -- the exact gap RT-A found.
-# Python's default asctime already includes milliseconds when no datefmt is
-# given, so adding %(asctime)s here is sufficient for latency work.
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
-# Windows consoles default to cp1252; a CV or question with a character
-# outside it (a non-breaking hyphen, an em dash) made the stream handler
-# raise "--- Logging error ---" with a full traceback on every such line,
-# burying real errors (live finding, 2026-09-16). Replace rather than
-# crash the handler; file/JSON sinks are unaffected.
-for _handler in logging.getLogger().handlers:
-    _stream = getattr(_handler, "stream", None)
-    if _stream is not None and hasattr(_stream, "reconfigure"):
-        try:
-            _stream.reconfigure(errors="replace")
-        except (ValueError, AttributeError):
-            pass
+# H3: logging is configured by agent.logging_setup.configure_worker_logging,
+# called from prewarm()/entrypoint() AFTER livekit-agents installed its own
+# root handler -- one line per event, one format, session context on every
+# line. (basicConfig here used to add a second handler: every line twice.)
 logger = logging.getLogger("agent")
 
 def _load_env():
@@ -182,12 +170,21 @@ def build_criteria(session_data: dict) -> list:
     ]
 
 
+def _setup_logging(settings) -> None:
+    devmode = "dev" in sys.argv[1:2]
+    configure_worker_logging(
+        log_format=settings.log_format_for(devmode), level=settings.LOG_LEVEL, environment=settings.ENVIRONMENT,
+    )
+
+
 async def entrypoint(ctx: JobContext):
     _load_env()
     # prewarm() may have cached settings from the inherited environment;
     # re-read after the .env reload so a rotated key is picked up per job.
     reset_settings()
     settings = get_settings()
+    _setup_logging(settings)
+    bind_session(None, job_id=getattr(getattr(ctx, "job", None), "id", None))
     logger.info("Initializing Agent (Phase 5)...")
 
     # A fingerprint makes key precedence diagnosable without logging secrets.
@@ -226,6 +223,8 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Initialize persistence ────────────────────────────────────────
     agent_id = f"agent-{uuid_mod.uuid4().hex[:8]}"
+    # H3: from here every log line of this job carries the session and agent ids.
+    bind_session(session_id, agent_id=agent_id)
     backend_url = settings.BACKEND_INTERNAL_URL
     agent_secret = settings.AGENT_API_SECRET
 

@@ -6,6 +6,7 @@ import logging
 
 import httpx
 
+from backend.core.metrics import timed_provider_call
 from backend.providers.storage.base import ObjectStorage, StorageError, StorageUnavailable
 
 
@@ -49,6 +50,7 @@ class SupabaseStorage(ObjectStorage):
     def configured(self) -> bool:
         return self._configured
 
+    @timed_provider_call("supabase_storage", "put")
     async def put(self, key: str, data: bytes, *, content_type: str) -> None:
         resp = await self._send(
             "POST",
@@ -64,6 +66,7 @@ class SupabaseStorage(ObjectStorage):
                 status_code=resp.status_code,
             )
 
+    @timed_provider_call("supabase_storage", "delete")
     async def delete(self, key: str) -> None:
         resp = await self._send("DELETE", f"{self._base}/{key}", headers=self._headers)
         if resp.status_code not in (200, 204):

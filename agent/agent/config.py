@@ -111,6 +111,13 @@ class AgentSettings(BaseSettings):
     LEASE_RENEWAL_INTERVAL_SECONDS: int = 300
     """How often the worker renews its session lease with the backend."""
 
+    # ── Logging (H3) ───────────────────────────────────────────────────────
+    LOG_FORMAT: Literal["json", "text", "auto"] = "auto"
+    """auto = text in `dev` mode / local, json otherwise (logging_setup.py). Same line shape as the backend."""
+    LOG_LEVEL: str = "INFO"
+    ENVIRONMENT: str = "local"
+    """Stamped on every log line as `env`; shares the backend's variable."""
+
     # ── Worker process ─────────────────────────────────────────────────────
     AGENT_NAME: str = ""
     """LiveKit agent_name for explicit dispatch; empty = automatic dispatch (today's behaviour)."""
@@ -150,6 +157,11 @@ class AgentSettings(BaseSettings):
         return v.lower() if isinstance(v, str) else v
 
     # -- derived
+    def log_format_for(self, devmode: bool) -> str:
+        if self.LOG_FORMAT != "auto":
+            return self.LOG_FORMAT
+        return "text" if (devmode or self.ENVIRONMENT in ("local", "test")) else "json"
+
     @property
     def tts_cache_dir(self) -> Path:
         return self.TTS_CACHE_DIR or (self.AGENT_STATE_DIR / ".tts_cache")

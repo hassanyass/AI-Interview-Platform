@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core.config import settings
+from backend.core.metrics import sweep_finalized_total, sweep_runs_total
 from backend.models.interview import Evaluation, InterviewSession
 from backend.providers.factory import get_realtime
 
@@ -186,6 +187,7 @@ async def disconnect_auto_finalize_sweep_loop() -> None:
                 got = await db.execute(text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": SWEEP_LOCK_KEY})
                 if not got.scalar():
                     logger.debug("[DISCONNECT_SWEEP] another replica is sweeping; skipping")
+                    sweep_runs_total.labels("skipped_locked").inc()
                     await db.rollback()
                     await asyncio.sleep(settings.DISCONNECT_SWEEP_INTERVAL_SECONDS)
                     continue
@@ -202,9 +204,12 @@ async def disconnect_auto_finalize_sweep_loop() -> None:
                         "[DISCONNECT_SWEEP] auto-finalizing session %s idle since %s",
                         session.id, session.disconnected_at,
                     )
-                    await finalize_live_session(db, session, target_status="TERMINATED")
+                    if await finalize_live_session(db, session, target_status="TERMINATED"):
+                        sweep_finalized_total.inc()
+                sweep_runs_total.labels("ran").inc()
         except Exception:  # noqa: BLE001 -- the sweep loop must survive any single iteration's failure
             logger.exception("[DISCONNECT_SWEEP] sweep iteration failed")
+            sweep_runs_total.labels("failed").inc()
 
         await asyncio.sleep(settings.DISCONNECT_SWEEP_INTERVAL_SECONDS)
 

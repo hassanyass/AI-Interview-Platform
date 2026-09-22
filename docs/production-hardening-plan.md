@@ -14,9 +14,10 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–E) built, verified and committed (2026-09-22; U2 resolved: one commit
-per phase from here). Owed: one live interview check; the live DB is one migration behind
-(§15). Next: H2-F (background jobs) or H3 (observability), after examine + confirm.**
+Status: **H0, H1, H2 (A–E), H3 built, verified and committed (2026-09-22; one commit per
+phase). Live DB at head `c4d1e8f2a9b7` (applied by the compose `migrate` service during the
+H3 check, §19). Owed: one live interview check (H2-C/D/E items). Next: H2-F (background
+jobs) or H4 (tests + CI), after examine + confirm.**
 
 ---
 
@@ -1077,4 +1078,83 @@ Tests: `lib/api.errors.test.ts` (6), `components/ErrorBoundary.test.tsx`
 the boundary. Not checked live (needs an admin login): the retry screen
 and the test-drive flow — covered by the RoleContext test and left to the
 owner's pass.
+
+## 19. H3 — verify record (2026-09-22)
+
+**Logging.** Backend `core/logging.py`: `request_id_var` / `session_id_var`
+contextvars, `ContextFilter` stamps `service`/`env`/`request_id`/`session_id`
+on every record, `JsonFormatter` (ts, level, logger, message, service, env,
+request_id, session_id, extras, exception) and `TextFormatter` (readable
+line + ` request_id=… session_id=…`), `configure_logging()` replaces
+`basicConfig` and routes the uvicorn loggers through the same handler.
+`RequestIdMiddleware` binds the id for the request's lifetime; a router-level
+dependency (`deps.bind_session_id_from_path`) binds `session_id` for every
+`/api/v1/interviews/*` and `/api/v1/internal/interviews/*` route before the
+handler (and before auth fails). Agent `logging_setup.py`: the SDK's root
+handler is reused (exactly one plain `StreamHandler` kept; pytest's capture
+handlers are subclasses and untouched), JSON formatter with the same shape
+plus `agent_id`/`job_id`, text mode wraps the SDK's coloured formatter and
+appends the context; `bind_session()` from `entrypoint` (job id) and after
+`agent_id` creation; the old `basicConfig` block is gone (no more doubled
+lines). Settings: backend `LOG_FORMAT` (json|text|auto), `LOG_LEVEL`,
+`METRICS_ENABLED`; agent `LOG_FORMAT`, `LOG_LEVEL`, `ENVIRONMENT`
+(`log_format_for(devmode)`); compose sets `LOG_FORMAT=json` for both.
+
+**Correlation.** `APIPersistence._request()` sends
+`X-Request-ID: <session_id>.<agent_id>.<n>` on every backend call. The
+`[LLM-METRICS]` line carries `extra={event, llm_model, duration_ms,
+prompt_tokens, completion_tokens}` which the JSON formatter unpacks.
+
+**Metrics.** `core/metrics.py` (`prometheus_client` added to the lock):
+`http_requests_total{method,route,status}`, `http_request_duration_seconds`,
+`provider_call_duration_seconds{provider,op}`, `provider_call_failures_total`,
+`sweep_runs_total{outcome}`, `sweep_finalized_total`,
+`ready_check_failures_total{check}`, `background_tasks_pending`.
+`MetricsMiddleware` labels by path **template**; the map now recurses into
+`_IncludedRouter` entries (FastAPI 0.141 lists `include_router` routers that
+way in `app.routes`) with the include prefix — the first container check
+had labelled the agent's `renew-lease` 403 `<unmatched>`. `/metrics`
+(unauthenticated, `include_in_schema=False`) — exposure rule documented.
+Adapters decorated: groq `complete_json`; s3/supabase `put`/`delete`;
+livekit `start_room_recording`/`stop_recording`/`delete_room`.
+
+**CLI.** `backend/backend/cli.py`: `make-admin`, `finalize-stuck-sessions
+[--dry-run]`, `backfill-evaluations [--dry-run]`, `create-demo-admin`,
+`seed-demo-data`, using the app's engine and services (the backfill's
+private copy of `resolve_criteria_for_job` is gone). `scripts/*.py` are
+shims; `make cli ARGS=…` / `dev.ps1 cli -CliArgs …` set `PYTHONPATH=backend`.
+
+**Docs.** `docs/handover/README.md`, `observability.md`, `runbooks/`
+(start-stop-upgrade, apply-migration, rotate-secret, stuck-session,
+provider-outage, restore-from-backup, follow-one-interview,
+add-provider-adapter); `docs/technical/testing-strategy.md` rewritten to
+what actually runs; hardening table added to `docs/PROJECT_STATUS.md`;
+`.env.example` files extended.
+
+**Tests.** `backend/tests/test_observability.py` (10): JSON shape, context
+vars, request + session binding through a probe route, `/metrics` by
+template, **included-router template** (`…/{session_id}/renew-lease`),
+`<unmatched>` cardinality, provider decorator, CLI dry runs on the test DB,
+parser. `agent/agent/tests/test_observability.py` (4): single handler, text
+suffix, JSON context + SDK `extra` unpacking, `X-Request-ID` per call.
+`test_runtime.py` fake settings extended. Full `pytest` **335 passed,
+1 skipped**; vitest 22/22.
+
+**Live (compose).** Backend image rebuilt; `POST …/internal/interviews/<sid>/renew-lease`
+with a bad secret and `X-Request-ID: <sid>.runbook.1` → the JSON access line
+carries `request_id` and `session_id`; `/metrics` shows
+`http_requests_total{method="POST",route="/api/v1/internal/interviews/{session_id}/renew-lease",status="403"}`
+and `route="/api/v1/admin/jobs/{job_id}"` for an admin route. Earlier in the
+same phase the real agent container's `renew_lease` produced the same
+correlated pair (`<sid>.agent-demo.1`). Runbooks executed once each:
+`alembic current` = `alembic heads` = `c4d1e8f2a9b7`; `finalize-stuck-sessions
+--dry-run` inside the backend container (0 stuck); `provider_call_*` /
+`sweep_runs_total{outcome="ran"}` scraped; `pg_dump -Fc` → `pg_restore` into
+a fresh DB (19 tables, head `c4d1e8f2a9b7`) on `postgres-test`;
+`up -d --force-recreate backend` re-read the env and came back ready; the
+log-merge one-liner from `follow-one-interview.md` printed the correlated
+line. **Side effect to know:** starting the stack with the rebuilt `migrate`
+image applied `b7e2c4d9a1f3 → c4d1e8f2a9b7` (H2-B indexes, additive) to the
+live Supabase database — the item §15 left owed is therefore done. Not
+checked: a full spoken interview (still owed from H2-C/D).
 

@@ -16,4 +16,5 @@ httpx
 groq
 boto3                     # Cloudflare R2 (S3-compatible) recordings
 pymupdf                   # CV text extraction
+prometheus-client         # GET /metrics (H3)
 livekit-api               # room tokens + egress

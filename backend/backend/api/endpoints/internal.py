@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from backend.api.deps import db_dependency
+from backend.api.deps import bind_session_id_from_path, db_dependency
 from backend.core.config import settings
 from backend.models.interview import (
     InterviewSession, InterviewDefinition, InterviewSection,
@@ -38,7 +38,7 @@ from backend.schemas.persistence import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(bind_session_id_from_path)])
 
 VALID_STATUSES = {"CREATED", "IN_PROGRESS", "DISCONNECTED", "COMPLETED", "TERMINATED"}
 VALID_TRANSITIONS = {

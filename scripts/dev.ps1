@@ -7,8 +7,10 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "install", "lock", "up", "down", "test", "test-backend", "test-agent", "test-legacy", "lint", "typecheck", "migrate")]
-    [string]$Task = "help"
+    [ValidateSet("help", "install", "lock", "up", "down", "test", "test-backend", "test-agent", "test-legacy", "lint", "typecheck", "migrate", "cli")]
+    [string]$Task = "help",
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CliArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -37,6 +39,7 @@ try {
             Write-Host "lint       oxlint (frontend)"
             Write-Host "typecheck  tsc -b (frontend)"
             Write-Host "migrate    alembic upgrade head against DATABASE_URL"
+            Write-Host "cli        python -m backend.cli <args>   e.g. .\scripts\dev.ps1 cli finalize-stuck-sessions --dry-run"
         }
         "install" {
             Invoke-Step "pip install" { & $Py -m pip install -r backend/requirements.txt -r agent/requirements.txt -r requirements-dev.txt }
@@ -59,6 +62,7 @@ try {
         "lint"      { Invoke-Step "oxlint" { Push-Location frontend; npx oxlint src; Pop-Location } }
         "typecheck" { Invoke-Step "tsc -b" { Push-Location frontend; npm run typecheck; Pop-Location } }
         "migrate"   { Invoke-Step "alembic upgrade head" { Push-Location backend; & $Py -m alembic upgrade head; Pop-Location } }
+        "cli"       { Invoke-Step "backend.cli" { $env:PYTHONPATH = "backend"; & $Py -m backend.cli @CliArgs } }
     }
 }
 finally {

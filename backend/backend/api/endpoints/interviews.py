@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from backend.api.deps import db_dependency, current_user_dependency, get_current_admin
+from backend.api.deps import bind_session_id_from_path, db_dependency, current_user_dependency, get_current_admin
 from backend.models.profile import CandidateProfile
 from backend.models.interview import InterviewSession, InterviewDefinition, Job, InterviewConsent, JobApplication
 from backend.models.profile import Resume
@@ -24,7 +24,7 @@ from backend.services.sessions.finalization import finalize_live_session
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(bind_session_id_from_path)])
 
 
 

@@ -114,7 +114,8 @@ async def test_entrypoint_marks_disconnected_and_shuts_down_when_the_session_cra
     ctx = _fake_ctx()
     settings = SimpleNamespace(missing_for_job=lambda: [], GROQ_API_KEY="k", BACKEND_INTERNAL_URL="http://b",
                                AGENT_API_SECRET="s", BACKEND_TIMEOUT_SECONDS=1, BACKEND_RETRY_ATTEMPTS=0,
-                               LEASE_RENEWAL_INTERVAL_SECONDS=0.01, LEASE_ERROR_SHUTDOWN_AFTER=3)
+                               LEASE_RENEWAL_INTERVAL_SECONDS=0.01, LEASE_ERROR_SHUTDOWN_AFTER=3,
+                               log_format_for=lambda dev: "text", LOG_LEVEL="INFO", ENVIRONMENT="test")
     monkeypatch.setattr(main, "_load_env", lambda: None)
     monkeypatch.setattr(main, "reset_settings", lambda: None)
     monkeypatch.setattr(main, "get_settings", lambda: settings)
@@ -142,7 +143,8 @@ async def test_entrypoint_stops_driving_the_session_when_the_lease_is_lost(monke
     ctx = _fake_ctx()
     settings = SimpleNamespace(missing_for_job=lambda: [], GROQ_API_KEY="k", BACKEND_INTERNAL_URL="http://b",
                                AGENT_API_SECRET="s", BACKEND_TIMEOUT_SECONDS=1, BACKEND_RETRY_ATTEMPTS=0,
-                               LEASE_RENEWAL_INTERVAL_SECONDS=0.01, LEASE_ERROR_SHUTDOWN_AFTER=3)
+                               LEASE_RENEWAL_INTERVAL_SECONDS=0.01, LEASE_ERROR_SHUTDOWN_AFTER=3,
+                               log_format_for=lambda dev: "text", LOG_LEVEL="INFO", ENVIRONMENT="test")
     monkeypatch.setattr(main, "_load_env", lambda: None)
     monkeypatch.setattr(main, "reset_settings", lambda: None)
     monkeypatch.setattr(main, "get_settings", lambda: settings)
@@ -181,7 +183,8 @@ async def test_entrypoint_normal_completion_finalizes_and_shuts_down(monkeypatch
     ctx.room.on = lambda name, fn=None: handlers.__setitem__(name, fn) if fn else (lambda f: handlers.__setitem__(name, f))
     settings = SimpleNamespace(missing_for_job=lambda: [], GROQ_API_KEY="k", BACKEND_INTERNAL_URL="http://b",
                                AGENT_API_SECRET="s", BACKEND_TIMEOUT_SECONDS=1, BACKEND_RETRY_ATTEMPTS=0,
-                               LEASE_RENEWAL_INTERVAL_SECONDS=10, LEASE_ERROR_SHUTDOWN_AFTER=3)
+                               LEASE_RENEWAL_INTERVAL_SECONDS=10, LEASE_ERROR_SHUTDOWN_AFTER=3,
+                               log_format_for=lambda dev: "text", LOG_LEVEL="INFO", ENVIRONMENT="test")
     monkeypatch.setattr(main, "_load_env", lambda: None)
     monkeypatch.setattr(main, "reset_settings", lambda: None)
     monkeypatch.setattr(main, "get_settings", lambda: settings)

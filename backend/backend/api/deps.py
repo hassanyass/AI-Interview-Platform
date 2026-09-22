@@ -1,11 +1,13 @@
 from fastapi import Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.db.session import get_db
+from backend.core.logging import bind_session
 from backend.core.security import get_current_user_token_data
 from backend.models.profile import CandidateProfile, UserRole
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 import uuid
+from uuid import UUID
 
 # Re-export for convenience
 db_dependency = Depends(get_db)
@@ -90,3 +92,11 @@ async def get_current_admin(
     if not user_role or user_role.role != "admin":
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return sub
+
+
+async def bind_session_id_from_path(session_id: UUID | None = None):
+    """H3: routes with a {session_id} path param get it on every log line
+    (core/logging.py). Used as a router-level dependency; routes without the
+    param simply bind nothing."""
+    if session_id is not None:
+        bind_session(session_id)

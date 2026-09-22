@@ -13,6 +13,8 @@ import uuid
 from starlette.requests import Request
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from backend.core.logging import request_id_var
+
 HEADER = "x-request-id"
 _SAFE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
@@ -42,6 +44,8 @@ class RequestIdMiddleware:
                 break
         request_id = inbound or uuid.uuid4().hex
         scope.setdefault("state", {})["request_id"] = request_id
+        # H3: every log line emitted while handling this request carries it.
+        token = request_id_var.set(request_id)
 
         async def send_with_header(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -51,4 +55,7 @@ class RequestIdMiddleware:
                 message["headers"] = headers
             await send(message)
 
-        await self.app(scope, receive, send_with_header)
+        try:
+            await self.app(scope, receive, send_with_header)
+        finally:
+            request_id_var.reset(token)

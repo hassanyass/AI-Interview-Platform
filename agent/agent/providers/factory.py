@@ -105,7 +105,12 @@ def build_vad(settings: Optional[AgentSettings] = None):
 def prewarm(proc: JobProcess) -> None:
     """WorkerOptions.prewarm_fnc: runs once per job process, before any job.
     Loading the Silero ONNX model here means an interview no longer pays for
-    it on the event loop at connect time."""
+    it on the event loop at connect time. Also the first chance to put the
+    job process's logging into shape (H3)."""
+    import sys
+    from agent.logging_setup import configure_worker_logging
+    s = get_settings()
+    configure_worker_logging(log_format=s.log_format_for("dev" in sys.argv[1:2]), level=s.LOG_LEVEL, environment=s.ENVIRONMENT)
     proc.userdata[VAD_USERDATA_KEY] = build_vad()
 
 

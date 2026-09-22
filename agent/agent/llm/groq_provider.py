@@ -71,6 +71,9 @@ class GroqProvider(LLMProvider):
             self.model, duration_ms,
             getattr(usage, "prompt_tokens", None), getattr(usage, "completion_tokens", None),
             getattr(usage, "total_tokens", None),
+            extra={"event": "llm_call", "llm_model": self.model, "duration_ms": round(duration_ms, 1),
+                   "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                   "completion_tokens": getattr(usage, "completion_tokens", None)},
         )
 
         content = response.choices[0].message.content
