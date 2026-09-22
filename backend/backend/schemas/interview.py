@@ -143,3 +143,21 @@ class InterviewResultResponse(BaseModel):
     final_result: Optional[dict] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class TranscriptEntryResponse(BaseModel):
+    """One line of GET /interviews/{id}/transcript (H2-A1: typed, same shape)."""
+    sequence_number: int
+    speaker: str
+    text: str
+    phase: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class SessionEventResponse(BaseModel):
+    """One entry of GET /interviews/{id}/events (H2-A1: typed, same shape)."""
+    event_type: str
+    phase: Optional[str] = None
+    sequence_number: int
+    metadata: Optional[dict] = None
+    created_at: Optional[str] = None

@@ -14,7 +14,7 @@ import logging
 import secrets
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -25,7 +25,7 @@ from backend.models.interview import InterviewDefinition, InterviewInvitation, J
 from backend.schemas.admin import InvitationCreate, InvitationResponse
 from backend.services.candidate_profile_service import get_or_create_candidate_profile
 from backend.services.job_application_service import get_or_create_job_application
-from backend.services.notifications import notification_service
+from backend.providers.factory import get_notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ async def create_invitation(
     await db.refresh(invitation)
 
     invite_link = f"/invite/{token}"
-    await notification_service.send_invitation_email(
+    await get_notification_service().send_invitation_email(
         to=email,
         link=invite_link,
         context={"job_title": job_title},
@@ -118,13 +118,19 @@ async def list_invitations(
     definition_id: UUID,
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(get_current_admin),
+    limit: int | None = Query(default=None, ge=1, le=500, description="Page size; omitted = all (today's behaviour)."),
+    offset: int = Query(default=0, ge=0),
 ):
     definition = await _get_definition_or_404(db, definition_id)
 
-    result = await db.execute(
+    stmt = (
         select(InterviewInvitation)
         .join(JobApplication, InterviewInvitation.application_id == JobApplication.id)
         .where(JobApplication.job_id == definition.job_id)
         .order_by(InterviewInvitation.created_at.desc())
+        .offset(offset)
     )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    result = await db.execute(stmt)
     return result.scalars().all()

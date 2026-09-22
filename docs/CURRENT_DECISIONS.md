@@ -237,10 +237,15 @@ data, not yet a finished/trusted threshold:**
   "down" vs. "up" — this sandbox's Browser pane blocks camera access
   (same limitation PR-D hit), so this can only be confirmed via a real
   live test. `useFaceDetectionMonitor.ts` logs every decomposed angle to
-  the console (`VITE_HEAD_POSE_DEBUG`, on by default) and the trigger
-  condition checks `Math.abs(pitch)` in both directions until that's
-  confirmed. Do not treat HEAD_DOWN_SUSPECTED as a calibrated signal until
-  a real test confirms the axis/sign and the 25°/3-sample defaults hold up.
+  the console and the trigger condition checks `Math.abs(pitch)` in both
+  directions until that's confirmed. Do not treat HEAD_DOWN_SUSPECTED as a
+  calibrated signal until a real test confirms the axis/sign and the
+  25°/3-sample defaults hold up.
+  **Decision 2026-09-21 (hardening H1-D):** the angle log is on in dev
+  builds and off in production builds; `VITE_HEAD_POSE_DEBUG=true|false`
+  overrides either way (`src/config.ts`). Calibration therefore runs on a
+  dev server or with the flag set explicitly; a production build no longer
+  spams the console by default. The calibration itself is still pending.
 - The LiveKit agent worker (`python -m agent.main dev`) does NOT hot-reload
   in dev mode (`in-process auto-reload has been removed`, per its own
   startup warning) — it must be manually restarted to pick up this

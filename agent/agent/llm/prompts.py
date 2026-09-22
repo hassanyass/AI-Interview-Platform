@@ -47,7 +47,26 @@ SYSTEM_MESSAGES = {
         # question is appended verbatim after each of these.
         "background_to_discussion": "Thanks, that gives me a good picture of your background. Now let's move on to the discussion questions.",
         "background_skipped": "Sure, we'll skip the rest of the background and go straight to the discussion questions.",
-        "background_time_up": "Thanks, that gives me a good picture. Let's move on to the discussion questions."
+        "background_time_up": "Thanks, that gives me a good picture. Let's move on to the discussion questions.",
+        # H2-C (docs/production-hardening-plan.md): controller fallbacks and
+        # forced transitions that used to be hard-coded English in
+        # controller.py and reached Arabic candidates as English.
+        "already_completed": "The interview has already been completed.",
+        "time_up_wrap": "We are out of time for today's interview. Let me wrap things up.",
+        "llm_fallback": "I'm sorry, I didn't quite catch that. Could you repeat?",
+        "im_ready_ack": "Great. Walk me through how you would approach this problem.",
+        "forced_wrap_up": "Alright, in the interest of time, let's wrap things up.",
+        "forced_next_question": "Alright, in the interest of time, let's move on to the next question.",
+        "forced_to_technical": "Anyway, let's move on to the technical portion of our interview.",
+        "forced_wrap_question": "Alright, in the interest of time, let's wrap up this question and move on.",
+        "forced_next_part": "Let's move on to the next part.",
+        # H2-C: a spoken control phrase that would change the interview
+        # irreversibly is confirmed on the next turn (voice_intents.py).
+        "confirm_end_interview": "It sounds like you'd like to end the interview. Say yes to confirm, or just keep going.",
+        "confirm_skip_question": "Do you want to skip this question? Say yes to confirm, or just keep going.",
+        "confirm_change_question": "Do you want a different question? Say yes to confirm, or just keep going.",
+        "confirm_move_to_technical": "Do you want to move to the technical part now? Say yes to confirm, or just keep going.",
+        "confirm_skip_section": "Do you want to skip the rest of this section? Say yes to confirm, or just keep going."
     },
     "ar": {
         "end_interview": "شكرًا لوقتك اليوم. بننهي المقابلة هنا وبنتواصل معك قريبًا. طاب يومك!",
@@ -67,7 +86,22 @@ SYSTEM_MESSAGES = {
         "skip_intro": "تمام، خلّنا ننتقل مباشرة للأسئلة.",
         "background_to_discussion": "شكراً لك، صارت عندي صورة واضحة عن خلفيتك. خلّنا ننتقل الآن لأسئلة النقاش.",
         "background_skipped": "تمام، بنتخطى باقي أسئلة الخلفية وننتقل مباشرة لأسئلة النقاش.",
-        "background_time_up": "شكراً لك، صارت عندي صورة واضحة. خلّنا ننتقل لأسئلة النقاش."
+        "background_time_up": "شكراً لك، صارت عندي صورة واضحة. خلّنا ننتقل لأسئلة النقاش.",
+        # H2-C: see the matching English entries.
+        "already_completed": "المقابلة انتهت خلاص.",
+        "time_up_wrap": "خلص وقت المقابلة لليوم. خلّني أختم معك.",
+        "llm_fallback": "عذراً، ما فهمت عليك زين. ممكن تعيد؟",
+        "im_ready_ack": "ممتاز. خذني خطوة بخطوة، كيف بتحل هذي المسألة؟",
+        "forced_wrap_up": "طيب، عشان الوقت، خلّنا نختم.",
+        "forced_next_question": "طيب، عشان الوقت، ننتقل للسؤال اللي بعده.",
+        "forced_to_technical": "على العموم، خلّنا ننتقل للجزء التقني من المقابلة.",
+        "forced_wrap_question": "طيب، عشان الوقت، خلّنا نختم هذا السؤال وننتقل.",
+        "forced_next_part": "خلّنا ننتقل للجزء اللي بعده.",
+        "confirm_end_interview": "يبدو إنك تبي تنهي المقابلة. قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_skip_question": "تبي تتخطى هذا السؤال؟ قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_change_question": "تبي سؤال ثاني؟ قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_move_to_technical": "تبي ننتقل للجزء التقني الحين؟ قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_skip_section": "تبي تتخطى باقي هذا القسم؟ قل نعم للتأكيد، أو كمّل عادي."
     }
 }
 # ─── Core Interviewer Identity ────────────────────────────────────────────────

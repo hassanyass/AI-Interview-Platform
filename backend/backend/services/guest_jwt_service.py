@@ -15,11 +15,11 @@ from backend.core.config import settings
 
 
 def mint_guest_jwt(profile_id: str, email: str) -> str:
-    expiration = datetime.now(timezone.utc) + timedelta(hours=24)
+    expiration = datetime.now(timezone.utc) + timedelta(hours=settings.GUEST_JWT_TTL_HOURS)
     payload = {
         "sub": profile_id,
         "email": email,
         "type": "guest",
         "exp": expiration,
     }
-    return jwt.encode(payload, settings.SECRET_KEY, algorithm="HS256")
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.GUEST_JWT_ALGORITHM)

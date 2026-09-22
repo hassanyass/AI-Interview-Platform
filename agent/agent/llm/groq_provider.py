@@ -11,12 +11,26 @@ logger = logging.getLogger(__name__)
 
 
 class GroqProvider(LLMProvider):
-    def __init__(self):
-        api_key = os.getenv("GROQ_API_KEY")
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        *,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 1,
+    ):
+        # Explicit arguments come from agent.providers.factory (AgentSettings);
+        # the env fallback keeps the bare `GroqProvider()` used by the
+        # simulator and ad-hoc scripts working.
+        api_key = api_key or os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY is missing")
-        self.client = groq.AsyncGroq(api_key=api_key)
-        self.model = os.getenv("LLM_MODEL")
+        # H2-D: a bounded call. The controller turns a timeout into its
+        # localized fallback line and the turn lock is released, so an
+        # END_INTERVIEW press can never wait behind a stalled model for
+        # minutes (the SDK default was 60s x 2 retries).
+        self.client = groq.AsyncGroq(api_key=api_key, timeout=timeout_seconds, max_retries=max_retries)
+        self.model = model or os.getenv("LLM_MODEL")
         if not self.model:
             raise ValueError("LLM_MODEL is missing in configuration. Agent must explicitly declare which model to use.")
         

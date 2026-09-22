@@ -74,9 +74,11 @@ def _read_state(state_path: Path) -> dict:
 
 def _write_state(state_path: Path, index: int) -> None:
     try:
-        state_path.write_text(
-            json.dumps({"index": index, "date": _today_utc()}), encoding="utf-8"
-        )
+        # H2-D: atomic replace -- a crash mid-write can no longer leave a
+        # truncated JSON file that every later start fails to parse.
+        tmp = state_path.with_suffix(state_path.suffix + ".tmp")
+        tmp.write_text(json.dumps({"index": index, "date": _today_utc()}), encoding="utf-8")
+        os.replace(tmp, state_path)
     except OSError:
         logger.exception("[GROQ-KEY-ROTATOR] Failed to persist state")
 
@@ -93,7 +95,16 @@ class GroqKeyRotator:
     progress on every write, and both would read whichever happened to be
     saved last regardless of which language it actually came from."""
 
-    def __init__(self, namespace: str, model: str = "", voice: str = ""):
+    def __init__(
+        self,
+        namespace: str,
+        model: str = "",
+        voice: str = "",
+        keys: Optional[List[str]] = None,
+        state_dir: Optional[Path] = None,
+    ):
+        # keys / state_dir come from agent.providers.factory (AgentSettings);
+        # the env / agent-dir fallbacks keep older call sites working.
         self._namespace = namespace
         # Stored so rebuild_plugin() can construct a fresh groq.TTS instance
         # after a rotation without the caller (voice_adapter.py) needing to
@@ -102,8 +113,8 @@ class GroqKeyRotator:
         # this rotator's own rotate()/rebuild_plugin() pair.
         self._model = model
         self._voice = voice
-        self._state_path = _STATE_DIR / f".groq_key_state_{namespace}.json"
-        self._keys = _load_keys()
+        self._state_path = (state_dir or _STATE_DIR) / f".groq_key_state_{namespace}.json"
+        self._keys = list(keys) if keys is not None else _load_keys()
         state = _read_state(self._state_path)
         # A new UTC day means every key's daily quota is fresh again --
         # start back at key 1 rather than staying wherever yesterday's

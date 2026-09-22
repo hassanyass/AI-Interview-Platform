@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from backend.api.deps import db_dependency, current_user_dependency, get_current_admin
 from backend.models.profile import CandidateProfile
-from backend.models.interview import InterviewSession, InterviewConfiguration, InterviewDefinition, Job, InterviewConsent, JobApplication
+from backend.models.interview import InterviewSession, InterviewDefinition, Job, InterviewConsent, JobApplication
 from backend.models.profile import Resume
 from backend.services.resume_ingest import ingest_resume, profile_cv_summary
 from backend.schemas.interview import (
+    TranscriptEntryResponse,
+    SessionEventResponse,
     InterviewSessionResponse,
     InterviewResultResponse,
     ConsentCreate,
@@ -15,12 +18,9 @@ from backend.schemas.interview import (
     SessionCvStatus,
     CvSummary,
 )
-from backend.core.config import settings
-from backend.services.guest_jwt_service import mint_guest_jwt
 import logging
 from uuid import UUID
-import uuid
-from backend.api.endpoints.internal import _finalize_live_session
+from backend.services.sessions.finalization import finalize_live_session
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +231,7 @@ async def terminate_interview(
     if not session:
         raise HTTPException(status_code=404, detail="Interview session not found")
 
-    await _finalize_live_session(db, session, target_status="TERMINATED")
+    await finalize_live_session(db, session, target_status="TERMINATED")
     await db.refresh(session)
     return session
 
@@ -273,7 +273,10 @@ async def record_consent(
     try:
         await db.commit()
         await db.refresh(consent)
-    except Exception:
+    except IntegrityError:
+        # Idempotent: a second consent for the same session hits the unique
+        # constraint -- return the existing row. Any other DB failure
+        # propagates (H2-A1: this used to swallow everything).
         await db.rollback()
         existing_result = await db.execute(
             select(InterviewConsent).where(InterviewConsent.session_id == session_id)
@@ -286,7 +289,7 @@ async def record_consent(
     return consent
 
 
-@router.get("/{session_id}/transcript")
+@router.get("/{session_id}/transcript", response_model=list[TranscriptEntryResponse])
 async def get_transcript(
     session_id: UUID,
     db: AsyncSession = db_dependency,
@@ -329,7 +332,7 @@ async def get_transcript(
     ]
 
 
-@router.get("/{session_id}/events")
+@router.get("/{session_id}/events", response_model=list[SessionEventResponse])
 async def get_events(
     session_id: UUID,
     db: AsyncSession = db_dependency,

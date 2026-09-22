@@ -65,7 +65,7 @@ def _stubs():
         patch("backend.services.resume_service.ResumeService.upload", new=AsyncMock(return_value="users/x/resumes/y.pdf")),
         patch("backend.services.resume_service.ResumeService.extract_text", return_value="Backend Engineer, Python, FastAPI"),
         patch("backend.services.resume_service.ResumeService.build_candidate_profile", new=AsyncMock(return_value=fake_profile)),
-        patch("backend.api.endpoints.livekit._start_recording_egress", new=AsyncMock()),
+        patch("backend.services.sessions.room_token.start_recording_egress", new=AsyncMock()),
     )
 
 

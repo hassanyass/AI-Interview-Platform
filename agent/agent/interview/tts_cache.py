@@ -35,6 +35,13 @@ logger = logging.getLogger(__name__)
 _CACHE_DIR = Path(__file__).resolve().parents[2] / ".tts_cache"
 
 
+def configure(cache_dir: Path) -> None:
+    """Point the cache at ``cache_dir`` (AgentSettings.TTS_CACHE_DIR, set by
+    agent.providers.factory). Default stays <agent/>/.tts_cache."""
+    global _CACHE_DIR
+    _CACHE_DIR = Path(cache_dir)
+
+
 def _cache_dir() -> Path:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return _CACHE_DIR

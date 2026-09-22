@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import asyncio
 import jwt
-import httpx
 from backend.core.config import settings
 import logging
 
@@ -22,22 +22,24 @@ async def get_current_user_token_data(credentials: HTTPAuthorizationCredentials 
     token = credentials.credentials
     jwks_client = get_jwks_client()
     try:
-        # 1. Try Supabase JWT first
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        # 1. Try Supabase JWT first. PyJWKClient fetches/refreshes the JWKS
+        # over HTTP synchronously (cached in between) -- off the event loop
+        # (H2-B) so a slow key refresh cannot stall every other request.
+        signing_key = await asyncio.to_thread(jwks_client.get_signing_key_from_jwt, token)
         payload = jwt.decode(
             token,
             signing_key.key,
-            algorithms=["ES256", "RS256"],
-            audience="authenticated"
+            algorithms=settings.SUPABASE_JWT_ALGORITHMS,
+            audience=settings.SUPABASE_JWT_AUDIENCE,
         )
         return {"sub": payload.get("sub"), "email": payload.get("email"), "type": "supabase"}
-    except Exception:
+    except Exception:  # noqa: BLE001 -- H5 replaces this fallback with issuer/kid selection; left as-is until then
         # 2. Fallback to Guest JWT
         try:
             payload = jwt.decode(
                 token,
                 settings.SECRET_KEY,
-                algorithms=["HS256"]
+                algorithms=[settings.GUEST_JWT_ALGORITHM]
             )
             if payload.get("type") != "guest":
                 raise HTTPException(status_code=401, detail="Invalid token type")

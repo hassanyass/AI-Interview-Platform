@@ -6,15 +6,17 @@ Guards the two regressions found while proving POST /resumes end-to-end:
     `recommended_level`) and strict validation threw the whole profile away;
   * the failure was swallowed into an empty profile, indistinguishable from
     "the CV had nothing in it".
-No network: the Groq call is stubbed at the httpx boundary.
+No network: the LLM call is faked at the provider port (H1-B moved the
+Groq client behind backend.providers; before that it was stubbed at the
+httpx boundary).
 """
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from backend.schemas.profile import ExtractedCandidateProfile
 from backend.services.resume_service import ResumeService
+from tests.fakes import FakeLLMProvider
 
 
 def test_prompt_lists_every_schema_key():
@@ -38,46 +40,28 @@ def test_normalize_defaults_unknown_level_to_mid():
     assert ResumeService._normalize_profile_payload({"recommended_level": "staff"})["recommended_level"] == "mid"
 
 
-def _groq_response(payload: dict) -> MagicMock:
-    resp = MagicMock()
-    resp.raise_for_status = MagicMock()
-    resp.json.return_value = {"choices": [{"message": {"content": json.dumps(payload)}}]}
-    return resp
-
-
 @pytest.mark.asyncio
 async def test_build_profile_survives_model_key_drift():
     """The exact payload shape a real Groq run returned before the fix."""
     payload = {"professional_title": "Senior ML Engineer", "education": ["BSc CS"],
                "years_of_experience": 8, "skills": ["Python"], "programming_languages": ["Python"],
                "frameworks": ["PyTorch"], "projects": ["RAG assistant"], "experience_level": "senior"}
-    client = MagicMock()
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
-    client.post = AsyncMock(return_value=_groq_response(payload))
-    with patch("backend.services.resume_service.settings") as s, \
-         patch("backend.services.resume_service.httpx.AsyncClient", return_value=client):
-        s.GROQ_API_KEY, s.GROQ_MODEL = "test-key", "test-model"
-        profile = await ResumeService.build_candidate_profile("resume text")
+    llm = FakeLLMProvider(payload)
+    profile = await ResumeService.build_candidate_profile("resume text", llm=llm)
     assert profile.professional_title == "Senior ML Engineer"
     assert profile.recommended_level == "senior"
     assert profile.skills == ["Python"]
     # and the prompt actually carries the schema now
-    sent = client.post.call_args.kwargs["json"]
+    sent = llm.calls[-1]
     assert '"recommended_level"' in sent["messages"][0]["content"]
-    assert sent["response_format"] == {"type": "json_object"}
+    # JSON mode is the port's contract (complete_json); the extraction model is chosen per call
+    assert sent["model"] is not None
 
 
 @pytest.mark.asyncio
 async def test_build_profile_logs_error_on_failure_and_returns_empty():
-    client = MagicMock()
-    client.__aenter__ = AsyncMock(return_value=client)
-    client.__aexit__ = AsyncMock(return_value=False)
-    client.post = AsyncMock(side_effect=RuntimeError("groq down"))
-    with patch("backend.services.resume_service.settings") as s, \
-         patch("backend.services.resume_service.httpx.AsyncClient", return_value=client), \
-         patch("backend.services.resume_service.logger") as log:
-        s.GROQ_API_KEY, s.GROQ_MODEL = "test-key", "test-model"
-        profile = await ResumeService.build_candidate_profile("resume text")
+    llm = FakeLLMProvider(RuntimeError("groq down"))
+    with patch("backend.services.resume_service.logger") as log:
+        profile = await ResumeService.build_candidate_profile("resume text", llm=llm)
     assert profile.skills == [] and profile.professional_title is None
     assert log.error.called

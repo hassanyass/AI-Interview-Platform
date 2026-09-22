@@ -2,25 +2,31 @@
 Internal persistence API for agent-to-backend communication.
 Protected by AGENT_API_SECRET — never exposed to the frontend.
 """
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from backend.api.deps import db_dependency
 from backend.core.config import settings
 from backend.models.interview import (
-    InterviewSession, InterviewConfiguration, InterviewDefinition, InterviewSection,
+    InterviewSession, InterviewDefinition, InterviewSection,
     InterviewMessage, InterviewEvent, InterviewCheckpoint,
-    AssessmentCriterion, Evaluation, Score,
 )
 from backend.models.profile import CandidateProfile
+from backend.services.sessions.finalization import (
+    ensure_evaluation_placeholder as _ensure_evaluation_placeholder,
+    stop_recording_egress as _stop_recording_egress,
+)
+from backend.services.evaluations.upsert import (
+    resolve_criteria_for_job as _resolve_criteria_for_job,
+    upsert_evaluation as _upsert_evaluation,
+)
 from backend.schemas.persistence import (
     MessageCreate, MessageResponse,
     EventCreate, EventResponse,
@@ -44,7 +50,9 @@ VALID_TRANSITIONS = {
 }
 
 # Agent lease duration — agent must renew within this window
-AGENT_LEASE_DURATION = timedelta(minutes=10)
+# (settings.AGENT_LEASE_MINUTES; read at call time so tests can tune it).
+def _agent_lease_duration() -> timedelta:
+    return timedelta(minutes=settings.AGENT_LEASE_MINUTES)
 
 
 # ─── Agent Auth Dependency ─────────────────────────────────────────────────────
@@ -76,188 +84,6 @@ async def _get_session(db: AsyncSession, session_id: UUID) -> InterviewSession:
     if not session:
         raise HTTPException(status_code=404, detail="Interview session not found.")
     return session
-
-
-# ─── Session-finalization contract (2026-09-01 real-issue investigation) ───────
-# Root cause (see the session that diagnosed this, and docs/CURRENT_DECISIONS.md):
-# "end this interview" was three independently-triggered side effects (stop
-# Egress, disconnect the LiveKit room, write the Evaluation row) with no
-# shared guarantee -- any one of them could fire without the others,
-# leaving a session stuck with no Evaluation row (HR dashboard's "not
-# evaluated yet") and/or a recording that never stops. These two helpers
-# are the single place all three end-of-session triggers (the agent's own
-# graceful teardown via update_session_status below, POST /interviews/
-# {id}/terminate for a candidate-initiated live end, and the idle-
-# disconnect sweep) now funnel through.
-
-async def _ensure_evaluation_placeholder(db: AsyncSession, session_id: UUID) -> None:
-    """Guarantee an Evaluation row exists once a session reaches a terminal
-    status, even if the agent process never got to run
-    generate_final_evaluation()/submit_evaluation() itself (crashed, lost
-    its lease, or the session ended via a path that never talks to the
-    agent at all). Never overwrites a real evaluation already submitted --
-    only fills the gap. Mirrors the exact fallback DetailedEvaluation shape
-    controller.py's own generate_final_evaluation() already produces on LLM
-    failure ([controller.py] "Session ended early or evaluation generation
-    failed..."), so a placeholder looks the same regardless of which of the
-    two code paths produced it."""
-    existing = await db.execute(
-        select(Evaluation.id).where(Evaluation.session_id == session_id)
-    )
-    if existing.scalar_one_or_none() is not None:
-        return
-    db.add(Evaluation(
-        session_id=session_id,
-        overall_score=None,
-        recommendation="Consider / Mixed",
-        evidence_sufficiency=0,
-        summary="Session ended before a full evaluation could be generated.",
-        detailed_overview=(
-            "This interview was disconnected or ended before the AI "
-            "evaluation could run. Review the transcript and recording "
-            "directly to assess this candidate."
-        ),
-        # Evaluation regeneration (2026-09-03): explicit flag, not a
-        # string-match on the summary above -- see Evaluation.is_placeholder's
-        # own docstring in models/interview.py and CURRENT_DECISIONS.md's
-        # "Evaluation regeneration for placeholder sessions" entry.
-        is_placeholder=True,
-    ))
-
-
-async def _delete_livekit_room(session_id: UUID) -> None:
-    """Best-effort -- never raises, same spirit as _stop_recording_egress
-    below. Forcibly ends the LiveKit room (disconnecting the agent and any
-    remaining participant), which is what actually stops a live interview
-    from continuing to run when a candidate ends it through a path (REST
-    terminate, the idle-disconnect sweep) that doesn't go through the
-    agent's own data-channel-driven END_INTERVIEW handling. A no-op if the
-    room never existed or already ended -- both expected, not errors."""
-    from livekit import api as lk_api
-    room_name = f"interview-{session_id}"
-    lkapi = lk_api.LiveKitAPI(url=settings.LIVEKIT_URL, api_key=settings.LIVEKIT_API_KEY, api_secret=settings.LIVEKIT_API_SECRET)
-    try:
-        await lkapi.room.delete_room(lk_api.DeleteRoomRequest(room=room_name))
-    except Exception:
-        logger.info("No live LiveKit room to delete for session %s (already ended or never started)", session_id)
-    finally:
-        await lkapi.aclose()
-
-
-async def _finalize_live_session(db: AsyncSession, session: InterviewSession, target_status: str = "TERMINATED") -> bool:
-    """Idempotent terminal-state finalizer for a session ended from OUTSIDE
-    the agent's own graceful teardown -- POST /interviews/{id}/terminate
-    (candidate-initiated, now covers a LIVE session too, not just the
-    pre-connect abandon case) and the idle-disconnect sweep. Deliberately
-    does NOT route through update_session_status's VALID_TRANSITIONS table
-    below -- that table only models the agent-driven state machine, and a
-    candidate-abandoned CREATED session ending in TERMINATED (this
-    endpoint's original, still-supported case) was never a modeled agent
-    transition either. No-op (returns False) if the session already
-    reached a terminal status -- safe to call from multiple triggers
-    without double-finalizing."""
-    if session.status in ("COMPLETED", "TERMINATED"):
-        return False
-
-    session.status = target_status
-    if not session.completed_at:
-        session.completed_at = datetime.now(timezone.utc)
-    session.active_agent_id = None
-    session.agent_lease_expires_at = None
-    session.disconnected_at = None
-    # Bug fix (2026-09-02): captured before commit, deliberately. Reading
-    # session.recording_egress_id AFTER db.commit() (as this used to do)
-    # hits the exact same async-SQLAlchemy pitfall as admin.py's
-    # update_job_criteria fix earlier today: commit() expires every
-    # attribute on `session` by default, so that later read silently
-    # became a lazy-load -- which async SQLAlchemy can't do outside an
-    # active greenlet context, raising `MissingGreenlet:
-    # greenlet_spawn has not been called` and aborting the whole
-    # terminate/finalize call (candidate-initiated terminate, and the
-    # idle-disconnect sweep both call this function).
-    session_id = session.id
-    recording_egress_id = session.recording_egress_id
-
-    await _ensure_evaluation_placeholder(db, session_id)
-    await db.commit()
-
-    if recording_egress_id:
-        await _stop_recording_egress(recording_egress_id)
-    await _delete_livekit_room(session_id)
-    return True
-
-
-_DISCONNECT_SWEEP_INTERVAL_SECONDS = 120
-
-
-async def disconnect_auto_finalize_sweep_loop() -> None:
-    """Backend-owned safety net: a candidate who disconnects (tab closed,
-    network drop) and never resumes would otherwise leave the session
-    (and its LiveKit Egress recording) running indefinitely -- nothing
-    else in this codebase ever revisits a DISCONNECTED session once the
-    agent process that was handling it exits. Runs for the lifetime of the
-    backend process (started from main.py's startup event, same lifecycle
-    as the app itself), same polling-loop shape as the agent's own
-    renew_lease_loop in agent/agent/main.py. Confirmed default duration
-    with the user (2026-09-01): 10 minutes idle in DISCONNECTED."""
-    from backend.db.session import AsyncSessionLocal
-
-    if not AsyncSessionLocal:
-        return
-
-    while True:
-        try:
-            threshold = datetime.now(timezone.utc) - timedelta(
-                minutes=settings.DISCONNECT_AUTO_FINALIZE_MINUTES
-            )
-            async with AsyncSessionLocal() as db:
-                result = await db.execute(
-                    select(InterviewSession).where(
-                        InterviewSession.status == "DISCONNECTED",
-                        InterviewSession.disconnected_at.is_not(None),
-                        InterviewSession.disconnected_at < threshold,
-                    )
-                )
-                stale_sessions = list(result.scalars().all())
-                for session in stale_sessions:
-                    logger.info(
-                        "[DISCONNECT_SWEEP] auto-finalizing session %s idle since %s",
-                        session.id, session.disconnected_at,
-                    )
-                    await _finalize_live_session(db, session, target_status="TERMINATED")
-        except Exception:
-            logger.exception("[DISCONNECT_SWEEP] sweep iteration failed")
-
-        await asyncio.sleep(_DISCONNECT_SWEEP_INTERVAL_SECONDS)
-
-
-async def _resolve_criteria_for_job(db: AsyncSession, job_id) -> list[AssessmentCriterion]:
-    """Phase 8C. job_id-scoped enabled rows if any exist for this job;
-    otherwise falls back to the enabled TEMPLATE tier (job_id/section_id both
-    NULL) as this job's default set. That fallback is a deliberate, flagged
-    interim behavior (no 8E authoring UI exists yet to create job-scoped
-    rows) — see AssessmentCriterion's docstring in models/interview.py.
-    Returns [] entirely for job_id=None (a legacy, non-B2B session)."""
-    if job_id is None:
-        return []
-    result = await db.execute(
-        select(AssessmentCriterion).where(
-            AssessmentCriterion.job_id == job_id,
-            AssessmentCriterion.enabled.is_(True),
-        )
-    )
-    job_criteria = list(result.scalars().all())
-    if job_criteria:
-        return job_criteria
-
-    template_result = await db.execute(
-        select(AssessmentCriterion).where(
-            AssessmentCriterion.job_id.is_(None),
-            AssessmentCriterion.section_id.is_(None),
-            AssessmentCriterion.enabled.is_(True),
-        )
-    )
-    return list(template_result.scalars().all())
 
 
 # ─── Load Session (for agent bootstrap / recovery) ────────────────────────────
@@ -307,7 +133,7 @@ async def load_session_for_agent(
 
     # Acquire lease
     session.active_agent_id = agent_id
-    session.agent_lease_expires_at = now + AGENT_LEASE_DURATION
+    session.agent_lease_expires_at = now + _agent_lease_duration()
 
     # Load candidate profile
     profile_result = await db.execute(
@@ -472,7 +298,7 @@ async def renew_agent_lease(
             detail="You do not hold the lease for this session.",
         )
     now = datetime.now(timezone.utc)
-    new_expiry = now + AGENT_LEASE_DURATION
+    new_expiry = now + _agent_lease_duration()
     session.agent_lease_expires_at = new_expiry
     await db.commit()
     # Audit fix (2026-08-27): db.commit() expires the ORM instance's
@@ -554,21 +380,6 @@ async def update_session_status(
     return {"session_id": str(session_id), "status": target}
 
 
-async def _stop_recording_egress(egress_id: str) -> None:
-    """Best-effort -- never raises. A failure here means the egress
-    process keeps running until it hits LiveKit's own room-empty/timeout
-    behavior; it does not affect the session's own COMPLETED/TERMINATED
-    status, which has already been committed by the time this runs."""
-    from livekit import api as lk_api
-    lkapi = lk_api.LiveKitAPI(url=settings.LIVEKIT_URL, api_key=settings.LIVEKIT_API_KEY, api_secret=settings.LIVEKIT_API_SECRET)
-    try:
-        await lkapi.egress.stop_egress(lk_api.StopEgressRequest(egress_id=egress_id))
-    except Exception:
-        logger.exception("Failed to stop recording egress %s", egress_id)
-    finally:
-        await lkapi.aclose()
-
-
 # ─── Messages ──────────────────────────────────────────────────────────────────
 
 @router.post(
@@ -596,9 +407,10 @@ async def create_message(
     try:
         await db.commit()
         await db.refresh(msg)
-    except Exception:
+    except IntegrityError:
         await db.rollback()
-        # Idempotency: if unique constraint violated, return existing
+        # Idempotency: unique (session_id, sequence_number) violated -> return
+        # the existing row. Other DB failures propagate (H2-A1).
         result = await db.execute(
             select(InterviewMessage).where(
                 InterviewMessage.session_id == session_id,
@@ -648,7 +460,8 @@ async def create_event(
     try:
         await db.commit()
         await db.refresh(event)
-    except Exception:
+    except IntegrityError:
+        # Same idempotency contract as create_message above.
         await db.rollback()
         result = await db.execute(
             select(InterviewEvent).where(
@@ -710,112 +523,6 @@ async def create_checkpoint(
     await db.refresh(checkpoint)
 
     return checkpoint
-
-
-# ─── Evaluation Submission (Phase 8C) ───────────────────────────────────────────
-
-async def _upsert_evaluation(
-    db: AsyncSession,
-    session: InterviewSession,
-    *,
-    overall_score,
-    recommendation,
-    evidence_sufficiency,
-    summary,
-    detailed_overview,
-    criterion_scores,
-) -> UUID:
-    """Shared upsert for the normalized Evaluation + Score rows -- the one
-    place both the agent's own submission (submit_evaluation below) and
-    the HR-triggered regeneration (admin.py's regenerate_evaluation, added
-    2026-09-03 -- see CURRENT_DECISIONS.md's "Evaluation regeneration for
-    placeholder sessions" entry) write a real evaluation, so the
-    weighted-score formula and Score-row handling exist in exactly one
-    place. Idempotent on session_id -- a second call (retry, or an
-    explicit regeneration) replaces rather than accumulates prior scores.
-    Marks is_placeholder=False unconditionally: reaching this function at
-    all means a real evaluation (initial or regenerated) was produced, not
-    the generic fallback. `criterion_scores` items need only
-    `.criterion_key`/`.score`/`.overview`/`.strengths`/`.improvements`/
-    `.evidence_reference` attributes -- CriterionScoreSubmit instances
-    from either caller satisfy this. Caller commits; returns the
-    evaluation id (captured before commit -- see the comment below on
-    why)."""
-    result = await db.execute(
-        select(Evaluation).where(Evaluation.session_id == session.id)
-    )
-    evaluation = result.scalar_one_or_none()
-
-    if evaluation is None:
-        evaluation = Evaluation(session_id=session.id)
-        db.add(evaluation)
-        await db.flush()  # assigns evaluation.id before Score rows reference it
-    else:
-        await db.execute(delete(Score).where(Score.evaluation_id == evaluation.id))
-
-    evaluation.overall_score = overall_score
-    evaluation.recommendation = recommendation
-    evaluation.evidence_sufficiency = evidence_sufficiency
-    evaluation.summary = summary
-    evaluation.detailed_overview = detailed_overview
-    evaluation.is_placeholder = False
-
-    # Scoring-mechanism upgrade (2026-09-01, signed-off frozen-file touch,
-    # see CURRENT_DECISIONS.md's "Scoring mechanism upgrade" entry): a
-    # real, code-computed weighted aggregate of criterion_scores, using
-    # each enabled criterion's AssessmentCriterion.weight. Deliberately
-    # separate from overall_score (the LLM's own independent holistic
-    # judgment, untouched by this change) -- computed once here, using the
-    # weights in effect at submission time, then frozen on the Evaluation
-    # row, same "recorded fact about this evaluation event" precedent as
-    # overall_score/evidence_sufficiency.
-    #
-    # Formula (plan item 3): S = criteria that are both enabled for this
-    # job AND have a non-null score in this submission. weighted_score =
-    # sum(weight_i * score_i for i in S) / sum(weight_i for i in S).
-    # Dividing by the sum of INCLUDED weights (not a fixed total) IS the
-    # renormalization -- a disabled or null-scored criterion's weight is
-    # simply absent from that denominator, so the remaining criteria's
-    # shares grow proportionally on their own. None (not 0) when S is
-    # empty -- nothing to average is "insufficient evidence", not "scored
-    # zero", matching overall_score's own null convention.
-    weighted_sum = 0.0
-    total_weight = 0
-    if criterion_scores:
-        # Best-effort criterion_id resolution, scoped to this exact job's
-        # resolved criteria set (not a bare global key lookup — a key is
-        # only unique within one job/template scope, not across all of them).
-        # _resolve_criteria_for_job already filters to enabled.is_(True), so
-        # a criterion disabled since the question was asked (or any key not
-        # in this job's resolved set) is naturally excluded from both the
-        # criterion_id lookup and the weighted-score computation below.
-        resolved = await _resolve_criteria_for_job(db, session.job_id)
-        key_to_id = {c.key: c.id for c in resolved}
-        key_to_weight = {c.key: c.weight for c in resolved}
-        for cs in criterion_scores:
-            db.add(Score(
-                evaluation_id=evaluation.id,
-                criterion_id=key_to_id.get(cs.criterion_key),
-                criterion_key=cs.criterion_key,
-                score=cs.score,
-                overview=cs.overview,
-                strengths=cs.strengths,
-                improvements=cs.improvements,
-                evidence_reference=cs.evidence_reference,
-            ))
-            weight = key_to_weight.get(cs.criterion_key)
-            if weight is not None and cs.score is not None:
-                weighted_sum += weight * cs.score
-                total_weight += weight
-
-    evaluation.weighted_score = (weighted_sum / total_weight) if total_weight > 0 else None
-
-    # Audit fix (2026-08-27) pattern, same bug class: db.commit() expires the
-    # ORM instance's attributes by default, so reading evaluation.id after
-    # commit forces a lazy-refresh outside an async-safe context ->
-    # sqlalchemy.exc.MissingGreenlet. Capture the value BEFORE commit, return
-    # that local, never the (now-expired) ORM attribute.
-    return evaluation.id
 
 
 @router.post(

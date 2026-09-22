@@ -90,6 +90,14 @@ class InterviewPersistence(ABC):
         True, since that isn't a persistence failure."""
         pass
 
+    async def renew_lease(self, session_id: str) -> str:
+        """Renew this agent's claim on the session; returns a LeaseState value
+        (H2-D). Non-abstract: in-memory persistence has no lease to renew."""
+        return "renewed"
+
+    async def close(self) -> None:
+        return None
+
 
 class MockPersistence(InterviewPersistence):
     """In-memory persistence for the text simulator and unit tests."""
@@ -200,59 +208,153 @@ class MockPersistence(InterviewPersistence):
         return True
 
 
+class LeaseState:
+    """Outcome of renew_lease (H2-D): the worker reacts differently to
+    'someone else owns this session' than to 'the backend was unreachable'."""
+    RENEWED = "renewed"
+    LOST = "lost"        # 409: another agent holds the lease -> stop driving the session
+    ERROR = "error"      # transport / 5xx after retries
+
+
 class APIPersistence(InterviewPersistence):
     """
     Production persistence that communicates with the FastAPI backend
     via HTTP. The agent remains independent of backend SQLAlchemy models.
+
+    H2-D: one `_request` transport with a per-request timeout and bounded
+    retries on transport errors / 5xx (never on 4xx), plus an in-memory
+    outbox for messages, events and checkpoints that still fail: they are
+    replayed before the next request and on every lease tick. Replays are
+    idempotent -- the backend keys messages/events on (session_id,
+    sequence_number) and checkpoints are append-only snapshots.
     """
 
-    def __init__(self, backend_url: str, agent_secret: str, agent_id: str):
+    RETRYABLE_STATUSES = frozenset({500, 502, 503, 504})
+
+    def __init__(
+        self,
+        backend_url: str,
+        agent_secret: str,
+        agent_id: str,
+        *,
+        timeout_seconds: float = 10.0,
+        retry_attempts: int = 3,
+    ):
         self.backend_url = backend_url.rstrip("/")
         self.agent_secret = agent_secret
         self.agent_id = agent_id
+        self.timeout_seconds = timeout_seconds
+        self.retry_attempts = max(0, retry_attempts)
         self._session = None  # aiohttp session
+        # (method, path, kwargs) of writes that failed after retries; FIFO.
+        self._outbox: list[tuple[str, str, dict]] = []
 
     async def _get_session(self):
         if self._session is None or self._session.closed:
             import aiohttp
             self._session = aiohttp.ClientSession(
                 headers={"X-Agent-Secret": self.agent_secret},
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=self.timeout_seconds),
             )
         return self._session
 
     async def close(self):
+        if self._outbox:
+            await self.flush_outbox()
         if self._session and not self._session.closed:
             await self._session.close()
 
     def _url(self, session_id: str, path: str) -> str:
         return f"{self.backend_url}/api/v1/internal/interviews/{session_id}/{path}"
 
+    # ── transport ──────────────────────────────────────────────────────────
+
+    async def _request(self, method: str, url: str, **kwargs) -> tuple[Optional[int], Any]:
+        """Returns (status, parsed body). status is None when every attempt
+        failed at the transport level. Retries transport errors and 5xx with
+        0.5s/1s/2s backoff; a 4xx is returned immediately."""
+        import asyncio
+        import aiohttp
+        http = await self._get_session()
+        last_error: Optional[BaseException] = None
+        for attempt in range(self.retry_attempts + 1):
+            try:
+                async with http.request(method, url, **kwargs) as resp:
+                    if resp.status in self.RETRYABLE_STATUSES and attempt < self.retry_attempts:
+                        logger.warning("%s %s -> %s; retry %d/%d", method, url, resp.status, attempt + 1, self.retry_attempts)
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                        continue
+                    ctype = resp.headers.get("Content-Type", "")
+                    body = await resp.json() if "json" in ctype else await resp.text()
+                    return resp.status, body
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                last_error = e
+                if attempt < self.retry_attempts:
+                    logger.warning("%s %s transport error (%s); retry %d/%d", method, url, e, attempt + 1, self.retry_attempts)
+                    await asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+        logger.error("%s %s failed after %d attempts: %s", method, url, self.retry_attempts + 1, last_error)
+        return None, None
+
+    async def _write(self, session_id: str, path: str, body: dict, *, queue_on_failure: bool) -> bool:
+        """POST a JSON body; on failure (after retries) optionally park it in
+        the outbox for later replay. Flushes the outbox first so ordering is
+        preserved for callers that care (messages/events carry sequences)."""
+        if self._outbox:
+            await self.flush_outbox()
+        status, resp_body = await self._request(
+            "POST", self._url(session_id, path),
+            data=json.dumps(body, default=str), headers={"Content-Type": "application/json"},
+        )
+        if status in (200, 201):
+            return True
+        logger.error("Failed to save %s for %s: %s %s", path, session_id, status, str(resp_body)[:300])
+        if queue_on_failure and (status is None or status in self.RETRYABLE_STATUSES):
+            self._outbox.append(("POST", self._url(session_id, path), {
+                "data": json.dumps(body, default=str), "headers": {"Content-Type": "application/json"},
+            }))
+            logger.warning("Parked %s for %s in the outbox (%d pending)", path, session_id, len(self._outbox))
+        return False
+
+    async def flush_outbox(self) -> int:
+        """Replay parked writes in order; stops at the first one that still
+        fails (it and everything after it stay parked). Returns how many
+        were delivered."""
+        delivered = 0
+        while self._outbox:
+            method, url, kwargs = self._outbox[0]
+            status, _ = await self._request(method, url, **kwargs)
+            if status in (200, 201):
+                self._outbox.pop(0)
+                delivered += 1
+            else:
+                break
+        if delivered:
+            logger.info("Outbox: delivered %d parked write(s), %d still pending", delivered, len(self._outbox))
+        return delivered
+
+    @property
+    def outbox_size(self) -> int:
+        return len(self._outbox)
+
+    # ── reads ──────────────────────────────────────────────────────────────
+
     async def load_session(self, session_id: str) -> Optional[dict]:
-        session = await self._get_session()
-        try:
-            async with session.get(
-                self._url(session_id, "load"),
-                params={"agent_id": self.agent_id},
-            ) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                elif resp.status == 409:
-                    body = await resp.json()
-                    logger.warning(f"Session conflict: {body.get('detail')}")
-                    return None
-                elif resp.status == 404:
-                    logger.warning(f"Session {session_id} not found in backend.")
-                    return None
-                else:
-                    logger.error(f"Failed to load session: {resp.status}")
-                    return None
-        except Exception as e:
-            logger.error(f"Error loading session from backend: {e}")
+        status, body = await self._request("GET", self._url(session_id, "load"), params={"agent_id": self.agent_id})
+        if status == 200:
+            return body
+        if status == 409:
+            logger.warning(f"Session conflict: {(body or {}).get('detail') if isinstance(body, dict) else body}")
             return None
+        if status == 404:
+            logger.warning(f"Session {session_id} not found in backend.")
+            return None
+        logger.error(f"Failed to load session: {status}")
+        return None
+
+    # ── writes ─────────────────────────────────────────────────────────────
 
     async def save_checkpoint(self, context: InterviewRuntimeContext) -> None:
-        session = await self._get_session()
         body = {
             "schema_version": 1,
             "current_phase": context.current_phase.value,
@@ -301,18 +403,7 @@ class APIPersistence(InterviewPersistence):
             "question_records": [r.model_dump(mode="json") for r in context.question_records],
             "evaluation_signals": [e.model_dump(mode="json") for e in context.evaluation_signals],
         }
-        try:
-            body_json = json.dumps(body, default=str)
-            async with session.post(
-                self._url(context.session_id, "checkpoints"), 
-                data=body_json,
-                headers={"Content-Type": "application/json"}
-            ) as resp:
-                if resp.status not in (200, 201):
-                    text = await resp.text()
-                    logger.error(f"Failed to save checkpoint: {resp.status} {text}")
-        except Exception as e:
-            logger.error(f"Error saving checkpoint: {e}")
+        await self._write(context.session_id, "checkpoints", body, queue_on_failure=True)
 
     async def save_completion(self, context: InterviewRuntimeContext) -> bool:
         await self.save_checkpoint(context)
@@ -329,7 +420,6 @@ class APIPersistence(InterviewPersistence):
         self, session_id: str, sequence: int, speaker: str, text: str,
         phase: Optional[str] = None, metadata: Optional[dict] = None,
     ) -> None:
-        session = await self._get_session()
         body = {
             "sequence_number": sequence,
             "speaker": speaker,
@@ -337,85 +427,53 @@ class APIPersistence(InterviewPersistence):
             "phase": phase,
             "metadata": metadata,
         }
-        try:
-            async with session.post(
-                self._url(session_id, "messages"), json=body
-            ) as resp:
-                if resp.status not in (200, 201):
-                    logger.error(f"Failed to save message: {resp.status}")
-        except Exception as e:
-            logger.error(f"Error saving message: {e}")
+        await self._write(session_id, "messages", body, queue_on_failure=True)
 
     async def save_event(
         self, session_id: str, sequence: int, event_type: str,
         phase: Optional[str] = None, metadata: Optional[dict] = None,
     ) -> None:
-        session = await self._get_session()
         body = {
             "event_type": event_type,
             "phase": phase,
             "sequence_number": sequence,
             "metadata": metadata,
         }
-        try:
-            async with session.post(
-                self._url(session_id, "events"), json=body
-            ) as resp:
-                if resp.status not in (200, 201):
-                    logger.error(f"Failed to save event: {resp.status}")
-        except Exception as e:
-            logger.error(f"Error saving event: {e}")
+        await self._write(session_id, "events", body, queue_on_failure=True)
 
     async def update_status(self, session_id: str, status: str, final_result: Optional[dict] = None) -> bool:
-        http = await self._get_session()
+        if self._outbox:
+            await self.flush_outbox()
         body = {"status": status}
         if final_result is not None:
             body["final_result"] = final_result
-        try:
-            body_json = json.dumps(body, default=str)
-            async with http.patch(
-                self._url(session_id, "status"),
-                data=body_json,
-                headers={"Content-Type": "application/json"}
-            ) as resp:
-                if resp.status not in (200, 201):
-                    text_resp = await resp.text()
-                    logger.error(f"Failed to update status: {resp.status} {text_resp}")
-                    return False
-                return True
-        except Exception as e:
-            logger.error(f"Error updating status: {e}")
-            return False
+        code, resp_body = await self._request(
+            "PATCH", self._url(session_id, "status"),
+            data=json.dumps(body, default=str), headers={"Content-Type": "application/json"},
+        )
+        if code in (200, 201):
+            return True
+        logger.error(f"Failed to update status: {code} {str(resp_body)[:300]}")
+        return False
 
     async def submit_evaluation(self, context: InterviewRuntimeContext) -> bool:
         if context.final_evaluation is None:
             return True
-        http = await self._get_session()
         body = context.final_evaluation.model_dump(mode="json")
-        try:
-            body_json = json.dumps(body, default=str)
-            async with http.post(
-                self._url(context.session_id, "evaluation"),
-                data=body_json,
-                headers={"Content-Type": "application/json"}
-            ) as resp:
-                if resp.status not in (200, 201):
-                    text_resp = await resp.text()
-                    logger.error(f"Failed to submit evaluation: {resp.status} {text_resp}")
-                    return False
-                return True
-        except Exception as e:
-            logger.error(f"Error submitting evaluation: {e}")
-            return False
+        # Not parked: the caller retries this at teardown and the backend
+        # upserts on session_id, so a late replay would only race a newer one.
+        return await self._write(context.session_id, "evaluation", body, queue_on_failure=False)
 
-    async def renew_lease(self, session_id: str) -> None:
-        session = await self._get_session()
-        try:
-            async with session.post(
-                self._url(session_id, "renew-lease"),
-                params={"agent_id": self.agent_id},
-            ) as resp:
-                if resp.status != 200:
-                    logger.warning(f"Lease renewal failed: {resp.status}")
-        except Exception as e:
-            logger.error(f"Error renewing lease: {e}")
+    async def renew_lease(self, session_id: str) -> str:
+        """Returns LeaseState.RENEWED / LOST / ERROR (H2-D). Also the moment
+        parked writes get another chance."""
+        if self._outbox:
+            await self.flush_outbox()
+        status, body = await self._request("POST", self._url(session_id, "renew-lease"), params={"agent_id": self.agent_id})
+        if status == 200:
+            return LeaseState.RENEWED
+        if status == 409:
+            logger.error("Lease for %s is held by another agent: %s", session_id, body)
+            return LeaseState.LOST
+        logger.warning(f"Lease renewal failed: {status}")
+        return LeaseState.ERROR

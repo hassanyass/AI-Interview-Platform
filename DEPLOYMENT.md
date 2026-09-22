@@ -1,3 +1,9 @@
+> **Superseded (2026-09-21).** This guide describes the Vercel/Render/Supabase deployment of the
+> prototype. Production packaging is being redone as a portable container stack under
+> `docs/production-hardening-plan.md` (phase H6), which will replace this file with
+> `docs/handover/deploy.md`. Until then, the local commands in `README.md` and
+> `docs/LOCAL_DEMO_SETUP.md` are authoritative (ports 8001/5174, module `backend.main:app`).
+
 # AI Interview Platform — Deployment Guide
 
 This guide details the exact steps required to deploy the AI Interview Platform to production using Vercel (Frontend), Render (Backend & Agent), and Supabase (Database & Storage).

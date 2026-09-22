@@ -1,7 +1,10 @@
 import { supabase } from "./supabase";
 import { getGuestToken } from "./guestSession";
+import { config } from "../config";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+// No fallback: a missing VITE_API_BASE_URL is reported by src/config.ts and
+// main.tsx shows the configuration screen instead of the app.
+const API_BASE = config.apiBaseUrl;
 export const API_BASE_URL = API_BASE;
 
 interface ApiOptions extends RequestInit {

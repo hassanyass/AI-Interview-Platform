@@ -8,15 +8,14 @@ the full lifecycle including disconnect/reconnect and completion.
 import asyncio
 import hashlib
 import logging
-import os
 import uuid as uuid_mod
 
-from dotenv import load_dotenv
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions, cli
-from livekit.plugins import groq, silero, azure
 
-from agent.llm.groq_provider import GroqProvider
-from agent.interview.persistence import APIPersistence
+from agent.config import get_settings, load_env_files, reset_settings
+from agent.interview.persistence import APIPersistence, LeaseState
+from agent.runtime.bootstrap import build_context
+from agent.runtime.teardown import finalize_session, mark_disconnected_after_failure
 from agent.interview.models import (
     InterviewRuntimeContext, InterviewPhase, InterviewPlan,
     SectionProgress, SectionLimits, Message,
@@ -25,7 +24,7 @@ from agent.interview.models import (
 )
 from agent.interview.controller import InterviewController
 from agent.interview.voice_adapter import VoiceInterviewAdapter
-from agent.interview.groq_key_rotator import GroqKeyRotator
+from agent.providers.factory import build_llm, build_stt, build_tts, prewarm, vad_for
 from agent.interview.question_generator import generate_custom_question, build_contextual_fallback_question
 from agent.interview.background_generator import generate_background_questions
 
@@ -49,28 +48,14 @@ for _handler in logging.getLogger().handlers:
             pass
 logger = logging.getLogger("agent")
 
-# Agent lease renewal interval (seconds)
-LEASE_RENEWAL_INTERVAL = 300  # 5 minutes
-
-
 def _load_env():
-    """Load the repository configuration explicitly. Override inherited
-    process variables so restarting the worker actually picks up a rotated
-    API key.
-
-    Phase 7E: moved out of module level and into entrypoint() (called as its
-    first line, below) so importing agent.main for its pure helpers (e.g.
-    build_core_sections) no longer side-effects the whole process's
-    environment. That import-time override(...) call was silently leaking
-    GROQ_API_KEY into pytest's single shared process whenever anything
-    imported this module, changing what unrelated tests observed in
-    os.environ. Same override semantics as before (repo .env wins over
-    inherited vars, agent .env fills gaps only) — just deferred until
-    something that actually needs it runs, instead of at import time."""
-    repo_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
-    agent_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
-    load_dotenv(repo_env, override=True)
-    load_dotenv(agent_env, override=False)
+    """Load the repository configuration explicitly (repo .env wins over
+    inherited process variables so restarting the worker picks up a rotated
+    key; agent/.env fills gaps). Lives in agent.config since H1-C; kept here
+    by name because it is called at entrypoint start, not import time
+    (Phase 7E: an import-time load leaked GROQ_API_KEY into pytest's shared
+    process)."""
+    load_env_files()
 
 
 def build_core_sections(session_data: dict) -> dict:
@@ -199,10 +184,14 @@ def build_criteria(session_data: dict) -> list:
 
 async def entrypoint(ctx: JobContext):
     _load_env()
+    # prewarm() may have cached settings from the inherited environment;
+    # re-read after the .env reload so a rotated key is picked up per job.
+    reset_settings()
+    settings = get_settings()
     logger.info("Initializing Agent (Phase 5)...")
 
     # A fingerprint makes key precedence diagnosable without logging secrets.
-    groq_key = os.getenv("GROQ_API_KEY", "")
+    groq_key = settings.GROQ_API_KEY
     logger.info(
         "Groq credential loaded: present=%s length=%d fingerprint=%s",
         bool(groq_key),
@@ -211,11 +200,10 @@ async def entrypoint(ctx: JobContext):
     )
 
     # ─── Validate Environment ──────────────────────────────────────────
-    required_vars = [
-        "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
-        "GROQ_API_KEY", "AGENT_API_SECRET", "BACKEND_INTERNAL_URL",
-    ]
-    missing = [var for var in required_vars if not os.getenv(var)]
+    # Everything the job needs, checked BEFORE the session is touched --
+    # including LLM_MODEL and the Azure credentials, which used to fail only
+    # after the status had already been moved to IN_PROGRESS (H1-C).
+    missing = settings.missing_for_job()
     if missing:
         logger.error(f"Missing required environment variables: {', '.join(missing)}")
         return
@@ -238,13 +226,15 @@ async def entrypoint(ctx: JobContext):
 
     # ─── Initialize persistence ────────────────────────────────────────
     agent_id = f"agent-{uuid_mod.uuid4().hex[:8]}"
-    backend_url = os.getenv("BACKEND_INTERNAL_URL", "http://127.0.0.1:8000")
-    agent_secret = os.getenv("AGENT_API_SECRET", "")
+    backend_url = settings.BACKEND_INTERNAL_URL
+    agent_secret = settings.AGENT_API_SECRET
 
     persistence = APIPersistence(
         backend_url=backend_url,
         agent_secret=agent_secret,
         agent_id=agent_id,
+        timeout_seconds=settings.BACKEND_TIMEOUT_SECONDS,
+        retry_attempts=settings.BACKEND_RETRY_ATTEMPTS,
     )
 
     # ─── Load session from backend ─────────────────────────────────────
@@ -252,150 +242,60 @@ async def entrypoint(ctx: JobContext):
     if not session_data:
         logger.error(f"Could not load session {session_id}. Exiting.")
         await persistence.close()
+        ctx.shutdown(reason="session_not_loaded")
         return
 
     logger.info(f"Loaded session: role={session_data.get('role')}, level={session_data.get('level')}, status={session_data.get('status')}")
 
-    # ─── Build InterviewRuntimeContext ─────────────────────────────────
-    duration_minutes = session_data.get("duration_minutes", 15)
-    checkpoint = session_data.get("latest_checkpoint") or {}
-    recent_messages = session_data.get("recent_messages", [])
+    # H2-D: from build_context onward the session is IN_PROGRESS and this
+    # worker owes the backend a terminal status. Everything below runs
+    # under one try/except/finally so a failure anywhere leaves the session
+    # DISCONNECTED (sweep-finalizable), never stranded IN_PROGRESS.
+    slots = _SessionSlots()
+    shutdown_reason = "room_disconnected"
+    try:
+        await _run_session(ctx, settings, persistence, session_data, session_id, slots)
+    except Exception:
+        logger.exception("Agent session %s failed", session_id)
+        if slots.context is not None and not slots.lease_lost:
+            await mark_disconnected_after_failure(persistence, slots.context, session_id)
+        shutdown_reason = "agent_failure"
+    finally:
+        if slots.lease_task is not None:
+            slots.lease_task.cancel()
+        if slots.adapter is not None:
+            try:
+                await slots.adapter.aclose()
+            except Exception:  # noqa: BLE001 -- teardown of the audio pipeline is best effort
+                logger.exception("Voice adapter close failed")
+        if slots.lease_lost:
+            shutdown_reason = "lease_lost"
+        elif slots.outcome:
+            shutdown_reason = slots.outcome
+        await persistence.close()
+        logger.info("Agent shutdown complete (%s).", shutdown_reason)
+        ctx.shutdown(reason=shutdown_reason)
 
-    # Phase 7D/7E: B2B ordered core-question sections (see build_core_sections
-    # docstring). Only the mutable pointer (current_index/completed) is
-    # restored from the checkpoint below, on the resume path.
-    built_sections = build_core_sections(session_data)
-    built_criteria = build_criteria(session_data)
 
-    # Safely determine if the initial greeting was already generated and persisted.
-    has_greeting = any(
-        msg.get("metadata", {}) and msg.get("metadata", {}).get("is_greeting") is True
-        for msg in recent_messages
-    )
+class _SessionSlots:
+    """What the failure/teardown paths need from a session that may have
+    stopped at any point (filled in by _run_session as it goes)."""
 
-    # If resuming (has_greeting is True), restore state regardless of status
-    is_resuming = has_greeting
-    
-    if is_resuming:
-        logger.info("Restoring from checkpoint/messages (reconnect scenario)...")
-        
-        # Recover sequences from messages if checkpoint is missing
-        max_msg_seq = max([m.get("sequence_number", 0) for m in recent_messages], default=0)
-        
-        checkpoint_technical = (checkpoint.get("section_progress") or {}).get("technical", {})
-        context = InterviewRuntimeContext(
-            session_id=session_id,
-            candidate_id=str(session_data["candidate_profile_id"]),
-            role=session_data["role"],
-            confirmed_level=session_data["level"],
-            language=session_data["language"],
-            job_description=session_data.get("job_description"),
-            candidate_profile=session_data.get("candidate_profile", {}),
-            current_phase=InterviewPhase(checkpoint.get("current_phase", "CREATED")),
-            question_index=checkpoint.get("question_index", 0),
-            hints_used=checkpoint.get("hints_used", 0),
-            followups_used=checkpoint.get("followups_used", 0),
-            time_remaining_seconds=checkpoint.get("time_remaining_seconds", duration_minutes * 60),
-            message_sequence=max(checkpoint.get("last_message_sequence", 0), max_msg_seq),
-            event_sequence=checkpoint.get("last_event_sequence", 0),
-            technical_question_ids_seen=checkpoint.get("technical_question_ids_seen", checkpoint_technical.get("technical_question_ids_seen", [])),
-            technical_question_ids_skipped=checkpoint.get("technical_question_ids_skipped", checkpoint_technical.get("technical_question_ids_skipped", [])),
-            technical_question_id_submitted=checkpoint.get("technical_question_id_submitted", checkpoint_technical.get("technical_question_id_submitted")),
-            technical_submission=checkpoint.get("technical_submission", checkpoint_technical.get("technical_submission", {})),
-            sections=built_sections,
-            criteria=built_criteria,
-        )
+    def __init__(self) -> None:
+        self.context = None
+        self.controller = None
+        self.adapter = None
+        self.lease_task = None
+        self.lease_lost = False
+        self.outcome = None
 
-        # Restore the ordered core-question pointer (Phase 7D) — the question
-        # list itself is always the fresh one built from /load above.
-        verbal_checkpoint = (checkpoint.get("section_progress") or {}).get("verbal")
-        if verbal_checkpoint and "VERBAL" in context.sections:
-            # Background questions first (they sit at the front of the
-            # list), THEN the pointer -- the pointer counts them.
-            restored_bg = attach_background_questions(context.sections, restore_background_questions(checkpoint))
-            if restored_bg:
-                logger.info("[BG-GEN] Restored %d background question(s) from checkpoint", restored_bg)
-            context.sections["VERBAL"].current_index = verbal_checkpoint.get("current_index", 0)
-            # Background sub-clock: absolute deadline, so it simply resumes.
-            context.background_deadline_epoch = verbal_checkpoint.get("background_deadline_epoch")
-            context.sections["VERBAL"].completed = verbal_checkpoint.get("completed", False)
 
-        # Restore conversation history from persisted messages
-        for msg in recent_messages:
-            context.conversation_history.append(
-                Message(role="user" if msg["speaker"] == "candidate" else "assistant", content=msg["text"])
-            )
-
-        # Restore section progress from checkpoint
-        sp = checkpoint.get("section_progress", {})
-        if "background" in sp:
-            bg = sp["background"]
-            context.background_progress.questions_asked = bg.get("questions_asked", 0)
-            context.background_progress.completed = bg.get("completed", False)
-        if "technical" in sp:
-            tech = sp["technical"]
-            context.technical_progress.questions_completed = tech.get("questions_completed", 0)
-            context.technical_progress.questions_skipped = tech.get("questions_skipped", 0)
-
-        # Restore current question
-        question_snapshot = checkpoint.get("current_question_snapshot")
-        if question_snapshot:
-            context.current_question = Question(**question_snapshot)
-            logger.info(
-                "[TECH-GEN] Resumed existing question id=%s title=%s source=%s",
-                context.current_question.id,
-                context.current_question.title,
-                context.current_question.source,
-            )
-            
-        # Restore question records
-        records_snapshot = checkpoint.get("question_records", [])
-        if records_snapshot:
-            context.question_records = [QuestionRecord(**r) for r in records_snapshot]
-
-        # Restore evaluation signals
-        from agent.interview.models import EvaluationSignal
-        evals_snapshot = checkpoint.get("evaluation_signals", [])
-        if evals_snapshot:
-            context.evaluation_signals = [EvaluationSignal(**e) for e in evals_snapshot]
-
-        # Log reconnect event
-        await persistence.update_status(session_id, "IN_PROGRESS")
-        await persistence.save_event(
-            session_id=session_id,
-            sequence=context.event_sequence + 1,
-            event_type="SESSION_RECONNECTED",
-            phase=context.current_phase.value,
-        )
-        context.event_sequence += 1
-
-    else:
-        # Fresh start
-        context = InterviewRuntimeContext(
-            session_id=session_id,
-            candidate_id=str(session_data["candidate_profile_id"]),
-            role=session_data["role"],
-            confirmed_level=session_data["level"],
-            language=session_data["language"],
-            job_description=session_data.get("job_description"),
-            candidate_profile=session_data.get("candidate_profile", {}),
-            time_remaining_seconds=duration_minutes * 60,
-            sections=built_sections,
-            criteria=built_criteria,
-        )
-
-        # Transition to IN_PROGRESS
-        await persistence.update_status(session_id, "IN_PROGRESS")
-        await persistence.save_event(
-            session_id=session_id,
-            sequence=1,
-            event_type="SESSION_STARTED",
-            phase="CREATED",
-        )
-        context.event_sequence = 1
+async def _run_session(ctx: JobContext, settings, persistence, session_data: dict, session_id: str, slots: _SessionSlots) -> None:
+    context, is_resuming = await build_context(session_data, persistence, session_id)
+    slots.context = context
 
     # ─── Initialize Controller ─────────────────────────────────────────
-    llm = GroqProvider()
+    llm = build_llm(settings)
 
     # ─── Background subsection: generate once, on a fresh start ─────────
     # docs/verbal-background-subsection-plan.md §2 "Agent (bootstrap)". Only
@@ -426,6 +326,7 @@ async def entrypoint(ctx: JobContext):
         )
 
     controller = InterviewController(llm, persistence, context)
+    slots.controller = controller
     async def generate_for_this_session():
         logger.info(
             "[TECH-GEN] Interview ID=%s Candidate ID=%s Role=%s Seniority=%s CV available=%s CV context length=%d Job description available=%s",
@@ -469,108 +370,19 @@ async def entrypoint(ctx: JobContext):
             logger.warning("[TECH-GEN] FALLBACK=CONTEXTUAL_FALLBACK id=%s title=%s reason=%s", emergency.id, emergency.title, error)
 
     # ─── Initialize Voice Plugins ──────────────────────────────────────
+    # Provider construction (and the per-language/per-provider decisions
+    # behind it) lives in agent.providers.factory since H1-C; VAD comes
+    # prewarmed from the job process (WorkerOptions.prewarm_fnc).
     language = session_data.get("language", "en")
-    # Bug fix: groq.STT defaults to language="en" (forcing Whisper to
-    # transcribe as English regardless of what's actually spoken) when not
-    # given explicitly — an Arabic interview was getting its candidate audio
-    # transcribed as English gibberish/mistranslation as a result. Whisper's
-    # `language` param takes the same ISO-639-1 codes session_data already
-    # uses ("en"/"ar"), so just pass the interview's own language through.
-    stt_plugin = groq.STT(model=os.getenv("GROQ_STT_MODEL", "whisper-large-v3-turbo"), language=language)
-
-    # Audit fix (2026-08-27): Groq's TTS free tier is a hard 3.6K-tokens/day
-    # (TPD) ceiling per model (confirmed live against the real account — see
-    # docs/CURRENT_DECISIONS.md), not a short burst that retrying can outlast
-    # -- one real test day exhausted it outright, and it would exhaust
-    # again within a single real candidate interview once this deploys for
-    # actual user testing. Azure Speech becomes the default TTS provider;
-    # the Groq path below is deliberately kept fully intact, not deleted --
-    # this is a config-level swap (TTS_PROVIDER=groq reverts it instantly),
-    # not a rip-and-replace. Confirmed via direct plugin-source inspection
-    # (both TTS classes share the exact same livekit.agents.tts.TTS /
-    # ChunkedStream / AudioEmitter base machinery Groq's plugin uses) that
-    # this doesn't disturb RT-B0's metrics_collected listeners or RT-B1's
-    # AudioSource.clear_queue() interruption fix -- both operate on that
-    # shared base layer, not any Groq-specific code.
-    tts_provider = os.getenv("TTS_PROVIDER", "azure").lower()
-
-    if language == "ar":
-        if tts_provider == "azure":
-            # ar-SA has exactly two neural voices in Azure's catalog:
-            # ar-SA-ZariyahNeural (female) and ar-SA-HamedNeural (male).
-            # Hamed chosen for consistency with InterviewerCharacter.tsx's
-            # existing male-presenting avatar (thobe/ghutra) already shown
-            # to every candidate throughout the interview.
-            tts_voice = os.getenv("AZURE_TTS_ARABIC_VOICE", "ar-SA-HamedNeural")
-            logger.info("Interview language: ar")
-            logger.info("TTS provider: azure")
-            logger.info(f"TTS voice: {tts_voice}")
-            tts_plugin = azure.TTS(voice=tts_voice, language="ar-SA")
-            tts_plugin.provider_name = "Azure"
-            tts_plugin.model_name = tts_voice
-        else:
-            # Audit fix (2026-08-27, follow-up): Groq's TTS 429 is a
-            # per-KEY daily quota (confirmed live) — a different key has
-            # its own independent quota, so multi-key rotation (7 real
-            # keys provisioned for prototype user testing) replaces
-            # waiting-and-retrying the same exhausted key. One rotator per
-            # language — independent models, independent quotas, no
-            # reason a rotation on one should affect the other's starting
-            # key. See docs/tts-provider-switching.md.
-            tts_model = os.getenv("GROQ_TTS_ARABIC_MODEL", "canopylabs/orpheus-arabic-saudi")
-            tts_voice = "abdullah"
-            key_rotator = GroqKeyRotator("ar", model=tts_model, voice=tts_voice)
-            logger.info("Interview language: ar")
-            logger.info("TTS provider: groq")
-            logger.info(f"TTS model: {tts_model}")
-            logger.info(f"TTS voice: {tts_voice}")
-            logger.info(f"Groq key rotator: key {key_rotator.current_position}/{key_rotator.total_keys}")
-            tts_plugin = key_rotator.rebuild_plugin()
-    else:
-        if tts_provider == "azure":
-            # en-US-AvaNeural: one of Azure's newer voices explicitly
-            # designed/tuned for conversational, casual dialogue (not just
-            # formal narration) -- a better fit for a spoken interview than
-            # older general-purpose voices, and a stable, generally
-            # available (non-preview) voice rather than the newer
-            # Dragon-HD-preview tier, which isn't guaranteed available on
-            # every region/subscription.
-            tts_voice = os.getenv("AZURE_TTS_ENGLISH_VOICE", "en-US-AvaNeural")
-            logger.info("Interview language: en")
-            logger.info("TTS provider: azure")
-            logger.info(f"TTS voice: {tts_voice}")
-            tts_plugin = azure.TTS(voice=tts_voice, language="en-US")
-            tts_plugin.provider_name = "Azure"
-            tts_plugin.model_name = tts_voice
-        else:
-            # See the matching Arabic branch above for the full multi-key
-            # rotation rationale.
-            tts_model = os.getenv("GROQ_TTS_ENGLISH_MODEL", "canopylabs/orpheus-v1-english")
-            tts_voice = os.getenv("GROQ_TTS_ENGLISH_VOICE", "troy")
-            key_rotator = GroqKeyRotator("en", model=tts_model, voice=tts_voice)
-            logger.info("Interview language: en")
-            logger.info("TTS provider: groq")
-            logger.info(f"TTS model: {tts_model}")
-            logger.info(f"TTS voice: {tts_voice}")
-            logger.info(f"Groq key rotator: key {key_rotator.current_position}/{key_rotator.total_keys}")
-            tts_plugin = key_rotator.rebuild_plugin()
-
-    try:
-        vad_min_silence = max(
-            0.55, float(os.getenv("VAD_MIN_SILENCE_DURATION_SECONDS", "0.85"))
-        )
-    except ValueError:
-        vad_min_silence = 0.85
-    logger.info(
-        "Voice endpointing: Silero min_silence_duration=%.2fs, candidate endpoint coalescing enabled",
-        vad_min_silence,
-    )
-    vad_plugin = silero.VAD.load(min_silence_duration=vad_min_silence)
+    stt_plugin = build_stt(language, settings)
+    tts_plugin, _key_rotator = build_tts(language, settings)
+    vad_plugin = vad_for(ctx.proc)
 
     # ─── Create Voice Adapter ──────────────────────────────────────────
     adapter = VoiceInterviewAdapter(
         controller, stt_plugin, tts_plugin, vad_plugin, ctx.room, persistence
     )
+    slots.adapter = adapter
 
     # Start the adapter (which also kicks off the interview)
     await adapter.start(resume=is_resuming)
@@ -585,64 +397,59 @@ async def entrypoint(ctx: JobContext):
         logger.info("Room disconnected.")
         shutdown_event.set()
 
-    # Lease renewal task
+    # Lease renewal task. H2-D: a 409 means another worker now owns this
+    # session -> stop driving it (leave the room; no DISCONNECTED write, the
+    # other worker is responsible now). Repeated transport errors past the
+    # lease window mean the same in practice.
     async def renew_lease_loop():
+        errors = 0
         while not shutdown_event.is_set():
-            await asyncio.sleep(LEASE_RENEWAL_INTERVAL)
-            if not shutdown_event.is_set():
-                await persistence.renew_lease(session_id)
+            await asyncio.sleep(settings.LEASE_RENEWAL_INTERVAL_SECONDS)
+            if shutdown_event.is_set():
+                return
+            state = await persistence.renew_lease(session_id)
+            if state == LeaseState.RENEWED:
+                errors = 0
+                continue
+            if state == LeaseState.LOST:
+                logger.error("Lease for session %s lost to another agent; leaving the room", session_id)
+                slots.lease_lost = True
+                shutdown_event.set()
+                return
+            errors += 1
+            if errors >= settings.LEASE_ERROR_SHUTDOWN_AFTER:
+                logger.error("Lease renewal failed %d times in a row for %s; assuming the lease expired", errors, session_id)
+                slots.lease_lost = True
+                shutdown_event.set()
+                return
 
     lease_task = asyncio.create_task(renew_lease_loop())
+    slots.lease_task = lease_task
 
-    # Wait for room to disconnect
+    # Wait for room to disconnect (or the lease to be lost)
     await shutdown_event.wait()
 
-    # ─── Cleanup ───────────────────────────────────────────────────────
-    lease_task.cancel()
+    if slots.lease_lost:
+        # Another worker owns the session now; persisting anything here
+        # would fight it. Just stop.
+        return
+    slots.outcome = await finalize_session(persistence, controller, context, session_id)
 
-    # If the interview isn't completed yet, mark as DISCONNECTED and save checkpoint
-    if context.current_phase not in (InterviewPhase.COMPLETED,):
-        logger.info("Interview not completed — saving disconnect checkpoint.")
-        await persistence.save_event(
-            session_id=session_id,
-            sequence=context.event_sequence + 1,
-            event_type="SESSION_DISCONNECTED",
-            phase=context.current_phase.value,
-        )
-        context.event_sequence += 1
-        await persistence.save_checkpoint(context)
-        await persistence.update_status(session_id, "DISCONNECTED")
-        
-        try:
-            logger.info("Generating partial evaluation for disconnected session...")
-            await controller.generate_final_evaluation()
-            await persistence.submit_evaluation(context)
-        except Exception:
-            logger.exception("Failed to generate partial evaluation during shutdown")
-    else:
-        logger.info("Interview completed.")
-        try:
-            await controller.generate_final_evaluation()
-            await persistence.save_completion(context)
-        except Exception:
-            # Completion must not be lost because room teardown raced a
-            # final persistence request. The next recovery path can retry.
-            logger.exception("Failed to persist completed interview during shutdown")
 
-        # Phase 8C: same last-resort retry for the normalized Evaluation/
-        # Score submission, independent of the block above -- the backend
-        # endpoint upserts on session_id, so retrying here even when the
-        # mid-session attempt already succeeded is safe, not just tolerated.
-        try:
-            await persistence.submit_evaluation(context)
-        except Exception:
-            logger.exception("[EVALUATION_SUBMIT] failed_to_persist_completed_interview_during_shutdown")
-
-    await persistence.close()
-    logger.info("Agent shutdown complete.")
+def worker_options() -> WorkerOptions:
+    """WorkerOptions from settings: the VAD model is loaded once per job
+    process (prewarm) instead of per interview; agent_name / memory limits
+    are opt-in knobs that default to the SDK's own behaviour."""
+    s = get_settings()
+    kwargs = dict(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=s.AGENT_NAME)
+    if s.JOB_MEMORY_LIMIT_MB > 0:
+        kwargs["job_memory_limit_mb"] = s.JOB_MEMORY_LIMIT_MB
+    if s.JOB_MEMORY_WARN_MB > 0:
+        kwargs["job_memory_warn_mb"] = s.JOB_MEMORY_WARN_MB
+    return WorkerOptions(**kwargs)
 
 
 if __name__ == "__main__":
     _load_env()
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
+    cli.run_app(worker_options())
 

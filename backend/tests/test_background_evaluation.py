@@ -2,7 +2,8 @@
 
 docs/verbal-background-subsection-plan.md §2 "Evaluation"/"Results", §9.
 - the backend evaluator receives the parsed CV as `candidate_profile` and
-  its prompt carries the cv_alignment instruction block (Groq stubbed);
+  its prompt carries the cv_alignment instruction block (LLM provider faked
+  at the port -- H1-B moved the Groq client behind backend.providers);
 - the admin result enriches a BACKGROUND record from the record's own
   text (its id resolves to no InterviewQuestion row) and tags it, while an
   HR record still resolves through the InterviewQuestion join (real DB,
@@ -10,7 +11,7 @@ docs/verbal-background-subsection-plan.md §2 "Evaluation"/"Results", §9.
 """
 import json
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -18,6 +19,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy import delete
 
 from backend.main import app
+from tests.fakes import FakeLLMProvider
 from backend.db.session import AsyncSessionLocal
 from backend.models.profile import UserRole, CandidateProfile
 from backend.models.interview import InterviewSession, InterviewCheckpoint, Evaluation
@@ -36,37 +38,29 @@ def test_backend_evaluator_prompt_has_cv_alignment_block():
 
 @pytest.mark.asyncio
 async def test_backend_evaluator_sends_candidate_profile_in_evidence():
-    fake = MagicMock()
-    fake.chat.completions.create.return_value = MagicMock(
-        choices=[MagicMock(message=MagicMock(content=json.dumps({
-            "overall_score": 4, "recommendation": "Hire", "evidence_sufficiency": 0.8,
-            "summary": "s", "detailed_overview": "d",
-            "criterion_scores": [{"criterion_key": "cv_alignment", "score": 4, "overview": "o",
-                                  "strengths": [], "improvements": [], "evidence_reference": None}],
-        })))]
+    fake = FakeLLMProvider({
+        "overall_score": 4, "recommendation": "Hire", "evidence_sufficiency": 0.8,
+        "summary": "s", "detailed_overview": "d",
+        "criterion_scores": [{"criterion_key": "cv_alignment", "score": 4, "overview": "o",
+                              "strengths": [], "improvements": [], "evidence_reference": None}],
+    })
+    out = await generate_evaluation(
+        role="AI Engineer", level="senior", transcript=[], question_records=[],
+        technical_submission={}, question_eval_criteria={},
+        criteria=[{"key": "cv_alignment", "label": "CV & Experience Alignment", "kind": "content", "guidance_text": "g", "section_id": None}],
+        candidate_profile={"professional_title": "Senior ML Engineer", "skills": ["Python"]},
+        llm=fake,
     )
-    with patch("backend.services.evaluation_generator.Groq", return_value=fake), \
-         patch("backend.services.evaluation_generator.settings") as s:
-        s.GROQ_API_KEY, s.GROQ_MODEL = "k", "m"
-        out = await generate_evaluation(
-            role="AI Engineer", level="senior", transcript=[], question_records=[],
-            technical_submission={}, question_eval_criteria={},
-            criteria=[{"key": "cv_alignment", "label": "CV & Experience Alignment", "kind": "content", "guidance_text": "g", "section_id": None}],
-            candidate_profile={"professional_title": "Senior ML Engineer", "skills": ["Python"]},
-        )
-    sent = fake.chat.completions.create.call_args.kwargs["messages"]
+    sent = fake.last_messages
     evidence = json.loads(sent[1]["content"])
     assert evidence["candidate_profile"] == {"professional_title": "Senior ML Engineer", "skills": ["Python"]}
     assert "cv_alignment" in sent[0]["content"]
     assert out["criterion_scores"][0].criterion_key == "cv_alignment"
 
     # no CV -> {} (never a missing key the prompt would trip over)
-    with patch("backend.services.evaluation_generator.Groq", return_value=fake), \
-         patch("backend.services.evaluation_generator.settings") as s:
-        s.GROQ_API_KEY, s.GROQ_MODEL = "k", "m"
-        await generate_evaluation(role="r", level="l", transcript=[], question_records=[],
-                                  technical_submission={}, question_eval_criteria={}, criteria=[])
-    assert json.loads(fake.chat.completions.create.call_args.kwargs["messages"][1]["content"])["candidate_profile"] == {}
+    await generate_evaluation(role="r", level="l", transcript=[], question_records=[],
+                              technical_submission={}, question_eval_criteria={}, criteria=[], llm=fake)
+    assert json.loads(fake.last_messages[1]["content"])["candidate_profile"] == {}
 
 
 @pytest_asyncio.fixture

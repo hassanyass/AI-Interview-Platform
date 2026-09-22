@@ -12,12 +12,12 @@ explicitly out of scope for this pass -- see docs/CURRENT_DECISIONS.md's
 P1 (email provider, still unresolved/deferred) -- this service only ever
 produces text; it never sends anything.
 """
-import asyncio
 import json
 import logging
 from typing import Optional
 
-from groq import Groq
+from backend.providers.factory import get_llm
+from backend.providers.llm.base import LLMProvider
 
 from backend.core.config import settings
 
@@ -51,18 +51,15 @@ async def generate_invitation_message(
     job_description: Optional[str],
     seniority: Optional[str],
     duration_minutes: Optional[int],
+    llm: LLMProvider | None = None,
 ) -> dict:
-    """Call Groq to draft an invitation email subject + body for this job.
+    """Call the LLM provider to draft an invitation email subject + body for this job.
     Returns {"subject": str, "body": str}. Raises on network/parse errors
     -- this is an HR-triggered, on-demand action (the "Regenerate"
     button), so the caller should surface a real error rather than
     silently swallow it."""
-    api_key = settings.GROQ_API_KEY
-    model = settings.GROQ_MODEL or "llama-3.3-70b-versatile"
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not configured in backend settings")
-
-    client = Groq(api_key=api_key)
+    llm = llm or get_llm()
+    model = settings.GROQ_MODEL
     context = {
         "job_title": job_title,
         "job_description": job_description,
@@ -70,26 +67,17 @@ async def generate_invitation_message(
         "duration_minutes": duration_minutes,
     }
 
-    logger.info("[InvitationMessageGen] Calling Groq model=%s job=%s", model, job_title)
+    logger.info("[InvitationMessageGen] Calling LLM model=%s job=%s", model, job_title)
 
-    def _call():
-        return client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
-            ],
-            model=model,
-            temperature=0.7,
-            max_tokens=1024,
-            response_format={"type": "json_object"},
-        )
-
-    # Off the event loop -- same fix as question_generator.py and
-    # evaluation_generator.py's Groq calls; see question_generator.py's
-    # comment for the production symptom this caused.
-    chat_completion = await asyncio.to_thread(_call)
-
-    raw = chat_completion.choices[0].message.content
+    raw = await llm.complete_json(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+        ],
+        model=model,
+        temperature=0.7,
+        max_tokens=1024,
+    )
     parsed = json.loads(raw)
     return {
         "subject": str(parsed.get("subject") or f"You're invited to interview for {job_title}"),

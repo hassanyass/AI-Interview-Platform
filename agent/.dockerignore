@@ -1,8 +1,14 @@
 .env
 .env.*
+!.env.example
 __pycache__
 *.pyc
 .venv
 .git
 .gitignore
+.pytest_cache
 tests/.pytest_cache
+tests/
+.groq_key_state_*.json
+.tts_cache/
+**/tests/

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { config } from "../../config";
 import { decomposeHeadPose } from "./headPose";
 
 /**
@@ -77,16 +78,17 @@ import { decomposeHeadPose } from "./headPose";
  *   the session. Never blocks or degrades the interview itself.
  */
 
-const FACE_DETECTION_INTERVAL_SECONDS = Number(import.meta.env.VITE_FACE_DETECTION_INTERVAL_SECONDS) || 4;
+// Tunables come from src/config.ts (VITE_FACE_DETECTION_INTERVAL_SECONDS,
+// VITE_HEAD_DOWN_CONFIRM_THRESHOLD, VITE_HEAD_DOWN_PITCH_THRESHOLD_DEGREES).
+const FACE_DETECTION_INTERVAL_SECONDS = config.faceDetectionIntervalSeconds;
 const CONFIRM_THRESHOLD = 2;
-const HEAD_DOWN_CONFIRM_THRESHOLD = Number(import.meta.env.VITE_HEAD_DOWN_CONFIRM_THRESHOLD) || 3;
-const HEAD_DOWN_PITCH_THRESHOLD_DEGREES = Number(import.meta.env.VITE_HEAD_DOWN_PITCH_THRESHOLD_DEGREES) || 25;
-// Temporary verification instrumentation (docs/CURRENT_DECISIONS.md's
-// Part 2 entry) -- prints every decomposed angle so a real live test can
-// confirm axis/sign before the threshold above is trusted. Left on by
-// default during calibration; flip via VITE_HEAD_POSE_DEBUG=false once
-// confirmed and this comment/flag should be revisited.
-const DEBUG_LOG_HEAD_POSE = import.meta.env.VITE_HEAD_POSE_DEBUG !== "false";
+const HEAD_DOWN_CONFIRM_THRESHOLD = config.headDownConfirmThreshold;
+const HEAD_DOWN_PITCH_THRESHOLD_DEGREES = config.headDownPitchThresholdDegrees;
+// Verification instrumentation (docs/CURRENT_DECISIONS.md's Part 2 entry)
+// -- prints every decomposed angle so a real live test can confirm
+// axis/sign before the threshold above is trusted. On in dev builds, off in
+// production builds; VITE_HEAD_POSE_DEBUG=true/false overrides either way.
+const DEBUG_LOG_HEAD_POSE = config.headPoseDebug;
 
 const WASM_BASE_PATH = "/mediapipe/wasm";
 const MODEL_ASSET_PATH = "/mediapipe/models/face_landmarker.task";

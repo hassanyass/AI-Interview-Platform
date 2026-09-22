@@ -30,4 +30,13 @@ COPY . .
 # of plan, and (matching preDeployCommand's original fail-closed behavior)
 # a failed migration makes `&&` fail so the container never starts serving
 # with a stale/mismatched schema.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# H2-B: migrations no longer run on every container start -- N replicas
+# would race on the same migration. The normal path is the one-shot
+# `migrate` service (docker-compose.yml) or `alembic upgrade head` in the
+# deploy pipeline. RUN_MIGRATIONS_ON_START=true restores the old behaviour
+# for a single-instance deploy that has no pre-deploy hook (fails closed:
+# a failed migration still stops the container from serving).
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -26,6 +26,9 @@ from agent.interview.state_machine import (
     is_transition_valid, is_action_valid, is_candidate_control_valid,
     get_allowed_actions, get_allowed_candidate_controls,
 )
+from agent.interview.voice_intents import (
+    CONFIRM_BEFORE_EXECUTING, CONFIRM_MESSAGE_KEY, is_affirmative,
+)
 from agent.interview.questions import get_questions_by_competency
 from agent.llm.provider import LLMProvider
 from agent.llm.prompts import (
@@ -88,6 +91,10 @@ class InterviewController:
         # voluntary TRANSITION, the chained turn after a skip) so the
         # bridge is spoken exactly once, however the boundary was crossed.
         self._pending_background_bridge = False
+        # H2-C: a spoken control phrase that would change the interview
+        # irreversibly (end / skip / change / move) is held here until the
+        # candidate confirms it on the next turn (voice_intents.py).
+        self._pending_voice_control: Optional[CandidateControlAction] = None
         self._custom_question: Optional[Question] = None
         self._question_generator: Optional[Callable[[], Awaitable[Question]]] = None
         self._question_fallback_builder: Optional[Callable[[], Question]] = None
@@ -482,6 +489,10 @@ class InterviewController:
             Message(role=role, content=content)
         )
 
+    def _msg(self, key: str) -> str:
+        """Localized fixed line (SYSTEM_MESSAGES[language][key]); H2-C."""
+        return SYSTEM_MESSAGES.get(self.context.language, SYSTEM_MESSAGES["en"])[key]
+
     def _append_control_response(self, action: StructuredAction):
         """Keep skip acknowledgements out of the next LLM conversation turn."""
         if not action.response:
@@ -512,7 +523,7 @@ class InterviewController:
         if self.context.current_phase == InterviewPhase.COMPLETED:
             return StructuredAction(
                 action=ActionEnum.END,
-                response="The interview has already been completed.",
+                response=self._msg("already_completed"),
                 reason="Phase is COMPLETED, no further inputs allowed.",
                 should_transition=False,
             )
@@ -545,7 +556,7 @@ class InterviewController:
             self._transition_to(InterviewPhase.CLOSING)
             return StructuredAction(
                 action=ActionEnum.TRANSITION,
-                response="We are out of time for today's interview. Let me wrap things up.",
+                response=self._msg("time_up_wrap"),
                 reason="Time expired.",
                 should_transition=True,
             )
@@ -555,7 +566,29 @@ class InterviewController:
             self.append_message("user", user_text)
 
         # Check for candidate control intent BEFORE sending to LLM
-        control_action = self._detect_candidate_control(user_text)
+        # H2-C (decision S12): an irreversible spoken control (end / skip /
+        # change / move) is confirmed on the next turn instead of executed
+        # on a substring match. Hint / repeat / clarification stay immediate;
+        # the explicit UI buttons (process_ui_command) are unaffected.
+        pending = self._pending_voice_control
+        self._pending_voice_control = None
+        if pending is not None and is_affirmative(user_text, self.context.language):
+            control_action = pending
+            logger.info(f"Candidate confirmed voice control: {pending.value}")
+        else:
+            control_action = self._detect_candidate_control(user_text)
+            if control_action in CONFIRM_BEFORE_EXECUTING:
+                self._pending_voice_control = control_action
+                logger.info(f"Voice control needs confirmation: {control_action.value}")
+                confirm = StructuredAction(
+                    action=ActionEnum.ASK,
+                    response=self._msg(CONFIRM_MESSAGE_KEY[control_action]),
+                    reason="Spoken control intent awaiting confirmation.",
+                    should_transition=False,
+                    detected_candidate_control=control_action,
+                )
+                self._append_control_response(confirm)
+                return confirm
         if control_action:
             logger.info(f"Detected Candidate Control (Voice): {control_action.value}")
             handled = await self._handle_candidate_control(control_action)
@@ -607,7 +640,7 @@ class InterviewController:
             logger.error(f"LLM generation failed: {e}")
             action = StructuredAction(
                 action=ActionEnum.ASK,
-                response="I'm sorry, I didn't quite catch that. Could you repeat?",
+                response=self._msg("llm_fallback"),
                 reason="LLM generation failed, using safe fallback."
             )
         
@@ -1278,12 +1311,12 @@ class InterviewController:
                 # Transition from TECHNICAL_INTRO → TECHNICAL
                 if (
                     self.context.current_phase == InterviewPhase.TECHNICAL_INTRO
-                    and current != InterviewPhase.BACKGROUND
+                    and self.context.current_phase != InterviewPhase.BACKGROUND
                 ):
                     self._transition_to(InterviewPhase.TECHNICAL)
                 return StructuredAction(
                     action=ActionEnum.ACKNOWLEDGE,
-                    response="Great. Walk me through how you would approach this problem.",
+                    response=self._msg("im_ready_ack"),
                     reason="Candidate indicated they are ready.",
                     should_transition=True,
                 )
@@ -1899,12 +1932,12 @@ class InterviewController:
                 # correct thing depending on whether this is the last
                 # core question (current_index hasn't advanced yet here).
                 if core_section.current_index >= len(core_section.questions) - 1:
-                    return "Alright, in the interest of time, let's wrap things up."
-                return "Alright, in the interest of time, let's move on to the next question."
-            return "Anyway, let's move on to the technical portion of our interview."
+                    return self._msg("forced_wrap_up")
+                return self._msg("forced_next_question")
+            return self._msg("forced_to_technical")
         if phase in (InterviewPhase.TECHNICAL, InterviewPhase.CODING):
-            return "Alright, in the interest of time, let's wrap up this question and move on."
-        return "Let's move on to the next part."
+            return self._msg("forced_wrap_question")
+        return self._msg("forced_next_part")
 
     # ─── Follow-Up Cap & Time-Tier Throttle (Phase 7C) ─────────────────────
 

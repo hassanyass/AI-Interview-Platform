@@ -30,8 +30,11 @@ async def ingest_resume(db: AsyncSession, file: UploadFile, profile: CandidatePr
     file_bytes = await file.read()
     await file.seek(0)  # ResumeService.upload reads the stream itself
 
-    storage_path = await ResumeService.upload(file, str(profile.id), resume_id)
-
+    # H2-B: the row goes first. The object key is deterministic, so it can be
+    # recorded before the upload; a storage failure then leaves a FAILED row
+    # instead of an orphan object nobody can find from the database.
+    profile_id = str(profile.id)  # captured before the commit below expires the instance
+    storage_path = ResumeService.storage_path_for(profile_id, resume_id)
     db_resume = Resume(
         id=resume_id,
         profile_id=profile.id,
@@ -46,7 +49,17 @@ async def ingest_resume(db: AsyncSession, file: UploadFile, profile: CandidatePr
     await db.refresh(db_resume)
 
     try:
-        extracted_text = ResumeService.extract_text(file_bytes)
+        uploaded_path = await ResumeService.upload(file, profile_id, resume_id)
+    except Exception:
+        db_resume.extraction_status = "FAILED"
+        await db.commit()
+        raise
+    if uploaded_path != storage_path:
+        # The store's returned key is authoritative; keep the row truthful.
+        db_resume.storage_path = uploaded_path
+
+    try:
+        extracted_text = await ResumeService.extract_text_async(file_bytes)
         db_resume.extracted_text = extracted_text
 
         extracted_profile = await ResumeService.build_candidate_profile(extracted_text)

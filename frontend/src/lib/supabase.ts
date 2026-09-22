@@ -1,7 +1,20 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { config, configProblems } from "../config";
 
-// Ensure variables are defined, fallback to empty string to avoid Vite crash during build
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+// createClient("") throws at module load, which used to be the only signal
+// that the env was incomplete (a blank page). When the config is invalid we
+// export a client that fails on use instead; main.tsx has already replaced
+// the app with the configuration-error screen, so nothing reaches it.
+function failingClient(): SupabaseClient {
+  const reason = `Supabase client unavailable: ${configProblems.join("; ")}`;
+  return new Proxy({} as SupabaseClient, {
+    get() {
+      throw new Error(reason);
+    },
+  });
+}
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase: SupabaseClient =
+  config.supabaseUrl && config.supabasePublishableKey
+    ? createClient(config.supabaseUrl, config.supabasePublishableKey)
+    : failingClient();

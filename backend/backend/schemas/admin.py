@@ -7,6 +7,11 @@ from enum import Enum
 
 # ── Enums ──────────────────────────────────────────────────────────────────
 
+class AdminPingResponse(BaseModel):
+    status: str
+    admin_id: str
+
+
 class SectionType(str, Enum):
     VERBAL = "VERBAL"
     CODING = "CODING"
