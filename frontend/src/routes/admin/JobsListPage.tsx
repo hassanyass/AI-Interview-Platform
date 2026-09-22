@@ -37,7 +37,8 @@ export default function JobsListPage() {
       setJobs((prev) => prev.filter((j) => j.id !== jobToDelete));
       setJobToDelete(null);
     } catch (err: any) {
-      alert(err.message || "Failed to delete job");
+      setJobToDelete(null);
+      setError(err.message || t('jobsList.deleteFailed'));
     }
   };
 

@@ -6,6 +6,8 @@ import { Button } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { ResponsiveTable } from "../../components/ui/ResponsiveTable";
 import { useTranslation } from "react-i18next";
+import { setGuestToken } from "../../lib/guestSession";
+import { useNavigate } from "react-router-dom";
 import InvitationComposer from "./InvitationComposer";
 
 interface CandidateAccessProps {
@@ -16,6 +18,7 @@ interface CandidateAccessProps {
 
 export default function CandidateAccess({ definition, onRefresh }: CandidateAccessProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [isPublic, setIsPublic] = useState(definition.is_public);
   const [accessError, setAccessError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -88,18 +91,15 @@ export default function CandidateAccess({ definition, onRefresh }: CandidateAcce
     setAccessError("");
     try {
       const response = await adminClient.createTestDrive(definition.id);
-      // We got the session token, open the interview in a new tab
-      // For the frontend to pick it up, it usually takes it from the URL or localStorage
-      // But typically, the apply flow sets it in localStorage and redirects.
-      // We can do that manually here:
-      const authData = {
-        token: response.access_token,
-        session_id: response.session.id,
-        livekit_token: response.livekit_token,
-        livekit_url: response.livekit_url,
-      };
-      localStorage.setItem(`interview_auth_${response.session.id}`, JSON.stringify(authData));
-      window.open(`/interview/${response.session.id}`, "_blank");
+      // H2-E: the interview page authenticates a guest session through
+      // lib/guestSession (sessionStorage, scoped to this tab) -- the same
+      // path /apply and /invite use. A new tab cannot see it, so the test
+      // drive opens in this tab; lib/api.ts prefers the guest token minted
+      // for this exact session id over the admin's Supabase session.
+      // (Before: opened /interview/:id -- a route that does not exist -- and
+      // wrote a localStorage key nothing read.)
+      setGuestToken(response.access_token, response.session.id);
+      navigate(`/interviews/${response.session.id}`);
     } catch (err: any) {
       setAccessError(err.message || "Failed to start test drive");
     } finally {

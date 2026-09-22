@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import { adminClient, type JobDetail } from "../../api/adminClient";
 import { Plus, Trash2, ArrowUp, ArrowDown, Code2, MessageSquare, ListTodo, Loader2, ChevronDown, ChevronUp, Clock, FileText } from "lucide-react";
 import QuestionEditor from "./QuestionEditor";
@@ -348,7 +349,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
       // selectedType resyncs automatically via the useEffect above once
       // availableTypes updates from the refreshed definition.
     } catch (err: any) {
-      if (err.message?.includes("409")) {
+      if (err.status === 409) {
         setError(t('sectionsEditor.alreadyExists'));
       } else {
         setError(err.message || t('sectionsEditor.failedToAdd'));
@@ -358,8 +359,9 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
     }
   };
 
+  const [sectionToDelete, setSectionToDelete] = useState<string | null>(null);
+
   const handleDelete = async (sectionId: string) => {
-    if (!confirm(t('sectionsEditor.deleteConfirm'))) return;
     setLoadingAction(`delete-${sectionId}`);
     setError("");
     try {
@@ -534,7 +536,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
                         </button>
                         <div className="w-px h-6 bg-border mx-1 sm:mx-2"></div>
                         <button
-                          onClick={() => handleDelete(section.id)}
+                          onClick={() => setSectionToDelete(section.id)}
                           disabled={loadingAction !== null}
                           className="touch-target flex items-center justify-center text-red-500 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-30"
                           title={t('sectionsEditor.deleteSection')}
@@ -613,6 +615,18 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
           })}
         </div>
       )}
+      <ConfirmDeleteModal
+        isOpen={sectionToDelete !== null}
+        onClose={() => setSectionToDelete(null)}
+        onConfirm={async () => {
+          const id = sectionToDelete!;
+          setSectionToDelete(null);
+          await handleDelete(id);
+        }}
+        title={t('sectionsEditor.delete')}
+        description={t('sectionsEditor.deleteConfirm')}
+        confirmLabel={t('sectionsEditor.delete')}
+      />
     </div>
   );
 }

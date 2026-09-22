@@ -62,11 +62,13 @@ export default function JobCreatePage() {
         } catch (patchErr) {
           console.error("Failed to set duration:", patchErr);
           // We redirect on partial failure per user request so the user sees the real state
-          alert("Job created, but setting duration failed. Please update it on the job page.");
+          // H2-E: no alert(); the job page shows this as a notice.
+          navigate(`/admin/jobs/${job.id}`, { state: { notice: t('jobCreate.durationNotSet') } });
+          return;
         }
       }
 
-      // Success or partial success -> navigate to job detail
+      // Success -> navigate to job detail
       navigate(`/admin/jobs/${job.id}`);
     } catch (err: any) {
       setError(err.message || t('jobCreate.failed'));

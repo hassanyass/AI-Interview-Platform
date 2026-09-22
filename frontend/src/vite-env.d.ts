@@ -3,6 +3,7 @@
 // Every VITE_* variable the app reads (frontend/.env.example, src/config.ts).
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
+  readonly VITE_API_TIMEOUT_MS?: string;
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   readonly VITE_FACE_DETECTION_INTERVAL_SECONDS?: string;

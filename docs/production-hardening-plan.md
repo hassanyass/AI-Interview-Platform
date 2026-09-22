@@ -14,8 +14,9 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1 (A–D), H2-A..D built and verified (2026-09-21/22), uncommitted (U2 open).
-Owed: one live interview check; the live DB is one migration behind (§15). Next: H2-E (frontend resilience), after examine + confirm.**
+Status: **H0, H1, H2 (A–E) built, verified and committed (2026-09-22; U2 resolved: one commit
+per phase from here). Owed: one live interview check; the live DB is one migration behind
+(§15). Next: H2-F (background jobs) or H3 (observability), after examine + confirm.**
 
 ---
 
@@ -49,10 +50,9 @@ work this plan must not undo.
   CVs are kept, and who may delete them. H5 builds the deletion *mechanism*
   (a job that can purge by age/status) but ships it disabled until you set
   the policy in `CURRENT_DECISIONS.md`.
-- **U2 Commit cadence for this track.** Commits are on hold for the
-  responsive work. Hardening phases are large refactors; my recommendation
-  is one commit per verified phase step, and to commit R0–R2B first so the
-  two tracks don't collide in `App.tsx`, `lib/api.ts`, `locales/*`. Your call.
+- **U2 Commit cadence — RESOLVED 2026-09-22.** Responsive R0–R2B and
+  hardening H0–H2-D were committed as two separate commits (`c2dff10`,
+  `d6079cc`); from H2-E on, one commit per verified phase.
 - **U3 Duplicate `users_roles` rows.** The audit found no unique index
   (`MultipleResultsFound` risk). Adding one is additive, but if duplicates
   exist in the live DB the migration fails. H2 adds the index only after a
@@ -1040,4 +1040,41 @@ STT crash restart then give-up, cancellation not a crash, `aclose`, sender /
 shape / size validation, valid command dispatched and tracked. Full
 `pytest` **322 passed, 1 skipped** (165 pre-existing agent tests unchanged
 and green); agent image rebuilt and imports the runtime modules.
+
+## 18. H2-E — verify record (2026-09-22)
+
+`lib/api.ts`: `ApiError { status, code?, detail, requestId? }` thrown for
+every failure — `message` is still the `detail` string (every
+`err.message` consumer unchanged); network failure → `status 0, code
+"network"`, timeout → `code "timeout"`; `AbortController` with
+`config.apiTimeoutMs` (`VITE_API_TIMEOUT_MS`, default 30 000) and a
+per-call `timeoutMs` (CV upload: 120 000); the caller's own `signal` still
+works; `X-Request-ID` read from body or header. Pages: `JobDetailPage` →
+`err.status === 404`, `SectionsEditor` → `err.status === 409` (no more
+message string-matching). New `components/ErrorBoundary.tsx` (i18n en+ar,
+reload button, collapsible details) at the router root and, with
+candidate copy ("your progress is saved"), around `/interviews/:id`.
+`RoleContext`: 401/403 → candidate; anything else → `unknown` + `roleError`
++ `retryRoleCheck`; `AdminLayout` shows "couldn't verify your access —
+Retry" instead of `signOut()` + redirect. Test-drive
+(`CandidateAccess`): `/interviews/:id`, `setGuestToken()` + `navigate()`
+in the same tab (sessionStorage is per tab; `api.ts` prefers the guest
+token minted for that session id) — the old code opened a non-existent
+route and wrote a `localStorage` key nothing read (verified live:
+`/interview/abc` → catch-all → `/login`). `alert()`/`confirm()` gone:
+`JobCreatePage` hands a one-time notice to `JobDetailPage` via router
+state; `JobsListPage` inline error; `QuestionEditor`/`SectionsEditor` use
+`ConfirmDeleteModal`. `types/realtime.ts`: `source` gains
+`HR_APPROVED | BACKGROUND`; `AllowedControl` gains the four spoken-only
+controls; new `UiCommand`; `ControlIntentPayload` now `{ command, payload? }`
+(the real wire shape). DEV-only `/dev/boom` route to exercise the boundary.
+
+Tests: `lib/api.errors.test.ts` (6), `components/ErrorBoundary.test.tsx`
+(3, jsdom), `context/RoleContext.test.tsx` (4, jsdom) — `jsdom` +
+`@testing-library/react` added as devDependencies. vitest **22/22**;
+`tsc -b` 0 errors; oxlint: only pre-existing warnings; `vite build` OK
+(old test-drive code absent from the bundle). Live: `/dev/boom` renders
+the boundary. Not checked live (needs an admin login): the retry screen
+and the test-drive flow — covered by the RoleContext test and left to the
+owner's pass.
 

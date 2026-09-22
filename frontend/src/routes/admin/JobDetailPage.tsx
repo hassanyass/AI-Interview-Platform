@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { adminClient, type JobDetail } from "../../api/adminClient";
 import { ArrowLeft, AlertCircle } from "lucide-react";
 import SectionsEditor from "./SectionsEditor";
@@ -15,6 +15,9 @@ export default function JobDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // H2-E: JobCreatePage hands over a one-time notice (e.g. "duration not set") instead of alert().
+  const notice: string | undefined = (location.state as { notice?: string } | null)?.notice;
   const [job, setJob] = useState<JobDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,7 +45,7 @@ export default function JobDetailPage() {
       const data = await adminClient.getJob(id);
       setJob(data);
     } catch (err: any) {
-      if (err.message?.includes("404") || err.status === 404) {
+      if (err.status === 404) {
         setIsNotFound(true);
       } else {
         setError(err.message || t('jobDetail.failedToLoad'));
@@ -145,6 +148,12 @@ export default function JobDetailPage() {
 
   return (
     <div className="space-y-6 pb-24 lg:pb-0">
+      {notice && (
+        <div role="status" className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{notice}</span>
+        </div>
+      )}
       {/* R2-A: identity + action bar (JobSummary.tsx). Below lg the bar is
           pinned to the viewport bottom, hence the pb-24 on this page so
           the last editor is never hidden behind it. */}

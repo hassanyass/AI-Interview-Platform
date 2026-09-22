@@ -19,6 +19,7 @@ describe("loadConfig", () => {
     const { values, problems } = loadConfig({ ...COMPLETE, DEV: false });
     expect(problems).toEqual([]);
     expect(values.apiBaseUrl).toBe("http://127.0.0.1:8001");
+    expect(values.apiTimeoutMs).toBe(30_000);
     expect(values.faceDetectionIntervalSeconds).toBe(4);
     expect(values.headDownConfirmThreshold).toBe(3);
     expect(values.headDownPitchThresholdDegrees).toBe(25);

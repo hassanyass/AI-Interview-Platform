@@ -1,6 +1,19 @@
 import type { InterviewPhase } from "./api";
 
-export type AllowedControl = "REQUEST_HINT" | "CHANGE_QUESTION" | "SKIP_QUESTION" | "END_INTERVIEW" | "SUBMIT_CODE" | "SUBMIT_MCQ_ANSWER" | "END_SECTION_EARLY" | "PROCEED_TO_NEXT_SECTION" | "SKIP_BACKGROUND";
+/** Candidate controls the agent may list in ui_state.allowed_controls
+ *  (agent/agent/interview/state_machine.py VALID_CANDIDATE_CONTROLS_PER_PHASE).
+ *  H2-E: aligned with the agent's CandidateControlAction enum — the four
+ *  spoken-only controls were missing here, and SUBMIT_* are commands, not
+ *  controls (see UiCommand); both kept in this union for compatibility. */
+export type AllowedControl =
+  | "REQUEST_HINT" | "REQUEST_CLARIFICATION" | "REPEAT_QUESTION"
+  | "CHANGE_QUESTION" | "SKIP_QUESTION" | "SKIP_SECTION" | "SKIP_BACKGROUND"
+  | "MOVE_TO_TECHNICAL" | "END_SECTION_EARLY" | "PROCEED_TO_NEXT_SECTION" | "END_INTERVIEW"
+  | "SUBMIT_CODE" | "SUBMIT_MCQ_ANSWER";
+
+/** Everything the browser may put in a ui_command packet's `command`
+ *  (agent/voice_adapter.py validates: ^[A-Z_]{1,64}$ from a candidate-*). */
+export type UiCommand = AllowedControl | "IM_READY" | ProctoringEventCommand;
 
 /** PR-B/PR-D/Part 2: browser-detected integrity telemetry — always-on,
  *  never gated by allowed_controls (unlike AllowedControl above, which is
@@ -30,7 +43,9 @@ export interface ActiveQuestion {
   test_cases: Array<Record<string, unknown>>;
   supported_languages: string[];
   hints_used: number;
-  source?: "LLM_GENERATED" | "CONTEXTUAL_FALLBACK" | "QUESTION_BANK";
+  /** Agent Question.source: HR_APPROVED / BACKGROUND are what the B2B flow
+   *  actually sends (H2-E: were missing here). */
+  source?: "HR_APPROVED" | "BACKGROUND" | "LLM_GENERATED" | "CONTEXTUAL_FALLBACK" | "QUESTION_BANK";
   // Part 1 (rebrand work): the real, un-coerced CodingConfig/MCQConfig dict
   // for an ordered-flow CODING/MCQ question (empty {} for VERBAL/legacy).
   // starter_code/constraints here are STRINGS (CodingConfig's real shape),
@@ -97,9 +112,11 @@ export interface RealtimeMessage<T> {
   data: T;
 }
 
+/** Wire shape of a ui_command packet (InterviewRealtimeService.sendControlIntent /
+ *  sendIntegrityEvent). H2-E: this used to declare `{ intent }`, which nothing sent. */
 export interface ControlIntentPayload {
-  intent: AllowedControl;
-  payload?: any;
+  command: UiCommand;
+  payload?: Record<string, unknown>;
 }
 
 export interface TranscriptionPayload {

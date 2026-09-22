@@ -14,6 +14,8 @@
 
 export interface FrontendConfig {
   apiBaseUrl: string;
+  /** Default per-request timeout for lib/api.ts (ms). */
+  apiTimeoutMs: number;
   supabaseUrl: string;
   supabasePublishableKey: string;
   /** Seconds between face-detection samples during a live interview. */
@@ -70,6 +72,7 @@ export function loadConfig(env: Env): LoadedConfig {
   return {
     values: {
       apiBaseUrl,
+      apiTimeoutMs: numberOr(env, "VITE_API_TIMEOUT_MS", 30_000),
       supabaseUrl: str(env, "VITE_SUPABASE_URL"),
       supabasePublishableKey: str(env, "VITE_SUPABASE_PUBLISHABLE_KEY"),
       faceDetectionIntervalSeconds: numberOr(env, "VITE_FACE_DETECTION_INTERVAL_SECONDS", 4),

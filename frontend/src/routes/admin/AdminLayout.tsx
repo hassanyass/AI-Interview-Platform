@@ -9,8 +9,26 @@ import { useTranslation } from "react-i18next";
 
 export default function AdminLayout() {
   const { t } = useTranslation();
-  const { role, isLoadingRole } = useRole();
+  const { role, isLoadingRole, roleError, retryRoleCheck } = useRole();
   const { signOut } = useAuth();
+
+  if (!isLoadingRole && role === "unknown" && roleError) {
+    // H2-E: the backend could not be reached / answered 5xx -- that is not
+    // "you are a candidate". Offer a retry instead of signing the admin out.
+    return (
+      <div role="alert" className="flex h-dvh flex-col items-center justify-center gap-4 bg-background p-6 text-center text-foreground">
+        <p className="max-w-md text-sm text-muted-foreground">{t('adminLayout.verifyFailed')}</p>
+        <p className="max-w-md text-xs font-mono text-muted-foreground">{roleError}</p>
+        <button
+          type="button"
+          onClick={retryRoleCheck}
+          className="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+        >
+          {t('adminLayout.retry')}
+        </button>
+      </div>
+    );
+  }
 
   if (isLoadingRole || role === "unknown") {
     return (

@@ -1,4 +1,12 @@
 {
+    "errorBoundary":  {
+        "title":  "Something went wrong",
+        "body":  "The page hit an unexpected error. Reload to continue.",
+        "interviewTitle":  "The interview screen hit a problem",
+        "interviewBody":  "Your progress is saved. Reload the page to reconnect and continue where you left off.",
+        "reload":  "Reload",
+        "details":  "Technical details"
+    },
     "auth":  {
                  "title":  "Sign in to Admin Dashboard",
                  "emailLabel":  "Email address",
@@ -172,6 +180,8 @@
                       "hideTranscript":  "Hide transcript"
                   },
     "adminLayout":  {
+        "verifyFailed":  "We couldn't verify your access right now.",
+        "retry":  "Retry",
                         "loading":  "Loading admin...",
                         "signOut":  "Sign Out",
                         "adminPortal":  "Admin Portal",
@@ -186,6 +196,7 @@
                      "paused":  "Paused"
                  },
     "jobsList":  {
+        "deleteFailed":  "Failed to delete job",
                                         "results":  "Results",
                                         "deleteJob":  "Delete job",
                      "manage":  "Manage",
@@ -199,6 +210,7 @@
                      "noJobsYet":  "No jobs yet"
                  },
     "jobCreate":  {
+        "durationNotSet":  "Job created, but setting the duration failed. Please update it below.",
                       "reqSkillsPlaceholder":  "Python\nReact\nSystem Design",
                       "duration":  "Interview Duration (Minutes) *",
                       "createJob":  "Create Job",

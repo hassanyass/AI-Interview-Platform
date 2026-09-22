@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import { adminClient, type Question } from "../../api/adminClient";
 import { Plus, Trash2, Pencil, RefreshCw, Sparkles, Loader2, X, Check, CheckCircle2, Circle } from "lucide-react";
 import { Card, CardContent } from "../../components/ui/Card";
@@ -164,8 +165,9 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
     }
   };
 
+  const [questionToDelete, setQuestionToDelete] = useState<string | null>(null);
+
   const handleDelete = async (questionId: string) => {
-    if (!confirm(t('questionEditor.deleteConfirm'))) return;
     setLoadingAction(`delete-${questionId}`);
     setError("");
     try {
@@ -552,7 +554,7 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
                         )}
                       </button>
                       <button
-                        onClick={() => handleDelete(q.id)}
+                        onClick={() => setQuestionToDelete(q.id)}
                         disabled={loadingAction !== null}
                         className="touch-target flex items-center justify-center text-red-500 hover:bg-red-500/10 rounded-md disabled:opacity-30"
                         title={t('questionEditor.delete')}
@@ -573,6 +575,18 @@ export default function QuestionEditor({ sectionId, sectionType, questions, onRe
           ))}
         </div>
       )}
+      <ConfirmDeleteModal
+        isOpen={questionToDelete !== null}
+        onClose={() => setQuestionToDelete(null)}
+        onConfirm={async () => {
+          const id = questionToDelete!;
+          setQuestionToDelete(null);
+          await handleDelete(id);
+        }}
+        title={t('questionEditor.delete')}
+        description={t('questionEditor.deleteConfirm')}
+        confirmLabel={t('questionEditor.delete')}
+      />
     </div>
   );
 }

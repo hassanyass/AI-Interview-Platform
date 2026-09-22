@@ -43,6 +43,8 @@ export async function uploadSessionCv(id: string, file: File): Promise<SessionCv
     method: "POST",
     data: form,
     guestSessionId: id,
+    // upload (storage) + text extraction + LLM profile parse can legitimately take a minute
+    timeoutMs: 120_000,
   });
 }
 

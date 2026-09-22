@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { RoleProvider } from './context/RoleContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import AuthPage from './pages/Auth'
 import InterviewSession from './pages/InterviewSession'
 
@@ -17,6 +18,11 @@ import JobCreatePage from './routes/admin/JobCreatePage'
 import JobDetailPage from './routes/admin/JobDetailPage'
 import JobResultsPage from './routes/admin/JobResultsPage'
 import CandidateResultPage from './routes/admin/CandidateResultPage'
+
+// DEV-only: a component that throws, to exercise the ErrorBoundary (see /dev/boom).
+function DevBoom(): never {
+  throw new Error("DevBoom: deliberate render error for the ErrorBoundary harness")
+}
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -50,6 +56,8 @@ function App() {
       <RoleProvider>
         <BrowserRouter>
           <div className="min-h-screen bg-background text-foreground">
+            {/* H2-E: a render error anywhere shows a recoverable screen instead of a blank page. */}
+            <ErrorBoundary>
             <Routes>
               {/* Public Routes */}
               <Route path="/login" element={<AuthPage />} />
@@ -70,7 +78,8 @@ function App() {
 
               {/* Protected Routes (Candidate Facing) */}
               <Route path="/" element={<Navigate to="/admin" replace />} />
-              <Route path="/interviews/:id" element={<GuestOrAuthRoute><InterviewSession /></GuestOrAuthRoute>} />
+              {/* The live workspace gets its own boundary with candidate-facing copy (progress is checkpointed server-side). */}
+              <Route path="/interviews/:id" element={<GuestOrAuthRoute><ErrorBoundary variant="interview"><InterviewSession /></ErrorBoundary></GuestOrAuthRoute>} />
               
               {/* DEV-only visual harness for the verbal stage (routes/dev/VerbalPreview.tsx). */}
               {import.meta.env.DEV && <Route path="/dev/verbal-preview" element={<VerbalPreview />} />}
@@ -79,10 +88,13 @@ function App() {
               {/* Responsive plan R0 (docs/responsive-design-plan.md): real admin shell / real workspace chrome without a backend. */}
               {import.meta.env.DEV && <Route path="/dev/admin-preview" element={<AdminPreview />} />}
               {import.meta.env.DEV && <Route path="/dev/workspace-preview" element={<WorkspacePreview />} />}
+              {/* H2-E: throws on render so the ErrorBoundary can be seen (DEV only, tree-shaken from prod). */}
+              {import.meta.env.DEV && <Route path="/dev/boom" element={<DevBoom />} />}
 
               {/* Catch all */}
               <Route path="*" element={<Navigate to="/admin" replace />} />
             </Routes>
+            </ErrorBoundary>
           </div>
         </BrowserRouter>
       </RoleProvider>
