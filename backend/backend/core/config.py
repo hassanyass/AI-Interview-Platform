@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     """Signature algorithms accepted for Supabase user JWTs."""
     SUPABASE_JWT_AUDIENCE: str = "authenticated"
     """`aud` claim Supabase puts on signed-in users' tokens."""
+    SUPABASE_JWT_ISSUER: str = ""
+    """Expected `iss`. Empty = derive it from SUPABASE_URL (`<url>/auth/v1`), which is
+    what GoTrue puts on its tokens; set explicitly only for a non-standard deployment."""
     SUPABASE_STORAGE_TIMEOUT_SECONDS: float = 30.0
     """HTTP timeout for CV upload/download against Supabase Storage."""
     STORAGE_RETRY_ATTEMPTS: int = 2
@@ -81,6 +84,22 @@ class Settings(BaseSettings):
     """Algorithm for guest tokens minted by guest_jwt_service."""
     GUEST_JWT_TTL_HOURS: int = 24
     """Lifetime of a guest token issued at public registration / invitation redemption."""
+    GUEST_JWT_ISSUER: str = "himma-guest"
+    """`iss` stamped on guest tokens this backend mints. Verified when present; tokens
+    minted before H5-A carry none, so they stay valid until they expire."""
+
+    # ── Identity linking (api/deps.py) ─────────────────────────────────────
+    IDENTITY_AUTOLINK: Literal["verified_only", "always", "never"] = "verified_only"
+    """What happens when a Supabase identity has no profile of its own but an existing
+    profile carries the same email -- typically a candidate who applied through a public
+    link (guest) and later signed in.
+
+    `verified_only` (default): link only when the token proves the address was verified.
+    An unverified or unprovable email is refused, because linking hands over that
+    profile's sessions and results.
+    `always`: the pre-H5-A behaviour, now logged. Only for a deployment that has
+    confirmed its identity provider verifies addresses before issuing tokens.
+    `never`: no linking at all; the Supabase identity gets its own empty profile."""
 
     # ── Database ───────────────────────────────────────────────────────────
     DATABASE_URL: str
@@ -191,6 +210,13 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         return json.loads(self.BACKEND_CORS_ORIGINS)
+
+    @property
+    def supabase_jwt_issuer(self) -> str:
+        """Configured issuer, else GoTrue's default for this project URL."""
+        if self.SUPABASE_JWT_ISSUER:
+            return self.SUPABASE_JWT_ISSUER
+        return f"{self.SUPABASE_URL.rstrip('/')}/auth/v1" if self.SUPABASE_URL else ""
 
     @property
     def is_local(self) -> bool:

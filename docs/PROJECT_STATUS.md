@@ -49,7 +49,10 @@ Runs alongside the transition phases; each sub-phase has a verify record in the 
 | H2-F | durable `tasks` table + in-process worker (`FOR UPDATE SKIP LOCKED`), `TaskQueue` port; the four admin AI endpoints answer 202 + a task id and the browser polls, so a slow Groq call is no longer a failed-looking request whose result silently landed | done (see plan §20) |
 | H4-A | CI pipeline (`.github/workflows/ci.yml`: lint, tests + coverage, typecheck, build, image builds, migration up/down/up), `pre-commit`, `ruff`, frontend `strict: true`, `npm run build` gated on typecheck + lint, migration reversibility/drift tests | done (see plan §21) — **not yet run on GitHub: nothing is pushed** |
 | H4-B | auth matrix over the whole route table (401 unauthenticated, 403 for a non-admin, agent-secret handling, one candidate cannot reach another's session), the real `build_context` resume path, TTS cache, Groq key rotator, LLM timeout + turn-lock release, `ResponsiveTable`; +41 backend/agent and +7 frontend tests | done (see plan §22) |
-| H5, H6 | security/edge hardening; packaging + baseline | not started |
+| H5-A | token verification: Supabase and guest paths selected by `kid` with no fallback, `iss`/`aud` checked, a JWKS outage answers 503 instead of 401; identity linking by email now follows the data (a profile holding sessions or a CV needs a verified address) and is logged, `IDENTITY_AUTOLINK` policy; `email` removed from the profile update schema | done (see plan §23) |
+| H5-B | rate limiting, egress-start idempotency, `ui_command` allow-list | not started |
+| H5-C | container hardening, dependency audits, `admin_audit_log`, CORS per environment, purge job (disabled, U1), `docs/handover/security.md` | not started |
+| H6 | packaging + handover baseline | not started |
 
 Owed live checks (owner): one spoken interview after H2-C/H2-D (egress, voice, "I'm done" confirmation), the admin retry screen and test-drive after H2-E, and applying migration `c4d1e8f2a9b7` to the live DB.
 

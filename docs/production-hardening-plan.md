@@ -14,11 +14,12 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–F), H3, H4 (A–B) built, verified and committed (through 2026-09-23;
-one commit per phase). Live DB at head `a3f7d05c1e94`. CI exists but **has never run on
-GitHub — nothing is pushed** (owner's call). Owed: one live interview check (H2-C/D/E), one
-live admin-driven generation through the queue (§20), and a first CI run once the branch is
-pushed (§21). Next: H5 (security) or H6 (packaging), after examine + confirm.**
+Status: **H0, H1, H2 (A–F), H3, H4 (A–B), H5-A built, verified and committed (through
+2026-09-23; one commit per phase). Live DB at head `a3f7d05c1e94`. CI exists but **has never
+run on GitHub — nothing is pushed** (owner's call). H5 is split: A (identity, done), B (abuse
+and resource protection), C (containers, audits, audit log, docs). Owed: one live interview
+check (H2-C/D/E), one live admin-driven generation through the queue (§20), and a first CI
+run once the branch is pushed (§21). Next: H5-B, after examine + confirm.**
 
 ---
 
@@ -1421,4 +1422,89 @@ change worth its own approval.
 Full `pytest` **390 passed, 1 skipped** (from 349), vitest **34/34** (from
 27, three consecutive runs), `ruff check .` clean, `npm run build`
 (typecheck + lint + bundle) clean.
+
+## 23. H5-A — verify record (2026-09-23)
+
+Scope: the identity half of H5. Rate limiting, egress idempotency, the
+`ui_command` allow-list, container hardening, dependency audits, the audit
+log and `security.md` are H5-B and H5-C.
+
+**Token verification** (`core/security.py`, rewritten). The two token
+kinds are now told apart **before** either is verified, by the one
+structural difference: a Supabase token is asymmetric and carries a `kid`
+naming a key in the project's JWKS; a guest token is minted here, HS256,
+and never has one. Each token gets exactly one path -- the old code tried
+Supabase, caught `except Exception`, and re-decoded the same string with
+the guest key, so a token was accepted by whichever path happened to
+succeed. Both paths pin algorithms and check `iss`; Supabase also checks
+`aud`, and both now require `exp` and `sub` to be present at all.
+
+The other half of that old `except Exception` was an operational bug: a
+JWKS outage took the same branch as a forged token, so an incident on our
+side was reported to every admin and candidate as "invalid authentication
+credentials". Now an **unreachable** key server is a 503 with code
+`jwks_unavailable`, while a **reachable** one with no matching key stays
+401 -- a distinction that only appeared because a test asked what an
+unknown `kid` should answer, and the first implementation answered 503 for
+both.
+
+Guest tokens now carry `iss: himma-guest`, verified **when present**, so
+the ones already in candidates' browsers keep working until they expire.
+
+**Identity linking** (`api/deps.py`). Resolving a Supabase identity to a
+profile with the same email hands over that profile's sessions, CV and
+evaluation, and it used to happen silently for any address. The first
+implementation required a verified address outright -- and the suite
+immediately failed `test_phase6b`'s three redemption tests, which was the
+finding that shaped the design: **personalized invitations depend on this
+link**. HR creates an invitation, which creates a profile for the invited
+address, and the candidate signs in to redeem it.
+
+So the rule follows the data rather than the address. A profile with **no
+sessions and no CV** is adopted as before (the invitation path, and the
+redemption route independently requires the JWT's email to equal the
+invitation's). A profile that **already holds interview work** is adopted
+only when the token proves the address was verified; otherwise 403 with a
+message saying what to do. Every outcome is logged with an `event` field.
+`IDENTITY_AUTOLINK` (`verified_only` default / `always` / `never`)
+overrides it: `always` is the pre-H5-A behaviour for a deployment that has
+confirmed its provider verifies addresses first. `email_verified` is read
+from the top level, `user_metadata` or `app_metadata`, and its **absence
+is treated as unproven, never as proven** -- which matters because which
+claim this project's Supabase emits could not be confirmed from the code
+(the read-only live check offered at examine time was not taken up; the
+setting exists precisely so the operator can decide without a code change).
+
+**`PATCH /profiles/me` no longer accepts `email`.** It was writable with
+no verification while `deps.py` linked identities by matching email -- the
+two together let an account claim an address it had never proved. Nothing
+is lost: the frontend has never called that route for any field.
+
+Tests: `backend/tests/test_token_verification.py` (18) with **real signed
+tokens** -- an EC key pair standing in for the JWKS -- covering accepted
+Supabase and guest tokens, an HS256 token wearing a `kid` (routed to the
+asymmetric path and rejected, not fallen back), an expired Supabase token
+rejected once on its own path, expired / wrong audience / wrong issuer /
+unknown key / foreign signing key / no expiry, guest tokens with the wrong
+key, the wrong `type`, a foreign issuer, one minted before H5-A (still
+valid), the `none` algorithm, garbage, a JWKS outage answering 503, and a
+JWKS outage **not** affecting guest tokens -- a candidate's interview must
+not end because the key server blinked. `backend/tests/test_identity_link.py`
+(8): the invitation path still adopts, a verified address adopts even with
+history, an unproven or explicitly unverified address is refused and the
+profile is left untouched, both policy overrides, a guest token links
+nothing, a new address still gets its own profile.
+
+Full `pytest` **416 passed, 1 skipped** (from 390), `ruff check .` clean.
+
+Live (compose): backend rebuilt and ready. No token, garbage and a
+wrongly-signed HS256 token → 401. A guest token minted inside the
+container carries `iss: himma-guest` and authenticates (404 from the probe
+route, whose profile this check never created — the auth verdict is what
+was under test). A guest token with a foreign issuer → 401. A token with
+an unknown `kid`, which goes through a **real JWKS round trip to
+Supabase** → 401, not 503, confirming the two failure modes are genuinely
+separated against the real key server. Not checked live: a real Supabase
+user token (needs a login, which is the owner's to do) — the signature,
+audience and issuer paths are covered by the EC-key tests instead.
 

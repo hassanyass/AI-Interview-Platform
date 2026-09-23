@@ -21,5 +21,10 @@ def mint_guest_jwt(profile_id: str, email: str) -> str:
         "email": email,
         "type": "guest",
         "exp": expiration,
+        # H5-A: stamped so the token says who minted it. core/security.py
+        # selects the verification path by the absence of a `kid` header
+        # and checks this when present; tokens minted before H5-A have no
+        # `iss` and stay valid until they expire.
+        "iss": settings.GUEST_JWT_ISSUER,
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.GUEST_JWT_ALGORITHM)
