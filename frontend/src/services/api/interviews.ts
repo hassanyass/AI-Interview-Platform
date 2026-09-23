@@ -1,5 +1,5 @@
 import { fetchApi } from "../../lib/api";
-import type { ConsentResponse, InterviewResultResponse, InterviewSessionResponse } from "../../types/api";
+import type { ConsentResponse, InterviewSessionResponse } from "../../types/api";
 
 // guestSessionId: id is passed through on every call below so a guest's own
 // session-scoped token wins over an unrelated concurrent Supabase session
@@ -54,10 +54,6 @@ export async function getLiveKitToken(id: string): Promise<{ token: string; url:
     data: { session_id: id },
     guestSessionId: id,
   });
-}
-
-export async function getInterviewResult(id: string): Promise<InterviewResultResponse> {
-  return fetchApi<InterviewResultResponse>(`/api/v1/interviews/${id}/result`, { guestSessionId: id });
 }
 
 /** PR-A: records the candidate's recording/monitoring consent, tied to

@@ -31,13 +31,13 @@ database; SQLAlchemy models and migrations are exercised for real.
 
 | Suite | What it covers | Style |
 |---|---|---|
-| `backend/tests/` | settings fail-closed (`test_settings.py`), RFC7807 errors + request id (`test_errors.py`), provider adapters + factory (`test_providers.py`, fakes in `fakes.py`), service layer (`test_services_extraction.py`), resilience — pool, sweep lock, FOR UPDATE finalize, background tasks, /health vs /ready (`test_resilience.py`), CV gate + extraction (`test_session_cv_gate.py`, `test_resume_profile_extraction.py`), background evaluation, logging/metrics/CLI (`test_observability.py`) | `httpx.AsyncClient(ASGITransport(app))` against the real app; real test DB; **no network** — Groq/LiveKit/storage are fakes |
-| `agent/agent/tests/` | `AgentSettings` (`test_config.py`), plugin factory (`test_factory.py`), the real `entrypoint` with fakes — crash / lease lost / completion (`test_runtime.py`), `APIPersistence` retry/outbox/lease (`test_persistence_transport.py`), voice-adapter guards (`test_adapter_guards.py`), the H2-C spoken-control confirmation in the frozen controller (`test_controller_h2c.py`), logging + X-Request-ID (`test_observability.py`) | pure asyncio with fakes; no LiveKit server, no backend |
+| `backend/tests/` | settings fail-closed (`test_settings.py`), RFC7807 errors + request id (`test_errors.py`), provider adapters + factory (`test_providers.py`, fakes in `fakes.py`), service layer (`test_services_extraction.py`), resilience — pool, sweep lock, FOR UPDATE finalize, background tasks, /health vs /ready (`test_resilience.py`), CV gate + extraction (`test_session_cv_gate.py`, `test_resume_profile_extraction.py`), background evaluation, logging/metrics/CLI (`test_observability.py`), the task queue (`test_tasks.py`), migration reversibility + drift (`test_migrations.py`), **the auth matrix over the whole route table** (`test_auth_matrix.py`) | `httpx.AsyncClient(ASGITransport(app))` against the real app; real test DB; **no network** — Groq/LiveKit/storage are fakes |
+| `agent/agent/tests/` | `AgentSettings` (`test_config.py`), plugin factory (`test_factory.py`), the real `entrypoint` with fakes — crash / lease lost / completion (`test_runtime.py`), `APIPersistence` retry/outbox/lease (`test_persistence_transport.py`), voice-adapter guards (`test_adapter_guards.py`), the H2-C spoken-control confirmation in the frozen controller (`test_controller_h2c.py`), logging + X-Request-ID (`test_observability.py`), **the real `build_context` resume path** (`test_bootstrap_resume.py`), TTS cache (`test_tts_cache.py`), Groq key rotator (`test_key_rotator.py`), LLM timeout + turn-lock release (`test_llm_timeout.py`) | pure asyncio with fakes; no LiveKit server, no backend |
 | `agent/test_*.py` (root of `agent/`) | pre-hardening controller/state-machine regressions (`test_skip_regressions.py`, `test_background_subsection.py`) | untouched; still collected |
 | `tests/legacy/` | the phase-by-phase integration tests written during the B2C→B2B transition (`test_phase1.py` … `test_phase9b.py`) | moved here in H0 (S2), unchanged; they run against the test DB like everything else |
-| `frontend/src/**/*.test.ts(x)` | `lib/api.errors.test.ts` (ApiError, timeout, abort), `components/ErrorBoundary.test.tsx`, `context/RoleContext.test.tsx`, plus earlier pure-logic tests | vitest, jsdom, `@testing-library/react`; no backend |
+| `frontend/src/**/*.test.ts(x)` | `lib/api.errors.test.ts` (ApiError, timeout, abort), `lib/tasks.test.ts` (task polling), `components/ErrorBoundary.test.tsx`, `components/ui/ResponsiveTable.test.tsx` (both renderings), `context/RoleContext.test.tsx`, plus earlier pure-logic tests | vitest, jsdom, `@testing-library/react`; no backend |
 
-Counts at the last full run: **pytest 335 passed, 1 skipped; vitest 22/22.**
+Counts at the last full run: **pytest 390 passed, 1 skipped; vitest 34/34.**
 
 ## What is deliberately not automated
 
@@ -103,6 +103,7 @@ number.
   `RoleContext.test.tsx` was failing about one run in two (an unstable
   mock re-running the effect under test) and was fixed, not retried,
   while this pipeline was written.
-- The remaining test gaps -- an auth matrix per router, agent coverage
-  for the LLM timeout / TTS cache / key rotator / resume-restore, and a
-  `ResponsiveTable` test -- are H4-B.
+- Auth is tested against the **route table**, not a hand-written list
+  (`test_auth_matrix.py`): a route added without an auth dependency fails
+  the suite. Route counts are asserted loosely (`>=`) so adding routes is
+  fine; removing a whole class is not.

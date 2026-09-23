@@ -376,6 +376,12 @@ async def get_events(
 
 @router.get("/{session_id}/result", response_model=InterviewResultResponse)
 async def get_interview_result(
+    # Admin-only despite the candidate-facing prefix, and deliberately so:
+    # this returns the full evaluation. The candidate UI does not call it
+    # (H4-B removed the one client function that did -- dead code that
+    # would have sent a guest token and received 403), and HR reads results
+    # through GET /admin/interviews/{id}/result. Do not loosen the auth
+    # here to "match" a caller; there isn't one.
     session_id: UUID,
     db: AsyncSession = db_dependency,
     admin_id: str = Depends(get_current_admin)

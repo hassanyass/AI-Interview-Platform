@@ -59,7 +59,7 @@ function readRecord(): StoredGuestSession | null {
  * - `getGuestToken(sessionId)`: returns the token only if it was minted
  *   for exactly this session id. This is the call fetchApi makes for
  *   session-specific requests (getInterviewSession/getLiveKitToken/
- *   getInterviewResult) — a match is proof of intent, not a guess.
+ *   uploadSessionCv) — a match is proof of intent, not a guess.
  * - `getGuestToken()`: returns the token regardless of which session it's
  *   for. Used only for the coarse "is there a guest credential in this
  *   tab at all" check (GuestOrAuthRoute's access gate, fetchApi's unscoped

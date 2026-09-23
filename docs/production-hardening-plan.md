@@ -14,11 +14,11 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–F), H3, H4-A built, verified and committed (through 2026-09-23; one
-commit per phase). Live DB at head `a3f7d05c1e94`. H4 is split: H4-A (pipeline) is done but
-**has never run on GitHub — nothing is pushed** (owner's call, 2026-09-23); H4-B (remaining
-test gaps) is next. Owed: one live interview check (H2-C/D/E items), one live admin-driven
-generation through the queue (§20), and a first CI run once the branch is pushed (§21).**
+Status: **H0, H1, H2 (A–F), H3, H4 (A–B) built, verified and committed (through 2026-09-23;
+one commit per phase). Live DB at head `a3f7d05c1e94`. CI exists but **has never run on
+GitHub — nothing is pushed** (owner's call). Owed: one live interview check (H2-C/D/E), one
+live admin-driven generation through the queue (§20), and a first CI run once the branch is
+pushed (§21). Next: H5 (security) or H6 (packaging), after examine + confirm.**
 
 ---
 
@@ -1335,4 +1335,90 @@ breaks a rule -- is owed and cannot be met until the branch is pushed
 (local `master` is 29+ commits ahead of `origin/main`, which last moved on
 2026-09-14). Nothing about the workflow is proven by a local run except
 that every command it issues succeeds here.
+
+## 22. H4-B — verify record (2026-09-23)
+
+The remaining test gaps from H4, plus the dead-code fix the examination
+turned up. No production behaviour changed.
+
+**Auth matrix** (`backend/tests/test_auth_matrix.py`, 7 tests over all 55
+API routes). Built from the route table, not a hand-written list, so a
+route shipped without an auth dependency fails the suite rather than
+waiting to be noticed: the walker classifies each route by its dependency
+(`get_current_admin` / `get_current_candidate_profile_id` /
+`verify_agent_secret` / none) exactly as `core/metrics.py` has to walk
+`_IncludedRouter`. Asserted: **30 admin and 15 candidate routes answer 401
+with no credentials**; a signed-in identity with no `users_roles` row gets
+**403 on all 30 admin routes** (401 vs 403 is the distinction `RoleContext`
+depends on -- a 401 here would sign a real admin out on a blip); internal
+routes reject a missing header (422, and the error must name the header)
+and a wrong secret (403) and get past auth with the right one; the three
+deliberately public routes never start demanding credentials. Plus a real
+two-candidate fixture -- two guest JWTs minted through the public-apply
+flow -- proving **candidate B cannot reach candidate A's session** on any
+of the six ownership-checked routes or the room token, while A still can.
+
+Two behaviours the probe corrected before the test was written, both
+sound and now documented in the test: `terminate` and `/livekit/token`
+scope their SELECT by `candidate_profile_id`, so a stranger gets **404**
+rather than 403 -- a refusal that does not confirm the session exists;
+and a missing `X-Agent-Secret` is a **422**, not 401, because the header
+is declared required. Changing the latter would touch `/internal/*`, a
+frozen contract, so it is pinned as current behaviour, not corrected.
+
+**Agent** (`agent/agent/tests/`, 34 new tests).
+`test_bootstrap_resume.py` (9) runs the **real `build_context`** -- every
+previous runtime test replaced it with a fake, leaving the ~110 lines that
+decide what a reconnecting candidate comes back to untested. Covered: a
+persisted greeting (not the status) is what makes it a resume; phase,
+counters and the clock are restored rather than reset; the message
+sequence takes the **higher** of checkpoint and messages, because
+checkpoints lag and re-using a sequence number would collide on every
+later save; the ordered pointer resumes mid-section against a question
+list always rebuilt fresh from `/load`; background questions are restored
+**before** the pointer is applied, since the pointer counts them; history,
+question records and evaluation signals; an unreadable background
+snapshot degrades instead of killing the reconnect; a legacy session with
+no `sections` still builds. `test_tts_cache.py` (8): every field that
+changes the audio changes the key (a collision would play one voice's
+audio for another), round trip, no temp file left, empty audio is never
+cached, and read/write failures degrade to a miss instead of raising.
+`test_key_rotator.py` (12): namespace isolation, rotate-to-exhaustion
+without wrapping, persistence across processes, **a new UTC day starts
+again at key 1** (the daily quota is the whole point), a corrupt or stale
+state file starts fresh, atomic write. `test_llm_timeout.py` (5): the
+configured timeout and retry budget reach the SDK client (its own
+defaults are 60s x 2 -- minutes of a wedged turn), the provider refuses to
+start without a key or model, the turn lock is released when a turn raises
+**and** when it is cancelled, and the frozen controller turns an LLM
+failure into its spoken fallback rather than silence.
+
+**Frontend** `ResponsiveTable.test.tsx` (7): both renderings are in the
+DOM at once, so jsdom asserts each -- the table with every column, one
+card per row titled by the `primary` column, `hideOnCard` columns absent,
+**actions last in the card** (R3's finding was that the action column was
+what scrolled off-screen), the empty state, and the caption naming both.
+
+**Dead code fixed (owner asked for it explicitly).**
+`getInterviewResult` in `services/api/interviews.ts` called
+`GET /api/v1/interviews/{id}/result` with a **guest token**, but that
+route requires `get_current_admin` -- it would have returned 403. It had
+no callers, so nothing was broken; the function and the
+`InterviewResultResponse` type it was the sole user of are removed, a
+stale reference in `guestSession.ts`'s docstring updated, and the route
+itself now carries a comment saying the admin-only auth is deliberate and
+must not be loosened to match a caller that no longer exists.
+
+**Not fixed, reported:** `build_context` guards
+`restore_background_questions` against an unreadable snapshot but calls
+`Question(**current_question_snapshot)` unguarded -- a malformed
+`current_question_snapshot` raises and fails the reconnect. Found while
+writing the fixtures (an incomplete snapshot raised a pydantic
+`ValidationError` rather than degrading). Left alone under scope
+discipline: this phase writes tests, and changing it is a behaviour
+change worth its own approval.
+
+Full `pytest` **390 passed, 1 skipped** (from 349), vitest **34/34** (from
+27, three consecutive runs), `ruff check .` clean, `npm run build`
+(typecheck + lint + bundle) clean.
 

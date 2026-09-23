@@ -116,10 +116,3 @@ export interface ConsentResponse {
   disclosure_language: string;
   created_at: string;
 }
-
-export interface InterviewResultResponse {
-  session_id: string;
-  status: InterviewStatus;
-  completed_at?: string;
-  final_result: FinalResult;
-}
