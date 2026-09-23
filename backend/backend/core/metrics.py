@@ -38,6 +38,7 @@ sweep_runs_total = Counter(
 )
 sweep_finalized_total = Counter("sweep_finalized_total", "Sessions auto-finalized by the sweep")
 ready_check_failures_total = Counter("ready_check_failures_total", "Readiness probe failures", ["check"])
+rate_limit_rejections_total = Counter("rate_limit_rejections_total", "Requests refused by a rate limit", ["scope"])
 background_tasks_pending = Gauge("background_tasks_pending", "Tracked fire-and-forget tasks in flight")
 # H2-F: the durable queue (models/task.py). Distinct from the gauge above,
 # which counts in-process fire-and-forget asyncio tasks.

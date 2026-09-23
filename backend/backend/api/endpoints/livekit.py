@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from backend.api.deps import get_db, current_user_dependency
+from backend.core.config import settings
+from backend.core.ratelimit import rate_limit
 from backend.models.interview import InterviewSession
 from backend.services.sessions.room_token import assert_cv_gate_satisfied, issue_candidate_room_token
 
@@ -20,7 +22,14 @@ class TokenResponse(BaseModel):
     token: str
     url: str
 
-@router.post("/token", response_model=TokenResponse)
+@router.post(
+    "/token",
+    response_model=TokenResponse,
+    # H5-B: keyed by subject. Each call can schedule a recording, so
+    # this is bounded -- but a reconnecting candidate legitimately asks
+    # again, hence the generous default.
+    dependencies=[Depends(rate_limit("room_token", lambda: settings.RATE_LIMIT_ROOM_TOKEN, by_subject=True))],
+)
 async def generate_livekit_token(
     request: TokenRequest,
     db: AsyncSession = Depends(get_db),

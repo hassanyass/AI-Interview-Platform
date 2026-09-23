@@ -14,12 +14,12 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–F), H3, H4 (A–B), H5-A built, verified and committed (through
-2026-09-23; one commit per phase). Live DB at head `a3f7d05c1e94`. CI exists but **has never
-run on GitHub — nothing is pushed** (owner's call). H5 is split: A (identity, done), B (abuse
-and resource protection), C (containers, audits, audit log, docs). Owed: one live interview
-check (H2-C/D/E), one live admin-driven generation through the queue (§20), and a first CI
-run once the branch is pushed (§21). Next: H5-B, after examine + confirm.**
+Status: **H0, H1, H2 (A–F), H3, H4 (A–B), H5 (A–B) built, verified and committed (through
+2026-09-23; one commit per phase). Live DB at head `b6e1a94c37d2`. CI exists but **has never
+run on GitHub — nothing is pushed** (owner's call). Owed: one live interview check
+(H2-C/D/E), one live admin-driven generation through the queue (§20), and a first CI run
+once the branch is pushed (§21). Next: H5-C (containers, audits, audit log, docs) or H6,
+after examine + confirm.**
 
 ---
 
@@ -1507,4 +1507,93 @@ Supabase** → 401, not 503, confirming the two failure modes are genuinely
 separated against the real key server. Not checked live: a real Supabase
 user token (needs a login, which is the owner's to do) — the signature,
 audience and issuer paths are covered by the EC-key tests instead.
+
+## 24. H5-B — verify record (2026-09-23)
+
+Three things that each let one careless or hostile caller cost more than
+one request should.
+
+**Rate limiting** (`core/ratelimit.py`, new). A token bucket per (scope,
+caller) in this process's memory -- no Redis, per S9's reasoning. Applied
+to `GET /apply/{token}` (120/min), `POST /apply/{token}/register`
+(20/min), `POST /invitations/{token}/redeem` (20/min) and
+`POST /livekit/token` (30/min), all configurable. Refusals are 429 through
+the existing RFC7807 handler with a `Retry-After` header -- `AppError`
+gained optional `headers` for it -- and counted in
+`rate_limit_rejections_total{scope}`.
+
+The design decision worth keeping: **authenticated routes are keyed by the
+token's subject, not the address**. Everyone at an exhibition booth, in an
+office or behind a corporate NAT shares one IP, and an address-keyed limit
+would throttle a room of legitimate candidates as though they were one
+attacker. Only the two genuinely anonymous routes fall back to the
+address, which is also why their defaults are generous: they exist to stop
+a script, not a queue of visitors. Idle buckets are evicted once they have
+been untouched for longer than their own window (at which point they have
+refilled to full, so forgetting them changes nothing) -- without that, a
+process running for days would keep a bucket per address ever seen.
+
+A defect this introduced and the suite caught immediately: the first
+version of the dependency declared `token_data: dict | None = None` on the
+anonymous variant, and a parameter that is not a `Depends()` is a **body
+field** to FastAPI. Every guarded route's own body silently became an
+embedded field, so valid registrations answered 422. The factory now
+builds two distinct signatures, and `test_rate_limit.py` keeps a
+regression test for exactly that.
+
+**Recording start is now claimed, not looked at.** `recording_egress_id`
+was doing double duty as "the egress we started" and "have we started
+one", making the guard check-then-act: two `/livekit/token` calls in
+flight together -- a reconnect, a resume, a double-clicked Start -- could
+each see NULL and each start an egress. Two recordings billed, one id
+stored, and the other left running until LiveKit's own timeout because
+finalization only knows about the one it can see. Migration
+**`b6e1a94c37d2`** (additive) adds `recording_egress_started_at`, set by a
+conditional UPDATE whose `RETURNING` tells the caller whether it owns the
+start; everyone else returns. The claim is committed before the provider
+call, so no transaction is held across a start that can take ten seconds,
+and it is released on every path that ends without an egress id so a later
+reconnect can still record.
+
+**`ui_command` allow-list.** The shape check (`^[A-Z_]{1,64}$` from a
+`candidate-*` participant, H2-D) said a command looked like one; nothing
+said it *was* one. `ALLOWED_UI_COMMANDS` is built from
+`CandidateControlAction` plus the two submissions, the intro screen's
+readiness signal and the browser's six proctoring signals -- 20 in all, so
+a control added to the enum is accepted automatically and one removed from
+it stops being accepted. Anything else is dropped at the edge.
+
+Tests: `test_rate_limit.py` (17) -- rule parsing including six malformed
+forms that must raise rather than silently disable a limit, burst then
+refusal, exact refill arithmetic, no overflow past the limit, separate
+buckets per caller and scope, idle eviction, and through the real app: the
+429 with `Retry-After` and `X-Request-ID`, the disable switch, separate
+buckets per route, and the body-field regression. `test_egress_claim.py`
+(6) -- **five concurrent starts produce exactly one recording**, a later
+reconnect starts none, a raised provider error and an immediate provider
+rejection both release the claim so a retry works, unconfigured storage
+claims nothing. `test_adapter_guards.py` (+3) -- unknown-but-well-formed
+commands dropped, every allowed command dispatched, and the list checked
+against the enum. Full `pytest` **442 passed, 1 skipped** (from 416),
+vitest 34/34, `ruff check .` clean.
+
+Live (compose): backend and migrate rebuilt, `a3f7d05c1e94 ->
+b6e1a94c37d2` applied, `/ready` 200. Forty concurrent registrations
+against the real app: **20 answered, 20 refused with 429**, and
+`rate_limit_rejections_total{scope="public_register"} 20.0` on `/metrics`.
+A first sequential attempt of 24 requests produced no 429 at all, which
+was the limiter working correctly rather than failing -- each 403 round
+trip to the remote database took long enough for tokens to refill.
+
+**Found, not fixed (scope discipline).** Five of those forty concurrent
+requests returned **500**, from
+`asyncpg.exceptions.InternalServerError: (EMAXCONNSESSION) max clients
+reached in session mode - max clients are limited to pool_size: 15` --
+the **Supabase pooler's** ceiling, not this app's pool. Two things follow,
+neither of them H5-B's to settle. A burst the rate limit permits (20) can
+exceed the database's connection ceiling (15), so the two numbers should
+be chosen together for a given deployment -- relevant to U4 and to H6's
+capacity baseline. And a connection failure of that kind surfaces as an
+unhandled 500 rather than a 503; mapping it belongs with the error model,
+not here.
 

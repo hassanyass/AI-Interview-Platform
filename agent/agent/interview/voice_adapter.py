@@ -13,7 +13,7 @@ from livekit import rtc
 
 from agent.config import get_settings
 from agent.interview.controller import InterviewController
-from agent.interview.models import ActionEnum, InterviewPhase
+from agent.interview.models import ActionEnum, CandidateControlAction, InterviewPhase
 from agent.interview.persistence import InterviewPersistence
 from agent.interview import tts_cache
 from agent.llm.prompts import SYSTEM_MESSAGES
@@ -31,6 +31,23 @@ logger = logging.getLogger(__name__)
 
 # H2-D: the only shape a ui_command name may have.
 _UI_COMMAND_RE = re.compile(r"^[A-Z_]{1,64}$")
+
+# H5-B: the shape check above says a command *looks* like one; this says it
+# *is* one. Anything else from a candidate's browser is dropped at the edge
+# rather than travelling into the controller to be ignored somewhere deeper.
+# Three sources, all real:
+#   - every CandidateControlAction (the controls the state machine gates),
+#   - the two submissions and the intro screen's readiness signal, which are
+#     commands rather than gated controls,
+#   - the browser-detected proctoring signals, which are always-on telemetry.
+_SUBMISSION_COMMANDS = frozenset({"SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "IM_READY"})
+_PROCTORING_COMMANDS = frozenset({
+    "FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED",
+    "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED", "HEAD_DOWN_SUSPECTED",
+})
+ALLOWED_UI_COMMANDS = frozenset(
+    {action.value for action in CandidateControlAction} | _SUBMISSION_COMMANDS | _PROCTORING_COMMANDS
+)
 
 
 class VoiceInterviewAdapter:
@@ -318,6 +335,9 @@ class VoiceInterviewAdapter:
                 logger.warning("Dropped malformed ui_command from %s: %r", sender, payload if isinstance(payload, dict) else type(payload).__name__)
                 return
             command = payload["command"]
+            if command not in ALLOWED_UI_COMMANDS:
+                logger.warning("Dropped unknown ui_command %r from %s", command, sender)
+                return
             logger.info(f"Received UI command: {command}")
             task = asyncio.create_task(self._handle_ui_command(command, payload))
             self._command_tasks.add(task)

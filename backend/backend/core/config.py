@@ -88,6 +88,24 @@ class Settings(BaseSettings):
     """`iss` stamped on guest tokens this backend mints. Verified when present; tokens
     minted before H5-A carry none, so they stay valid until they expire."""
 
+    # ── Rate limiting (core/ratelimit.py) ──────────────────────────────────
+    # "<count>/<second|minute|hour|day>". Parsed on every request, so a bad
+    # value fails that route loudly instead of silently disabling a limit.
+    # Anonymous routes are keyed by IP and everyone behind one NAT -- a
+    # booth, an office -- shares it, which is why those two are generous.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_APPLY_PREVIEW: str = "120/minute"
+    """GET /apply/{token}: a cheap read, keyed by IP."""
+    RATE_LIMIT_PUBLIC_REGISTER: str = "20/minute"
+    """POST /apply/{token}/register: keyed by IP, and each call creates a profile,
+    an application, an interview session and a guest token."""
+    RATE_LIMIT_INVITATION_REDEEM: str = "20/minute"
+    """POST /invitations/{token}/redeem: keyed by the signed-in subject."""
+    RATE_LIMIT_ROOM_TOKEN: str = "30/minute"
+    """POST /livekit/token: keyed by the subject. Generous -- a reconnecting
+    candidate legitimately asks again -- but bounded, because each call can
+    schedule a recording."""
+
     # ── Identity linking (api/deps.py) ─────────────────────────────────────
     IDENTITY_AUTOLINK: Literal["verified_only", "always", "never"] = "verified_only"
     """What happens when a Supabase identity has no profile of its own but an existing

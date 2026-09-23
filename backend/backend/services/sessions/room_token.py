@@ -7,9 +7,9 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.core import background
@@ -63,11 +63,11 @@ async def issue_candidate_room_token(session: InterviewSession, candidate_id: st
 
     # PR-C: schedule recording-start as a background task, cheap
     # pre-check here so a reconnect/resume doesn't even schedule redundant
-    # work -- the background task itself re-checks with a fresh row
-    # regardless, so this is an optimization, not the real idempotency
-    # guard. Scheduled, not awaited: see start_recording_egress's own
-    # docstring for why this must run AFTER the token has been returned.
-    if not session.recording_egress_id:
+    # work. Not the guard -- that is the conditional UPDATE inside
+    # start_recording_egress (H5-B). Scheduled, not awaited: see
+    # start_recording_egress's own docstring for why this must run AFTER
+    # the token has been returned.
+    if not session.recording_egress_id and not session.recording_egress_started_at:
         background.spawn(start_recording_egress(str(session.id), room_name), name=f"egress-start-{session.id}")
 
     return IssuedRoomToken(token=token, url=settings.LIVEKIT_URL, room_name=room_name)
@@ -93,10 +93,17 @@ async def start_recording_egress(session_id: str, room_name: str) -> None:
     below meaningful (see the race explained above; running this inline,
     awaited, before responding, could only ever fail).
 
-    Idempotent -- re-checks recording_egress_id itself (via a fresh DB
-    session, not the request-scoped one, which is closed by the time a
-    background task runs) so a reconnect/resume re-requesting a token
-    can't start a second recording.
+    Idempotent, and by a claim rather than a look (H5-B). One conditional
+    UPDATE sets recording_egress_started_at only while it is still NULL;
+    whoever changes a row owns the start and everyone else returns. The
+    old version read recording_egress_id and then acted on what it read,
+    so two concurrent /livekit/token calls could both see NULL, both start
+    an egress, and leave one of them orphaned -- running, billed, and
+    never stopped at finalization because only one id was ever stored.
+
+    Uses a fresh DB session, not the request-scoped one, which is closed by
+    the time a background task runs. The claim is committed before the
+    provider call, so no transaction is held across it.
 
     Deliberately never raises: a recording that fails to start is a
     proctoring-evidence gap, not a reason to affect a candidate's
@@ -109,6 +116,26 @@ async def start_recording_egress(session_id: str, room_name: str) -> None:
     storage = get_recordings_storage()
     if not storage.configured:
         logger.warning("Recording storage not configured -- skipping recording for session %s", session_id)
+        return
+
+    # The claim. `RETURNING` tells us whether this call is the one that
+    # changed the row; a second caller updates nothing and stops here.
+    async with AsyncSessionLocal() as db:
+        claimed = (
+            await db.execute(
+                update(InterviewSession)
+                .where(
+                    InterviewSession.id == session_id,
+                    InterviewSession.recording_egress_id.is_(None),
+                    InterviewSession.recording_egress_started_at.is_(None),
+                )
+                .values(recording_egress_started_at=datetime.now(timezone.utc))
+                .returning(InterviewSession.id)
+            )
+        ).first()
+        await db.commit()
+    if not claimed:
+        logger.debug("Recording already claimed for session %s; not starting a second one", session_id)
         return
 
     storage_path = settings.RECORDING_PATH_TEMPLATE.format(session_id=session_id, timestamp=int(time.time()))
@@ -133,6 +160,7 @@ async def start_recording_egress(session_id: str, room_name: str) -> None:
                 "Egress start reported immediate failure for session %s: status=%s error=%s",
                 session_id, started.status, started.error,
             )
+            await _release_egress_claim(session_id)
             return
 
         async with AsyncSessionLocal() as db:
@@ -145,3 +173,22 @@ async def start_recording_egress(session_id: str, room_name: str) -> None:
                 logger.info("Recording egress %s started for session %s -> %s", started.egress_id, session_id, storage_path)
     except Exception:  # noqa: BLE001 -- never raises by design: a recording that fails to start must not touch the interview
         logger.exception("Failed to start recording egress for session %s", session_id)
+        await _release_egress_claim(session_id)
+
+
+async def _release_egress_claim(session_id: str) -> None:
+    """Hand the claim back when no egress was actually started, so a
+    reconnect can try again. Never raises -- this runs on the failure path
+    and must not replace one logged failure with another."""
+    from backend.db.session import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(
+                update(InterviewSession)
+                .where(InterviewSession.id == session_id, InterviewSession.recording_egress_id.is_(None))
+                .values(recording_egress_started_at=None)
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("Could not release the recording claim for session %s", session_id)

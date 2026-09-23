@@ -38,12 +38,18 @@ class AppError(Exception):
     status: int = 500
     code: str | None = None
 
-    def __init__(self, detail: str | None = None, *, code: str | None = None, status: int | None = None) -> None:
+    def __init__(
+        self, detail: str | None = None, *, code: str | None = None, status: int | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.detail = detail or HTTPStatus(status or self.status).phrase
         if code is not None:
             self.code = code
         if status is not None:
             self.status = status
+        # Some rejections carry a header the client is meant to act on --
+        # 429's Retry-After. Copied onto the response by the handler below.
+        self.headers = headers or {}
         super().__init__(self.detail)
 
 
@@ -88,6 +94,11 @@ class UpstreamTimeout(AppError):
     status = 504
 
 
+class TooManyRequests(AppError):
+    """Rate limited (H5-B). Always raised with a Retry-After header."""
+    status = 429
+
+
 def problem(request: Request, status: int, detail: Any, *, code: str | None = None) -> JSONResponse:
     body: dict[str, Any] = {
         "type": "about:blank",
@@ -111,7 +122,10 @@ def problem(request: Request, status: int, detail: Any, *, code: str | None = No
 def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(request: Request, exc: AppError) -> JSONResponse:
-        return problem(request, exc.status, exc.detail, code=exc.code)
+        response = problem(request, exc.status, exc.detail, code=exc.code)
+        for key, value in getattr(exc, "headers", {}).items():
+            response.headers[key] = value
+        return response
 
     @app.exception_handler(StarletteHTTPException)
     async def _http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:

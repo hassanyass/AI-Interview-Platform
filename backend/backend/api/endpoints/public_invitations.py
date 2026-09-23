@@ -18,6 +18,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from backend.api.deps import get_current_user_token_data, get_current_candidate_profile_id
+from backend.core.config import settings
+from backend.core.ratelimit import rate_limit
 from backend.db.session import get_db
 from backend.models.interview import (
     InterviewDefinition,
@@ -94,7 +96,14 @@ async def get_invitation(token: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/{token}/redeem", response_model=RedeemResponse)
+@router.post(
+    "/{token}/redeem",
+    response_model=RedeemResponse,
+    # H5-B: keyed by the signed-in subject, not the address -- an invited
+    # candidate behind a shared NAT must not be throttled by someone
+    # else's attempts.
+    dependencies=[Depends(rate_limit("invitation_redeem", lambda: settings.RATE_LIMIT_INVITATION_REDEEM, by_subject=True))],
+)
 async def redeem_invitation(
     token: str,
     db: AsyncSession = Depends(get_db),

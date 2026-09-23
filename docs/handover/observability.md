@@ -62,6 +62,7 @@ merged at the top level — e.g. the agent's `[LLM-METRICS]` line carries
 | `sweep_runs_total` | `outcome` = `ran` / `skipped_locked` / `failed` | idle-disconnect sweep (`services/sessions/finalization.py`) |
 | `sweep_finalized_total` | — | sessions the sweep finalized |
 | `ready_check_failures_total` | `check` (`database`) | `/ready` |
+| `rate_limit_rejections_total` | `scope` | requests refused by a rate limit (H5-B). A scope climbing steadily is either an attack or a limit set too low for a shared address — see `core/ratelimit.py` |
 | `background_tasks_pending` (gauge) | — | tracked fire-and-forget tasks (`core/background.py`), sampled on scrape |
 | `task_queue_depth` (gauge) | `status` (`QUEUED`/`RUNNING`) | the durable queue (`models/task.py`), published by the worker each poll |
 | `task_queue_oldest_age_seconds` (gauge) | — | how long the oldest queued task has waited; the number that says the worker is stuck |

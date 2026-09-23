@@ -3,6 +3,7 @@ router coupling they replaced is gone."""
 import ast
 import pathlib
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -120,14 +121,17 @@ async def test_issue_candidate_room_token_mints_and_schedules_recording_once(mon
          patch("backend.services.sessions.room_token.get_realtime") as rt:
         rt.return_value.mint_participant_token.return_value = "jwt-1"
         sid = uuid.uuid4()
-        issued = await issue_candidate_room_token(SimpleNamespace(id=sid, recording_egress_id=None), "cand-1")
+        issued = await issue_candidate_room_token(
+            SimpleNamespace(id=sid, recording_egress_id=None, recording_egress_started_at=None), "cand-1")
         import asyncio
         await asyncio.sleep(0)  # let the scheduled task run
         assert issued.token == "jwt-1" and issued.url == "wss://lk.test" and issued.room_name == f"interview-{sid}"
         assert started == [(str(sid), f"interview-{sid}")]
         rt.return_value.mint_participant_token.assert_called_once()
         # an already-recording session gets a token but no second egress
-        await issue_candidate_room_token(SimpleNamespace(id=sid, recording_egress_id="EG_1"), "cand-1")
+        await issue_candidate_room_token(
+            SimpleNamespace(id=sid, recording_egress_id="EG_1",
+                            recording_egress_started_at=datetime.now(timezone.utc)), "cand-1")
         await asyncio.sleep(0)
         assert len(started) == 1
 

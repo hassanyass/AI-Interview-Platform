@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent.interview.voice_adapter import VoiceInterviewAdapter
+from agent.interview.models import CandidateControlAction
+from agent.interview.voice_adapter import ALLOWED_UI_COMMANDS, VoiceInterviewAdapter
 from livekit import rtc
 
 
@@ -142,3 +143,46 @@ async def test_valid_ui_command_is_dispatched_and_tracked():
     assert len(a._command_tasks) == 1
     await asyncio.sleep(0.05)
     assert len(a._command_tasks) == 0          # discarded when done
+
+# ── H5-B: the allow-list ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_well_formed_but_unknown_command_is_dropped():
+    """The shape check says a command *looks* like one; the allow-list says
+    it *is* one. Before H5-B anything matching ^[A-Z_]{1,64}$ travelled into
+    the controller to be ignored somewhere deeper."""
+    a = bare_adapter()
+    a._handle_ui_command = AsyncMock()
+    for unknown in ("DROP_DATABASE", "END_INTERVIEW_NOW", "ADMIN_OVERRIDE", "SUBMIT", "REQUEST_HINTS"):
+        a._on_data_received(packet(json.dumps({"command": unknown}).encode()))
+    await asyncio.sleep(0)
+    a._handle_ui_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_every_command_the_product_actually_sends_is_allowed():
+    """The list is built from CandidateControlAction plus the submissions,
+    the intro screen's readiness signal and the browser's proctoring
+    telemetry -- so a control added to the enum is allowed automatically,
+    and one removed from it stops being accepted."""
+    a = bare_adapter()
+    seen = []
+
+    async def handler(command, payload):
+        seen.append(command)
+
+    a._handle_ui_command = handler
+    expected = sorted(ALLOWED_UI_COMMANDS)
+    for command in expected:
+        a._on_data_received(packet(json.dumps({"command": command}).encode()))
+    await asyncio.sleep(0.01)
+    assert sorted(seen) == expected
+
+
+def test_the_allow_list_covers_the_whole_control_enum_and_the_known_extras():
+    assert {action.value for action in CandidateControlAction} <= ALLOWED_UI_COMMANDS
+    assert {"SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "IM_READY"} <= ALLOWED_UI_COMMANDS
+    assert {"FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED",
+            "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED", "HEAD_DOWN_SUSPECTED"} <= ALLOWED_UI_COMMANDS
+    # A closed set: nothing else is accepted, whatever it looks like.
+    assert "ANYTHING_ELSE" not in ALLOWED_UI_COMMANDS

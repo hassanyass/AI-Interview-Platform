@@ -20,6 +20,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from backend.db.session import get_db
+from backend.core.config import settings
+from backend.core.ratelimit import rate_limit
 from backend.models.interview import InterviewDefinition, InterviewSession
 from backend.schemas.public_apply import (
     PublicApplyContext,
@@ -52,7 +54,13 @@ async def _get_public_definition_or_403(db: AsyncSession, token: str) -> Intervi
     return definition
 
 
-@router.get("/{token}", response_model=PublicApplyContext)
+@router.get(
+    "/{token}",
+    response_model=PublicApplyContext,
+    # H5-B: anonymous and keyed by IP -- see core/ratelimit.py on why
+    # the default is generous (a booth shares one address).
+    dependencies=[Depends(rate_limit("apply_preview", lambda: settings.RATE_LIMIT_APPLY_PREVIEW))],
+)
 async def get_apply_context(token: str, db: AsyncSession = Depends(get_db)):
     definition = await _get_public_definition_or_403(db, token)
     job = definition.job
@@ -65,7 +73,14 @@ async def get_apply_context(token: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/{token}/register", response_model=PublicRegisterResponse)
+@router.post(
+    "/{token}/register",
+    response_model=PublicRegisterResponse,
+    # H5-B: the most expensive anonymous call in the system -- every
+    # one creates a profile, an application, an interview session and a
+    # guest token, deliberately without idempotency.
+    dependencies=[Depends(rate_limit("public_register", lambda: settings.RATE_LIMIT_PUBLIC_REGISTER))],
+)
 async def register_public_applicant(
     token: str,
     payload: PublicRegisterRequest,
