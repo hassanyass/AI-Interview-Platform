@@ -14,11 +14,11 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–F), H3 built, verified and committed (through 2026-09-23; one commit
-per phase). Live DB at head `a3f7d05c1e94` (the compose `migrate` service applied the H2-F
-table during its check, §20). Owed: one live interview check (H2-C/D/E items) and one
-live admin-driven generation through the new queue (needs an admin login). Next: H4
-(tests + CI), after examine + confirm.**
+Status: **H0, H1, H2 (A–F), H3, H4-A built, verified and committed (through 2026-09-23; one
+commit per phase). Live DB at head `a3f7d05c1e94`. H4 is split: H4-A (pipeline) is done but
+**has never run on GitHub — nothing is pushed** (owner's call, 2026-09-23); H4-B (remaining
+test gaps) is next. Owed: one live interview check (H2-C/D/E items), one live admin-driven
+generation through the queue (§20), and a first CI run once the branch is pushed (§21).**
 
 ---
 
@@ -1243,4 +1243,96 @@ both check rows deleted afterwards. `runbooks/stuck-task.md`'s inspect
 command is the one that produced that output. **Not checked live:** a
 successful generation through the browser (needs an admin login) --
 owed alongside the H2-C/D/E items.
+
+## 21. H4-A — verify record (2026-09-23)
+
+Owner decisions (2026-09-23): **do not push yet**, so the pipeline ships
+unrun on GitHub; **split H4** into A (pipeline + tooling) and B (test
+gaps); ruff on a **minimal rule set**, no reformat; the frontend lint gate
+fails on **errors**, `exhaustive-deps` stays a warning.
+
+Two findings from the examination changed the shape of the work. First,
+`tsc --strict` already passes with **0 errors** -- the plan's incremental
+per-folder migration with an "any count tracked to zero" was unnecessary,
+because the 75 `any`s are explicit and `noImplicitAny` never fires. Strict
+is now on, one line. Second, the suite **cannot start without a `.env`**
+(`Settings` has four fields with no default), which is why the CI jobs
+carry an explicit placeholder env block.
+
+New: `.github/workflows/ci.yml` -- three jobs, no secrets. *python*: ruff,
+then the full pytest run with coverage against a `services: postgres`
+(conftest rebuilds the schema from the Alembic chain, so a broken
+migration fails before any test), coverage summary into the job summary
+and `coverage.xml` as an artifact. *frontend*: typecheck, lint, vitest,
+`build:only`. *images*: `docker build` for backend and agent, then
+`alembic upgrade head -> downgrade -1 -> upgrade head` on the built image
+against a throwaway Postgres. `.pre-commit-config.yaml` -- ruff (no
+autofix: a hook that edits while you commit hides what changed),
+end-of-file/trailing-whitespace, merge-conflict, YAML/JSON validity,
+large files, `detect-private-key`, a local hook that refuses any `.env`,
+and oxlint on `frontend/src`. `ruff.toml` -- `E4`, `E9`, `F` only;
+excludes the frozen `controller.py` and the legacy suites (a linter may
+not demand edits to files AGENTS.md §2/§7 forbid touching), with
+`per-file-ignores` for `db/base.py`'s side-effect imports. `make lint-py`,
+`make hooks`, `make ci` and the same three in `scripts/dev.ps1`.
+`requirements-dev.txt` gains ruff, pre-commit, pytest-cov (pinned);
+coverage output git-ignored.
+
+Changed: `tsconfig.app.json` `"strict": true`; `"build"` now runs
+typecheck + lint first (`build:only` is the bare bundler step CI uses,
+already gated by the two before it); `npm run lint` scoped to `src` --
+unscoped, oxlint walks `public/mediapipe/**` (vendored WASM glue) and
+fails the build on it. New `backend/tests/test_migrations.py` (3): the
+last revision downgrades and re-applies, every model has a table, no
+model column is missing from the migrated schema.
+
+Ruff's first run found 82 issues; 40 were in application code and are
+fixed (39 unused imports, a duplicated `ConfigDict`/`BaseModel` import
+mid-file in `schemas/persistence.py`, and two dead locals -- one of them
+the `job = await _get_job_or_404(...)` in the criteria endpoint that had
+been flagged as out of scope in H2-F and is now in scope precisely
+because the linter is the thing that flags it).
+
+Two real defects the new gates found, both fixed:
+- **Duplicate keys in the i18n bundles.** `check-json` rejected `en.json`
+  and `ar.json`: `showTranscript`/`hideTranscript` were defined twice
+  (different values -- the later "Show transcript" is what rendered) and
+  `backgroundTitle` twice (identical). The earlier copies were removed and
+  each file re-parsed and compared to its pre-edit parse, so every rendered
+  string is byte-identical to before.
+- **A flaky frontend test.** `RoleContext.test.tsx`'s network-failure case
+  failed about **one run in two**. Not timing: the mocked `useAuth`
+  returned a fresh object literal per render, so `RoleProvider`'s effect
+  (keyed on `user`) re-ran every render and consumed the
+  `mockRejectedValueOnce`, leaving the probe showing whatever the *next*
+  call produced. The mock now returns a stable value and `ping` is reset
+  between tests; 10/10 runs of the file and 5/5 of the whole suite green.
+  The real app's `user` comes from context state, so the loop was the
+  mock's, not the component's.
+
+Scope discipline: `pre-commit run --all-files` also normalised trailing
+whitespace and missing final newlines across 45 otherwise-untouched files.
+That is a drive-by change (AGENTS.md §6), so it was **reverted**; the hooks
+will normalise each file as it is next edited. A one-shot normalisation
+commit is available on request.
+
+Verified locally, command by command, because CI cannot run yet: the
+workflow parses (3 jobs, 19 steps); `ruff check .` clean; `pytest -q
+--cov=...` **349 passed, 1 skipped**, line rate **74.6%** (5667/7597) and
+the summary snippet from the workflow renders it; `npm run typecheck`,
+`npm run lint`, `npm test` (**27/27**, five consecutive runs) and
+`npm run build` (typecheck + lint + bundle) all green; `docker build`
+produced both images; the containerised `upgrade head -> downgrade -1 ->
+upgrade head` ran against a throwaway Postgres. That last one **failed on
+the first attempt** -- `alembic/env.py` imports `Settings`, so the step
+died at import for want of the Supabase placeholders, not at the database.
+The workflow now carries a `MIGRATE_ENV` block; the fix came from running
+the job's own commands rather than from reading them.
+
+**Not verified: the pipeline has never executed on GitHub.** The plan's
+verify step for H4 -- green on `main`, red on a PR that deliberately
+breaks a rule -- is owed and cannot be met until the branch is pushed
+(local `master` is 29+ commits ahead of `origin/main`, which last moved on
+2026-09-14). Nothing about the workflow is proven by a local run except
+that every command it issues succeeds here.
 

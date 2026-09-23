@@ -11,7 +11,6 @@ docs/verbal-background-subsection-plan.md §2 "Evaluation"/"Results", §9.
 """
 import json
 import uuid
-from unittest.mock import patch
 
 import pytest
 import pytest_asyncio

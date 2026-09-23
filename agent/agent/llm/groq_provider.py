@@ -2,8 +2,7 @@ import os
 import json
 import logging
 import time
-from typing import TypeVar, Type, Any, Dict, List
-from pydantic import BaseModel
+from typing import Type, Dict, List
 import groq
 from agent.llm.provider import LLMProvider, T
 
@@ -33,7 +32,7 @@ class GroqProvider(LLMProvider):
         self.model = model or os.getenv("LLM_MODEL")
         if not self.model:
             raise ValueError("LLM_MODEL is missing in configuration. Agent must explicitly declare which model to use.")
-        
+
     async def generate_structured(
         self,
         system_prompt: str,
@@ -42,7 +41,7 @@ class GroqProvider(LLMProvider):
     ) -> T:
         # Convert Pydantic model to JSON schema for the prompt
         schema = response_model.model_json_schema()
-        
+
         # We append a strong instruction to return JSON matching the schema
         augmented_system = (
             f"{system_prompt}\n\n"
@@ -50,7 +49,7 @@ class GroqProvider(LLMProvider):
             f"{json.dumps(schema, indent=2)}\n"
             f"Do not include markdown blocks or any other text outside the JSON."
         )
-        
+
         formatted_messages = [{"role": "system", "content": augmented_system}]
         formatted_messages.extend(messages)
 

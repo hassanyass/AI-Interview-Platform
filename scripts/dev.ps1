@@ -7,7 +7,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "install", "lock", "up", "down", "test", "test-backend", "test-agent", "test-legacy", "lint", "typecheck", "migrate", "cli")]
+    [ValidateSet("help", "install", "lock", "up", "down", "test", "test-backend", "test-agent", "test-legacy", "lint", "lint-py", "hooks", "ci", "typecheck", "migrate", "cli")]
     [string]$Task = "help",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$CliArgs
@@ -60,6 +60,15 @@ try {
         "test-agent"   { Invoke-Step "pytest agent" { & $Py -m pytest -q agent } }
         "test-legacy"  { Start-TestDb; Invoke-Step "pytest tests/legacy" { & $Py -m pytest -q tests/legacy } }
         "lint"      { Invoke-Step "oxlint" { Push-Location frontend; npx oxlint src; Pop-Location } }
+        "lint-py"   { Invoke-Step "ruff check" { & $Py -m ruff check . } }
+        "hooks"     { Invoke-Step "pre-commit install" { & $Py -m pre_commit install } }
+        "ci"        {
+            # The same gates as .github/workflows/ci.yml, in the same order.
+            Invoke-Step "ruff check" { & $Py -m ruff check . }
+            Start-TestDb
+            Invoke-Step "pytest" { & $Py -m pytest -q --cov=backend/backend --cov=agent/agent --cov-report=term-missing:skip-covered }
+            Invoke-Step "frontend" { Push-Location frontend; npm run typecheck; npm run lint; npm test; npm run build:only; Pop-Location }
+        }
         "typecheck" { Invoke-Step "tsc -b" { Push-Location frontend; npm run typecheck; Pop-Location } }
         "migrate"   { Invoke-Step "alembic upgrade head" { Push-Location backend; & $Py -m alembic upgrade head; Pop-Location } }
         "cli"       { Invoke-Step "backend.cli" { $env:PYTHONPATH = "backend"; & $Py -m backend.cli @CliArgs } }

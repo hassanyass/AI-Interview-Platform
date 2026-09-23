@@ -1,7 +1,6 @@
 """H2-D: APIPersistence retries transport errors and 5xx (never 4xx), parks
 failed writes in an outbox and replays them in order, and reports lease
 state as a tri-state. Uses a fake aiohttp session; no network."""
-import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 

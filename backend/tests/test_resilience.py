@@ -2,7 +2,6 @@
 background tasks, storage transport retries, ingest ordering, pagination."""
 import asyncio
 import uuid
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx

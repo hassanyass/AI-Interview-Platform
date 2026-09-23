@@ -19,9 +19,7 @@ from agent.interview.persistence import APIPersistence, LeaseState
 from agent.runtime.bootstrap import build_context
 from agent.runtime.teardown import finalize_session, mark_disconnected_after_failure
 from agent.interview.models import (
-    InterviewRuntimeContext, InterviewPhase, InterviewPlan,
-    SectionProgress, SectionLimits, Message,
-    Question, QuestionRecord, OrderedSectionProgress,
+    InterviewPhase, Question, OrderedSectionProgress,
     AssessmentCriterionData,
 )
 from agent.interview.controller import InterviewController
@@ -451,4 +449,3 @@ def worker_options() -> WorkerOptions:
 if __name__ == "__main__":
     _load_env()
     cli.run_app(worker_options())
-

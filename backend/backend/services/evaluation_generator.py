@@ -26,7 +26,6 @@ after the interview has already ended.
 """
 import json
 import logging
-from typing import Optional
 
 from backend.providers.factory import get_llm
 from backend.providers.llm.base import LLMProvider

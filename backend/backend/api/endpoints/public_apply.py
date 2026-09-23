@@ -13,7 +13,6 @@ JWT required either (that's the whole point: this endpoint MINTS the
 guest JWT, it doesn't consume one).
 """
 import logging
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession

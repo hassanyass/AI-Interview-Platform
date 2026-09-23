@@ -2,7 +2,7 @@
 # same targets. docs/production-hardening-plan.md H0-D.
 PY ?= .venv/bin/python
 
-.PHONY: help install lock up down test test-backend test-agent test-legacy lint typecheck migrate cli
+.PHONY: help install lock up down test test-backend test-agent test-legacy lint lint-py typecheck hooks ci migrate cli
 
 help:
 	@echo "install   - install backend + agent runtime deps and dev tooling into .venv, npm ci"
@@ -11,6 +11,9 @@ help:
 	@echo "down      - stop it"
 	@echo "test      - start postgres-test, run every pytest suite and the frontend tests"
 	@echo "lint      - oxlint (frontend)"
+	@echo "lint-py   - ruff check (backend + agent)"
+	@echo "hooks     - install the pre-commit git hook"
+	@echo "ci        - everything CI runs, locally: lint-py, lint, typecheck, tests"
 	@echo "typecheck - tsc -b (frontend)"
 	@echo "migrate   - alembic upgrade head against DATABASE_URL"
 	@echo "cli       - python -m backend.cli $(ARGS)   e.g. make cli ARGS=\"finalize-stuck-sessions --dry-run\""
@@ -44,6 +47,17 @@ test-agent:
 
 test-legacy: test-db
 	$(PY) -m pytest -q tests/legacy
+
+lint-py:
+	$(PY) -m ruff check .
+
+hooks:
+	$(PY) -m pre_commit install
+
+# The same gates as .github/workflows/ci.yml, in the same order.
+ci: lint-py test-db
+	$(PY) -m pytest -q --cov=backend/backend --cov=agent/agent --cov-report=term-missing:skip-covered
+	cd frontend && npm run typecheck && npm run lint && npm test && npm run build:only
 
 lint:
 	cd frontend && npx oxlint src

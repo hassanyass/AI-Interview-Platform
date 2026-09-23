@@ -2,7 +2,6 @@
 and every backend call carries a correlating X-Request-ID."""
 import json
 import logging
-from unittest.mock import AsyncMock
 
 import pytest
 

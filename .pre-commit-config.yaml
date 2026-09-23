@@ -1,0 +1,65 @@
+# Local commit gate (hardening H4-A). Install once:
+#
+#   .venv/Scripts/python -m pre_commit install      # Windows
+#   pre-commit install                              # Linux/macOS
+#
+# Runs only fast checks on the files being committed -- the test suites
+# belong to CI, not to every commit. `pre-commit run --all-files` runs the
+# same checks over the repository.
+#
+# The exclude list is the same one ruff.toml carries and for the same
+# reasons: the frozen controller (AGENTS.md §2) and the legacy suites
+# moved unchanged in H0 (plan decision S10) are not reformatted here.
+exclude: |
+  (?x)^(
+      agent/agent/interview/controller\.py|
+      tests/legacy/.*|
+      agent/(test_skip_regressions|test_background_subsection|auto_test|skip_scratch)\.py|
+      frontend/(public|dist|node_modules)/.*|
+      .*\.ipynb
+  )$
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.3
+    hooks:
+      - id: ruff
+        name: ruff (lint, no autofix)
+        # No --fix: a hook that edits files while you commit hides what
+        # changed. It reports; you fix.
+        args: [--no-cache]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+        # tsconfig*.json are JSONC (comments), which this hook cannot parse.
+        # Everything else, including the i18n bundles, is real JSON -- this
+        # is what caught the duplicated showTranscript/hideTranscript keys.
+        exclude: ^frontend/tsconfig.*\.json$
+      - id: check-added-large-files
+        args: [--maxkb=2048]
+      - id: detect-private-key
+      # The .env files are git-ignored; this is the second line of defence
+      # in case one is ever force-added.
+      - id: forbid-new-submodules
+
+  - repo: local
+    hooks:
+      - id: no-env-files
+        name: refuse to commit a .env file
+        entry: A .env file must never be committed (see .gitignore; .env.example is the tracked template).
+        language: fail
+        files: '(^|/)\.env($|\.(?!example$).*)'
+
+      - id: oxlint
+        name: oxlint (frontend)
+        language: system
+        files: ^frontend/src/.*\.(ts|tsx)$
+        pass_filenames: false
+        entry: npm --prefix frontend run lint

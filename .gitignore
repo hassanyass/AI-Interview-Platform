@@ -68,3 +68,8 @@ agent/.groq_key_state_*.json
 # Responsive harness output (frontend/scripts/responsive-shots.cjs) --
 # screenshots + report, regenerated per run
 frontend/.responsive/
+
+# Coverage output (H4-A: CI uploads it as an artifact, it is never committed)
+.coverage
+coverage.xml
+htmlcov/

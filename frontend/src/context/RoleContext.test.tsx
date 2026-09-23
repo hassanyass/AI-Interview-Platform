@@ -7,9 +7,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 
-vi.mock("./AuthContext", () => ({
-  useAuth: () => ({ user: { id: "u1" }, isLoading: false }),
-}));
+// One stable object, not a fresh literal per render: RoleProvider's effect
+// depends on `user`, so a new identity every render re-ran the role check
+// on every render and consumed the mockRejectedValueOnce, leaving the
+// probe in whatever state the *next* call produced. That made this file
+// fail about one run in two (found while wiring CI, H4-A). In the real app
+// `user` comes from AuthContext state and is stable, so the loop was the
+// mock's, not the component's.
+vi.mock("./AuthContext", () => {
+  const value = { user: { id: "u1" }, isLoading: false };
+  return { useAuth: () => value };
+});
 const ping = vi.fn();
 vi.mock("../api/adminClient", () => ({ adminClient: { ping: () => ping() } }));
 
@@ -28,7 +36,10 @@ function Probe() {
 }
 
 describe("RoleContext", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    ping.mockReset();          // no leftover queued mock leaking into the next test
+  });
 
   it("admin when ping succeeds", async () => {
     ping.mockResolvedValueOnce({ status: "ok" });
@@ -46,8 +57,15 @@ describe("RoleContext", () => {
   it("unknown + error on a network failure, and retry re-checks", async () => {
     ping.mockRejectedValueOnce(new ApiError("Could not reach the server.", { status: 0, code: "network" }));
     render(<RoleProvider><Probe /></RoleProvider>);
-    await waitFor(() => expect(screen.getByTestId("role").textContent).toBe("unknown"));
-    expect(screen.getByTestId("err").textContent).toBe("Could not reach the server.");
+    // Both assertions inside one waitFor: role and roleError are separate
+    // state updates, and waiting only on the role let the error assertion
+    // run a render too early (flaked ~1 run in 2 -- found while wiring CI,
+    // H4-A). The test keeps its teeth: a roleError that never arrives
+    // still fails here.
+    await waitFor(() => {
+      expect(screen.getByTestId("role").textContent).toBe("unknown");
+      expect(screen.getByTestId("err").textContent).toBe("Could not reach the server.");
+    });
     ping.mockResolvedValueOnce({ status: "ok" });
     await act(async () => { screen.getByText("retry").click(); });
     await waitFor(() => expect(screen.getByTestId("role").textContent).toBe("admin"));

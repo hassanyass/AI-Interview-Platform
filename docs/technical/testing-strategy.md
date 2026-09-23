@@ -10,8 +10,13 @@ named tools that were never adopted (Testcontainers, snapshot prompts).
 make test            # docker compose up -d --wait postgres-test; pytest -q; cd frontend && npm test
 ```
 
-Windows: `scripts/dev.ps1 test`. Per suite: `make test-backend`,
-`make test-agent`, `make test-legacy`, `cd frontend && npm test`.
+```bash
+make ci              # everything CI runs, in CI's order, locally
+```
+
+Windows: `scripts/dev.ps1 test` / `scripts/dev.ps1 ci`. Per suite:
+`make test-backend`, `make test-agent`, `make test-legacy`,
+`cd frontend && npm test`. Python linting: `make lint-py` (ruff).
 
 ## Database rule
 
@@ -47,6 +52,41 @@ Counts at the last full run: **pytest 335 passed, 1 skipped; vitest 22/22.**
   puppeteer) produces screenshots at the breakpoints in
   `docs/responsive-checklist.md` for a human to compare; it is not a pass/fail gate.
 
+## Gates (H4-A)
+
+| Gate | Command | Where |
+|---|---|---|
+| Python lint | `ruff check .` | pre-commit + CI |
+| Python tests + coverage | `pytest -q --cov=...` | CI (`make test` locally) |
+| Migration reversibility | `backend/tests/test_migrations.py` and, on the built image, `alembic upgrade head -> downgrade -1 -> upgrade head` | CI |
+| Frontend types | `npm run typecheck` (`strict: true`) | `npm run build` + CI |
+| Frontend lint | `npm run lint` (oxlint on `src`) | pre-commit + `npm run build` + CI |
+| Frontend tests | `npm test` (vitest + jsdom) | CI |
+| Bundle builds | `npm run build:only` | CI |
+| Images build | `docker build ./backend`, `./agent` | CI |
+| Hygiene | end-of-file, trailing whitespace, merge conflicts, YAML/JSON validity, large files, private keys, a refusal to commit `.env` | pre-commit |
+
+`.github/workflows/ci.yml` runs on every push to `main`/`master` and every
+pull request, in three jobs (python, frontend, images). It needs **no
+secrets**: every test runs against fakes and an ephemeral Postgres, and the
+Supabase/LiveKit/Groq values in the workflow are placeholders that exist
+only because `Settings` has four required fields. If a job ever needs a
+real credential, a test has started calling a vendor -- fix the test.
+
+Install the local hook once: `make hooks` (or `scripts/dev.ps1 hooks`).
+`ruff.toml` and `.pre-commit-config.yaml` both exclude the frozen
+`controller.py` and the legacy suites, for the reasons in `AGENTS.md` §2
+and §7 -- a linter may not demand edits to files the rules forbid touching.
+
+Ruff's rule set is deliberately small (`E4`, `E9`, `F`): the defects
+pyflakes finds, not style, and no formatter. Widening it is a deliberate
+later step, not a silent one.
+
+Coverage is reported (≈75% of `backend/backend` + `agent/agent` at the time
+of writing) and uploaded as a CI artifact. **No threshold gate** -- a
+number that fails a build teaches people to write tests that raise the
+number.
+
 ## Rules
 
 - Frozen files (`agent/agent/interview/controller.py`, `/internal/*`,
@@ -59,4 +99,10 @@ Counts at the last full run: **pytest 335 passed, 1 skipped; vitest 22/22.**
   runs has `ENVIRONMENT=local`, so the fail-closed settings checks stay off;
   `test_settings.py` exercises them by constructing `Settings` explicitly.
   Nothing in the suites calls a vendor API.
-- CI wiring (GitHub Actions running the same `make test`) is H4.
+- Flaky tests are defects: a gate nobody trusts is worse than no gate.
+  `RoleContext.test.tsx` was failing about one run in two (an unstable
+  mock re-running the effect under test) and was fixed, not retried,
+  while this pipeline was written.
+- The remaining test gaps -- an auth matrix per router, agent coverage
+  for the LLM timeout / TTS cache / key rotator / resume-restore, and a
+  `ResponsiveTable` test -- are H4-B.

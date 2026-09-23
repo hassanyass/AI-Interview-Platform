@@ -3,11 +3,11 @@ it no longer owns the session. Fault injection only -- no LiveKit, no
 backend."""
 import asyncio
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agent.interview.models import ActionEnum, InterviewPhase, InterviewRuntimeContext, StructuredAction
+from agent.interview.models import InterviewPhase, InterviewRuntimeContext
 from agent.interview.persistence import InterviewPersistence, LeaseState
 from agent.runtime.teardown import finalize_session, mark_disconnected_after_failure
 

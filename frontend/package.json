@@ -8,9 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run typecheck && npm run lint && vite build",
+    "build:only": "vite build",
     "typecheck": "tsc -b",
-    "lint": "oxlint",
+    "lint": "oxlint src",
     "preview": "vite preview",
     "test": "vitest run",
     "responsive": "node scripts/responsive-shots.cjs"

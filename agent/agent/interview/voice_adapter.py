@@ -7,7 +7,7 @@ Persists finalized messages and meaningful events.
 import asyncio
 import logging
 import re
-from typing import Optional, List, Dict
+from typing import Optional, List
 from livekit.agents import APIConnectOptions, stt, tts, vad
 from livekit import rtc
 
@@ -173,7 +173,7 @@ class VoiceInterviewAdapter:
         """Explicitly kicks off the interview by generating the first AI turn."""
         self._is_interrupted = False
         logger.info("[Agent Thinking... Initializing Interview]")
-        
+
         # Pass None to generate the next action without an initial user message
         action = await self.controller.process_candidate_input(None)
 
@@ -183,7 +183,7 @@ class VoiceInterviewAdapter:
         logger.info(f"AI ({action.action.value}): {action.response}")
 
         meta = {"action": action.action.value, "reason": action.reason, "is_greeting": True}
-        
+
         await self._persist_message(
             speaker="agent",
             text=action.response,
@@ -297,7 +297,7 @@ class VoiceInterviewAdapter:
         import json
         data = packet.data
         topic = packet.topic
-        
+
         if topic == "ui_command":
             # H2-D: only the candidate's own client may drive the interview,
             # and only with a well-formed, bounded command.
@@ -322,7 +322,7 @@ class VoiceInterviewAdapter:
             task = asyncio.create_task(self._handle_ui_command(command, payload))
             self._command_tasks.add(task)
             task.add_done_callback(self._command_tasks.discard)
-                
+
     async def _handle_ui_command(self, command: str, payload: dict = None):
         """Processes a UI command through the controller and executes the resulting action."""
         async with self._turn_lock:
@@ -330,7 +330,7 @@ class VoiceInterviewAdapter:
 
     async def _handle_ui_command_locked(self, command: str, payload: dict = None):
         """Runs one serialized UI command and its optional follow-up turn."""
-        
+
         # If the candidate skips or moves sections, immediately stop the current TTS
         # WR-C: PROCEED_TO_NEXT_SECTION added — guards against the wrap-up
         # message from the just-finished section still being mid-playback
@@ -347,7 +347,7 @@ class VoiceInterviewAdapter:
             self._handle_interruption()
             # Wait a tiny bit to ensure the audio frame buffer clears
             await asyncio.sleep(0.05)
-            
+
         self._is_interrupted = False
         try:
             action = await self.controller.process_ui_command(command, payload)
@@ -425,9 +425,9 @@ class VoiceInterviewAdapter:
                 else:
                     await self._emit_ui_state()
                 return
-                
+
             logger.info(f"AI ({action.action.value}): {action.response}")
-            
+
             await self._persist_message(
                 speaker="agent",
                 text=action.response,
@@ -435,18 +435,18 @@ class VoiceInterviewAdapter:
             )
             await self._emit_transcription(speaker="agent", text=action.response)
             await self._persist_action_event(action)
-            
+
             if self.controller.context.current_phase == InterviewPhase.COMPLETED:
                 await self._speak_text(action.response)
                 await self._handle_completion()
                 return
-                
+
             await self._speak_text(action.response)
-            
+
             # If we transitioned to a new phase, clear stale context
             if getattr(action, "should_transition", False):
                 self.controller.context.conversation_history.clear()
-                
+
             # Audit fix (2026-08-27): SKIP_QUESTION/SKIP_SECTION/
             # MOVE_TO_TECHNICAL can be REJECTED as a no-op (Issue 6's guard
             # — core content is HR-approved and can't be skipped live; see
@@ -874,7 +874,7 @@ class VoiceInterviewAdapter:
         self._generation_id += 1
         current_gen = self._generation_id
         logger.info("[TTS] generation_started id=%s", current_gen)
-        
+
         if not self._is_interrupted and self._generation_id == current_gen:
             try:
                 await asyncio.wait_for(self._tts_queue.put((text, 1, 1, current_gen)), timeout=5.0)
@@ -965,7 +965,7 @@ class VoiceInterviewAdapter:
         if self._completion_persisted:
             logger.info("[COMPLETION] duplicate_completion_ignored")
             return
-        
+
         # Drain the TTS queue so audio doesn't get cut off before disconnecting
         if not self._tts_queue.empty():
             await self._tts_queue.join()
@@ -975,10 +975,10 @@ class VoiceInterviewAdapter:
                 await asyncio.wait_for(asyncio.shield(self._current_synthesis_task), timeout=30.0)
             except Exception as e:
                 logger.warning(f"Error waiting for final TTS playback: {e}")
-        
+
         # Give audio engine a little time to empty buffers
         await asyncio.sleep(2.0)
-        
+
         ctx = self.controller.context
         logger.info("Interview completed. Persisting final state.")
 
@@ -1058,7 +1058,7 @@ class VoiceInterviewAdapter:
     async def _synthesize_and_play(self, text: str, chunk_idx: int = 1, total_chunks: int = 1, gen_id: int = 0):
         if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
             raise asyncio.CancelledError()
-            
+
         logger.info(f"[TTS-DIAG] Synthesizing response (Gen {gen_id}): {text[:40]}...")
 
         # Audit fix (2026-08-27): cache fixed, non-personalized system

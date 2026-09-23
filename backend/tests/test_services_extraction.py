@@ -12,7 +12,7 @@ from sqlalchemy import delete, select
 
 from backend.core.errors import Conflict
 from backend.db.session import AsyncSessionLocal
-from backend.models.interview import Evaluation, InterviewSession, Job
+from backend.models.interview import Evaluation, InterviewSession
 from backend.models.profile import CandidateProfile
 from backend.services.publish_rules import assert_sections_publishable
 from backend.services.sessions.finalization import ensure_evaluation_placeholder, finalize_live_session

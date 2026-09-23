@@ -1,6 +1,6 @@
 """Pydantic schemas for Phase 5 persistence API contracts."""
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List, Any
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 
@@ -14,8 +14,6 @@ class MessageCreate(BaseModel):
     phase: Optional[str] = None
     metadata: Optional[dict] = None
 
-
-from pydantic import BaseModel, ConfigDict, Field, AliasChoices
 
 class MessageResponse(BaseModel):
     id: UUID

@@ -1,6 +1,6 @@
 """Public (no-auth / candidate-JWT) schemas for Phase 6, Sub-phase 6B."""
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 from uuid import UUID
 

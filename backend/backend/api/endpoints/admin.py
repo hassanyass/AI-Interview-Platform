@@ -325,10 +325,10 @@ async def update_job_status(
 ):
     """Change job status (e.g. to PAUSED, DRAFT, PUBLISHED)."""
     job = await _get_job_or_404(db, job_id)
-    
+
     if payload.status.value == job.status:
         return job
-        
+
     if payload.status.value == "DRAFT":
         # Only allow unpublishing if no sessions exist to protect schema integrity.
         # (H2-A1: this imported a non-existent `backend.models.session` and an
@@ -337,10 +337,10 @@ async def update_job_status(
         result = await db.execute(stmt)
         if result.scalar() > 0:
             raise HTTPException(
-                status_code=409, 
+                status_code=409,
                 detail="Cannot unpublish a job that has active or completed candidates. Pause it instead."
             )
-            
+
     if payload.status.value == "PUBLISHED":
         # Same completeness rules as publish_job (services/publish_rules.py).
         await assert_definition_publishable(db, job.definition.id)
@@ -406,7 +406,7 @@ async def update_definition(
     if not definition:
         raise HTTPException(status_code=404, detail="InterviewDefinition not found")
     update_data = payload.model_dump(exclude_unset=True)
-    
+
     # Allow toggling `is_public` even if PUBLISHED, but block structural changes like duration
     if definition.job.status != "DRAFT":
         if "duration_minutes" in update_data:
@@ -480,14 +480,14 @@ async def test_drive_definition(
     definition = result.scalar_one_or_none()
     if not definition:
         raise HTTPException(status_code=404, detail="InterviewDefinition not found")
-        
+
     job = definition.job
 
     # Create or get the dummy admin test profile
     profile = await get_or_create_candidate_profile(
         db, email=settings.ADMIN_TEST_CANDIDATE_EMAIL, full_name=settings.ADMIN_TEST_CANDIDATE_NAME
     )
-    
+
     # We deliberately omit application_id to keep it out of candidate results
     session = InterviewSession(
         candidate_profile_id=profile.id,
@@ -1059,7 +1059,7 @@ async def get_job_criteria(
     If job-scoped rows exist, returns those. Otherwise derives the state
     from the template tier (all templates enabled by default for display
     purposes — this mirrors _resolve_criteria_for_job's fallback)."""
-    job = await _get_job_or_404(db, job_id)
+    await _get_job_or_404(db, job_id)          # 404 guard; the row itself is not needed here
 
     # Check for job-scoped rows first.
     result = await db.execute(

@@ -38,7 +38,7 @@ def test_json_lines_carry_context_and_extras():
 
 def test_context_vars_reach_every_record():
     token = request_id_var.set("req-42")
-    sess = bind_session(uuid.UUID(int=5))
+    bind_session(uuid.UUID(int=5))
     try:
         rec = _record("x")
         ContextFilter("test").filter(rec)

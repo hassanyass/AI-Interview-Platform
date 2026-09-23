@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from backend.api.deps import db_dependency, current_user_dependency
@@ -23,10 +23,10 @@ async def get_my_profile(
 
     result = await db.execute(select(CandidateProfile).where(CandidateProfile.id == user_uuid))
     profile = result.scalars().first()
-    
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-        
+
     return profile
 
 @router.post("/", response_model=CandidateProfileResponse)
@@ -42,10 +42,10 @@ async def create_profile(
 
     result = await db.execute(select(CandidateProfile).where(CandidateProfile.id == user_uuid))
     existing_profile = result.scalars().first()
-    
+
     if existing_profile:
         raise HTTPException(status_code=400, detail="Profile already exists")
-        
+
     db_profile = CandidateProfile(
         id=user_uuid,
         **profile_in.model_dump(exclude_unset=True)
@@ -68,14 +68,14 @@ async def update_my_profile(
 
     result = await db.execute(select(CandidateProfile).where(CandidateProfile.id == user_uuid))
     profile = result.scalars().first()
-    
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-        
+
     update_data = profile_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(profile, field, value)
-        
+
     await db.commit()
     await db.refresh(profile)
     return profile
