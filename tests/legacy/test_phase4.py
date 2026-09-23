@@ -15,6 +15,22 @@ from backend.main import app
 from backend.db.session import AsyncSessionLocal
 from backend.models.profile import UserRole
 from backend.api.deps import get_current_user_token_data
+# H2-F: the AI endpoints answer 202 and the work runs in the task
+# worker, so these tests drain the queue themselves instead of
+# receiving the generated rows in the response body.
+from backend.services.tasks.worker import run_pending_once
+
+
+async def _questions_of(client, job_id, section_id):
+    """H2-F: questions are no longer in the generation response (202 + task
+    id). There is no GET .../sections/{id}/questions route, so read them
+    back the way the admin UI does -- through the job detail."""
+    detail = (await client.get(f"/api/v1/admin/jobs/{job_id}")).json()
+    for section in detail["definition"]["sections"]:
+        if section["id"] == str(section_id):
+            return sorted(section["questions"], key=lambda q: q["order_index"])
+    raise AssertionError(f"section {section_id} not in job {job_id}")
+
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -392,8 +408,11 @@ async def test_phase4_generate_questions_mocked():
                 f"/api/v1/admin/sections/{section_id}/generate-questions",
                 json={"num_questions": 2},
             )
-        assert resp.status_code == 201, resp.text
-        data = resp.json()
+            assert resp.status_code == 202, resp.text
+            await run_pending_once()
+        task = (await client.get(f"/api/v1/admin/tasks/{resp.json()['task_id']}")).json()
+        assert task["status"] == "SUCCEEDED", task
+        data = await _questions_of(client, create_resp.json()["id"], section_id)
         assert len(data) == 2
         assert data[0]["title"] == "AI Generated Q1"
         assert data[1]["order_index"] == 1
@@ -432,9 +451,11 @@ async def test_phase4_regenerate_single_question_mocked():
             return_value=mock_result,
         ):
             resp = await client.post(f"/api/v1/admin/questions/{question_id}/regenerate")
-        assert resp.status_code == 200
-        assert resp.json()["title"] == "Regenerated Title"
-        assert resp.json()["text"] == "Design a rate limiter."
+            assert resp.status_code == 202
+            await run_pending_once()
+        question = (await _questions_of(client, create_resp.json()["id"], section_id))[0]
+        assert question["title"] == "Regenerated Title"
+        assert question["text"] == "Design a rate limiter."
 
 
 # ── Non-admin access blocked ──────────────────────────────────────────────

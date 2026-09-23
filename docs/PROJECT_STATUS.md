@@ -46,7 +46,7 @@ Runs alongside the transition phases; each sub-phase has a verify record in the 
 | H2-A…D | backend resilience (pool, `to_thread` I/O, advisory-locked sweep, `FOR UPDATE` finalize, tracked background tasks, `/health` vs `/ready`, lifespan, migration gate); agent runtime (retries + outbox + lease tri-state, teardown that never strands a session, voice-adapter guards, spoken-control confirmation — the only approved `controller.py` sub-phase) | done, `d6079cc` |
 | H2-E | frontend resilience: `ApiError`, timeouts, `ErrorBoundary`, `RoleContext` retry, realtime types aligned, vitest + jsdom | done, `7ae5d8b` |
 | H3 | structured JSON logs with `request_id`/`session_id` across backend + agent, `/metrics` (Prometheus), `python -m backend.cli`, `docs/handover/` (README, observability, 8 runbooks), this doc + `testing-strategy.md` refreshed | done (see plan §19) |
-| H2-F | DB-backed job queue for background work | not started |
+| H2-F | durable `tasks` table + in-process worker (`FOR UPDATE SKIP LOCKED`), `TaskQueue` port; the four admin AI endpoints answer 202 + a task id and the browser polls, so a slow Groq call is no longer a failed-looking request whose result silently landed | done (see plan §20) |
 | H4 | tests + CI (GitHub Actions, pre-commit, frontend `strict`) | not started |
 | H5, H6 | security/edge hardening; packaging + baseline | not started |
 

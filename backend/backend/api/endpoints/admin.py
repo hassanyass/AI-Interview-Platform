@@ -18,8 +18,7 @@ import secrets
 from backend.api.deps import get_current_admin
 from backend.db.session import get_db
 from backend.core.config import settings
-from backend.core.errors import UpstreamError
-from backend.providers.factory import get_recordings_storage
+from backend.providers.factory import get_recordings_storage, get_task_queue
 from backend.models.interview import (
     Job,
     InterviewDefinition,
@@ -34,22 +33,20 @@ from backend.models.profile import CandidateProfile
 from backend.services.candidate_profile_service import get_or_create_candidate_profile
 from backend.services.guest_jwt_service import mint_guest_jwt
 from backend.services.sessions.room_token import issue_candidate_room_token
-from backend.services.evaluations.upsert import resolve_criteria_for_job, upsert_evaluation
-# Called through the module (not a bound name) so a test patching
-# e.g. backend.services.question_generator.generate_questions still
-# intercepts the call, as it did when these were in-function imports.
-from backend.services import evaluation_generator, invitation_message_generator, question_generator
 from backend.services.publish_rules import assert_definition_publishable
+# H2-F: the four AI endpoints queue a Task; the generator calls themselves
+# live in services/tasks/handlers.py, which the worker runs.
+from backend.services.tasks import handlers
 from backend.services.results.candidate_result import (
     INTEGRITY_EVENT_TYPES,
     build_candidate_result,
-    get_live_question_records_and_submission,
-    get_live_transcript,
 )
 from backend.schemas.public_apply import PublicRegisterResponse
 from backend.schemas.public_invitations import RedeemedSessionInfo
 from backend.schemas.admin import (
     AdminPingResponse,
+    TaskAcceptedResponse,
+    TaskResponse,
     JobCreate,
     JobUpdate,
     JobResponse,
@@ -62,7 +59,6 @@ from backend.schemas.admin import (
     QuestionUpdate,
     QuestionResponse,
     QuestionGenerateRequest,
-    InvitationMessageResponse,
     validate_question_config,
     validate_section_config,
     default_verbal_section_config,
@@ -435,44 +431,35 @@ async def update_definition(
     return result.scalar_one()
 
 
-@router.post("/definitions/{definition_id}/generate-invitation-message", response_model=InvitationMessageResponse)
+@router.post("/definitions/{definition_id}/generate-invitation-message",
+             response_model=TaskAcceptedResponse, status_code=202)
 async def generate_invitation_message_for_definition(
     definition_id: UUID,
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(get_current_admin),
 ):
-    """AI-drafted invitation email subject/body for CandidateAccess.tsx's
-    invitation composer (2026-09-03) -- the "Regenerate" action. Purely
-    generative: nothing here is persisted, and this never sends anything
-    -- actually sending is explicitly deferred (CURRENT_DECISIONS.md's
-    P1, email provider still unresolved), which is why the composer's
-    Send button is a stub, not wired to this or any invitation-creation
-    endpoint."""
-    result = await db.execute(
-        select(InterviewDefinition)
-        .options(selectinload(InterviewDefinition.job))
-        .where(InterviewDefinition.id == definition_id)
-    )
-    definition = result.scalar_one_or_none()
+    """Queue an AI-drafted invitation subject/body for CandidateAccess.tsx's
+    composer -- the "Regenerate" action (H2-F: 202 + poll).
+
+    Purely generative: nothing here is persisted as a domain object and
+    this never sends anything (CURRENT_DECISIONS.md's P1, email provider
+    still unresolved). The draft is the task's `result` -- which is also
+    the fix: inline, a browser timeout lost the generated draft outright.
+    """
+    definition = (
+        await db.execute(
+            select(InterviewDefinition).where(InterviewDefinition.id == definition_id)
+        )
+    ).scalar_one_or_none()
     if not definition:
         raise HTTPException(status_code=404, detail="InterviewDefinition not found")
 
-
-    try:
-        generated = await invitation_message_generator.generate_invitation_message(
-            job_title=definition.job.title,
-            job_description=definition.job.description,
-            seniority=definition.job.seniority,
-            duration_minutes=definition.duration_minutes,
-        )
-    except Exception as e:  # noqa: BLE001 -- any provider failure becomes one typed 502 for HR
-        logger.exception("Failed to generate invitation message for definition %s", definition_id)
-        raise UpstreamError(
-            "Failed to generate an invitation message. Check the backend logs and try again.",
-            code="llm_generation_failed",
-        ) from e
-
-    return InvitationMessageResponse(**generated)
+    task = await get_task_queue().enqueue(
+        handlers.GENERATE_INVITATION_MESSAGE,
+        {"definition_id": str(definition_id)},
+        requested_by=admin_id,
+    )
+    return TaskAcceptedResponse(task_id=task.id, kind=task.kind, status=task.status)
 
 
 @router.post("/definitions/{definition_id}/test-drive", response_model=PublicRegisterResponse)
@@ -731,8 +718,8 @@ async def delete_question(
 
 @router.post(
     "/sections/{section_id}/generate-questions",
-    response_model=list[QuestionResponse],
-    status_code=201,
+    response_model=TaskAcceptedResponse,
+    status_code=202,
 )
 async def generate_questions_for_section(
     section_id: UUID,
@@ -740,119 +727,46 @@ async def generate_questions_for_section(
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(get_current_admin),
 ):
-    """AI-generate questions for a section using the job context."""
+    """Queue AI question generation for a section (H2-F).
+
+    Answers 202 with a task id; the work runs in the backend's task worker
+    and the caller polls GET /admin/tasks/{task_id}. Before H2-F this ran
+    inline: a Groq call can take longer than the browser's 30s timeout, so
+    the admin saw a failure while the questions were in fact written.
+    The 404/409 checks stay here so a bad request still fails immediately.
+    """
     section = await _get_section_or_404(db, section_id)
     _require_draft(section.definition.job)
 
-    job = section.definition.job
-
-
-    generated = await question_generator.generate_questions(
-        job_title=job.title,
-        job_description=job.description,
-        seniority=job.seniority,
-        required_skills=job.required_skills,
-        preferred_skills=job.preferred_skills,
-        responsibilities=job.responsibilities,
-        location=job.location,
-        candidate_instructions=job.instructions,
-        section_type=section.section_type,
-        section_config=section.config,
-        num_questions=payload.num_questions,
+    task = await get_task_queue().enqueue(
+        handlers.GENERATE_QUESTIONS,
+        {"section_id": str(section_id), "num_questions": payload.num_questions},
+        requested_by=admin_id,
     )
-
-    # Determine starting order_index
-    result = await db.execute(
-        select(InterviewQuestion)
-        .where(InterviewQuestion.section_id == section_id)
-        .order_by(InterviewQuestion.order_index.desc())
-    )
-    last = result.scalars().first()
-    start_idx = (last.order_index + 1) if last else 0
-
-    created_questions = []
-    for i, q in enumerate(generated):
-        # Validate config from AI output against section type
-        try:
-            validated_config = validate_question_config(section.section_type, q.get("config"))
-        except ValueError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=f"AI-generated question {i+1} has invalid config: {str(e)}",
-            )
-
-        question = InterviewQuestion(
-            section_id=section_id,
-            order_index=start_idx + i,
-            title=q["title"],
-            competency=q.get("competency"),
-            text=q["text"],
-            eval_criteria=q.get("eval_criteria"),
-            config=validated_config,
-        )
-        db.add(question)
-        created_questions.append(question)
-
-    await db.commit()
-    for q in created_questions:
-        await db.refresh(q)
-
-    return created_questions
+    return TaskAcceptedResponse(task_id=task.id, kind=task.kind, status=task.status)
 
 
 # ══════════════════════════════════════════════════════════════════════════
 #  QUESTIONS — regenerate single question
 # ══════════════════════════════════════════════════════════════════════════
 
-@router.post("/questions/{question_id}/regenerate", response_model=QuestionResponse)
+@router.post("/questions/{question_id}/regenerate", response_model=TaskAcceptedResponse, status_code=202)
 async def regenerate_question(
     question_id: UUID,
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(get_current_admin),
 ):
-    """Replace a single question's content with a fresh AI-generated one."""
+    """Queue a fresh AI-generated replacement for one question (H2-F: 202 +
+    poll, see generate_questions_for_section)."""
     question = await _get_question_or_404(db, question_id)
-    job = question.section.definition.job
-    _require_draft(job)
+    _require_draft(question.section.definition.job)
 
-
-    generated = await question_generator.generate_questions(
-        job_title=job.title,
-        job_description=job.description,
-        seniority=job.seniority,
-        required_skills=job.required_skills,
-        preferred_skills=job.preferred_skills,
-        responsibilities=job.responsibilities,
-        location=job.location,
-        candidate_instructions=job.instructions,
-        section_type=question.section.section_type,
-        section_config=question.section.config,
-        num_questions=1,
+    task = await get_task_queue().enqueue(
+        handlers.REGENERATE_QUESTION,
+        {"question_id": str(question_id)},
+        requested_by=admin_id,
     )
-
-    if not generated:
-        raise HTTPException(status_code=502, detail="AI generation returned no results")
-
-    new_q = generated[0]
-    question.title = new_q["title"]
-    question.competency = new_q.get("competency")
-    question.text = new_q["text"]
-    question.eval_criteria = new_q.get("eval_criteria")
-
-    # Validate config from AI output against section type
-    try:
-        question.config = validate_question_config(
-            question.section.section_type, new_q.get("config")
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status_code=422,
-            detail=f"AI-regenerated question has invalid config: {str(e)}",
-        )
-
-    await db.commit()
-    await db.refresh(question)
-    return question
+    return TaskAcceptedResponse(task_id=task.id, kind=task.kind, status=task.status)
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -926,30 +840,27 @@ async def delete_interview_session(
     return None
 
 
-@router.post("/interviews/{session_id}/regenerate-evaluation", response_model=EvaluationDetailResponse)
+@router.post("/interviews/{session_id}/regenerate-evaluation",
+             response_model=TaskAcceptedResponse, status_code=202)
 async def regenerate_evaluation(
     session_id: UUID,
     db: AsyncSession = Depends(get_db),
     admin_id: str = Depends(get_current_admin),
 ):
-    """Evaluation regeneration (2026-09-03, see CURRENT_DECISIONS.md's
+    """Queue evaluation regeneration (2026-09-03, see CURRENT_DECISIONS.md's
     "Evaluation regeneration for placeholder sessions" entry): HR-triggered,
     on-demand -- generates a real evaluation for a session stuck on the
-    generic _ensure_evaluation_placeholder row, using whatever real
-    evidence exists (InterviewMessage/InterviewCheckpoint via
-    _get_live_transcript/_get_live_question_records_and_submission,
-    already built for the results-display fix this follows). Deliberately
-    NOT restricted to COMPLETED sessions -- a TERMINATED (early-ended)
-    session is explicitly eligible, evaluated honestly from partial
-    evidence (evidence_sufficiency exists precisely to flag this), per the
-    confirmed decision: 112 of 149 real placeholder sessions found during
-    scoping were TERMINATED, and excluding them would have addressed only
-    a third of the real problem."""
+    generic placeholder row, using whatever real evidence exists.
+    Deliberately NOT restricted to COMPLETED sessions -- a TERMINATED
+    (early-ended) session is explicitly eligible, evaluated honestly from
+    partial evidence (evidence_sufficiency exists precisely to flag this).
 
+    H2-F: 202 + poll. The trigger is unchanged (one session, HR's click);
+    only the waiting moved off the HTTP connection. When the task
+    succeeds the page re-reads GET /admin/interviews/{id}/result.
+    """
     result = await db.execute(
-        select(InterviewSession)
-        .options(selectinload(InterviewSession.profile))
-        .where(InterviewSession.id == session_id)
+        select(InterviewSession).where(InterviewSession.id == session_id)
     )
     session = result.scalar_one_or_none()
     if not session:
@@ -961,84 +872,30 @@ async def regenerate_evaluation(
             detail="Cannot generate an evaluation for a session that hasn't ended yet.",
         )
 
-    transcript = await get_live_transcript(db, session_id)
-    raw_question_records, technical_submission = await get_live_question_records_and_submission(db, session_id)
-
-    question_uuids = []
-    for r in raw_question_records:
-        try:
-            question_uuids.append(UUID(r["question_id"]))
-        except (KeyError, ValueError, TypeError):
-            continue
-    question_eval_criteria = {}
-    if question_uuids:
-        q_result = await db.execute(
-            select(InterviewQuestion).where(InterviewQuestion.id.in_(question_uuids))
-        )
-        question_eval_criteria = {
-            str(q.id): q.eval_criteria for q in q_result.scalars().all() if q.eval_criteria is not None
-        }
-
-    resolved_criteria = await resolve_criteria_for_job(db, session.job_id)
-    criteria = [
-        {
-            "key": c.key,
-            "label": c.label,
-            "kind": c.kind,
-            "guidance_text": c.guidance_text,
-            "section_id": str(c.section_id) if c.section_id else None,
-        }
-        for c in resolved_criteria
-    ]
-
-    # Verbal Background subsection (plan §2 "Evaluation"): the same profile
-    # dict /load hands the agent, so both evaluators judge cv_alignment
-    # against identical evidence.
-    profile = session.profile
-    candidate_profile = {
-        "full_name": profile.full_name,
-        "email": profile.email,
-        "education": profile.education,
-        "years_of_experience": profile.years_of_experience,
-        "skills": profile.skills,
-        "programming_languages": profile.programming_languages,
-        "frameworks": profile.frameworks,
-        "projects": profile.projects,
-        "professional_title": profile.professional_title,
-        "recommended_level": profile.recommended_level,
-        "confirmed_level": profile.confirmed_level,
-    } if profile else {}
-
-    try:
-        generated = await evaluation_generator.generate_evaluation(
-            role=session.role or "",
-            level=session.level or "",
-            transcript=transcript,
-            question_records=raw_question_records,
-            technical_submission=technical_submission,
-            question_eval_criteria=question_eval_criteria,
-            criteria=criteria,
-            candidate_profile=candidate_profile,
-        )
-    except Exception as e:  # noqa: BLE001 -- any provider failure becomes one typed 502 for HR
-        logger.exception("Failed to regenerate evaluation for session %s", session_id)
-        raise UpstreamError(
-            "Failed to generate a new evaluation. Check the backend logs and try again.",
-            code="llm_generation_failed",
-        ) from e
-
-    await upsert_evaluation(
-        db, session,
-        overall_score=generated["overall_score"],
-        recommendation=generated["recommendation"],
-        evidence_sufficiency=generated["evidence_sufficiency"],
-        summary=generated["summary"],
-        detailed_overview=generated["detailed_overview"],
-        criterion_scores=generated["criterion_scores"],
+    task = await get_task_queue().enqueue(
+        handlers.REGENERATE_EVALUATION,
+        {"session_id": str(session_id)},
+        requested_by=admin_id,
     )
-    await db.commit()
+    return TaskAcceptedResponse(task_id=task.id, kind=task.kind, status=task.status)
 
-    return await build_candidate_result(db, session_id)
+
+@router.get("/tasks/{task_id}", response_model=TaskResponse)
+async def get_task(
+    task_id: UUID,
+    admin_id: str = Depends(get_current_admin),
+):
+    """Poll a queued task (H2-F). SUCCEEDED carries the handler's `result`;
+    FAILED carries `error` + `error_code` -- the same message the inline
+    version used to return as a 4xx/5xx body."""
+    task = await get_task_queue().get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return TaskResponse(
+        id=task.id, kind=task.kind, status=task.status, result=task.result,
+        error=task.error, error_code=task.error_code, attempts=task.attempts,
+        created_at=task.created_at, started_at=task.started_at, finished_at=task.finished_at,
+    )
 
 
 @router.get("/jobs/{job_id}/results", response_model=JobResultsResponse)

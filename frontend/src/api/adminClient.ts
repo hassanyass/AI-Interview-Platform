@@ -1,4 +1,5 @@
 import { fetchApi } from "../lib/api";
+import { runTask, type RunTaskOptions, type Task, type TaskAccepted } from "../lib/tasks";
 
 export interface Job {
   id: string;
@@ -290,11 +291,17 @@ export const adminClient = {
     });
   },
 
-  generateQuestions: async (sectionId: string, numQuestions: number = 5): Promise<Question[]> => {
-    return fetchApi<Question[]>(`/api/v1/admin/sections/${sectionId}/generate-questions`, {
-      method: "POST",
-      data: { num_questions: numQuestions },
-    });
+  /** H2-F: queues the generation and resolves when the worker is done.
+   *  The caller reloads the section afterwards, as it always did. */
+  generateQuestions: async (sectionId: string, numQuestions: number = 5, options?: RunTaskOptions): Promise<Task> => {
+    return runTask(
+      () => fetchApi<TaskAccepted>(`/api/v1/admin/sections/${sectionId}/generate-questions`, {
+        method: "POST",
+        data: { num_questions: numQuestions },
+      }),
+      adminClient.getTask,
+      options
+    );
   },
 
   createQuestion: async (
@@ -323,10 +330,13 @@ export const adminClient = {
     });
   },
 
-  regenerateQuestion: async (questionId: string): Promise<Question> => {
-    return fetchApi<Question>(`/api/v1/admin/questions/${questionId}/regenerate`, {
-      method: "POST",
-    });
+  /** H2-F: queues the regeneration and resolves when the worker is done. */
+  regenerateQuestion: async (questionId: string, options?: RunTaskOptions): Promise<Task> => {
+    return runTask(
+      () => fetchApi<TaskAccepted>(`/api/v1/admin/questions/${questionId}/regenerate`, { method: "POST" }),
+      adminClient.getTask,
+      options
+    );
   },
 
   createInvitation: async (definitionId: string, candidateEmail: string): Promise<Invitation> => {
@@ -343,11 +353,18 @@ export const adminClient = {
   /** Invitation email composer (2026-09-03): AI-drafted subject/body for
    *  this job, purely generative -- nothing is persisted or sent by this
    *  call. Powers the composer's "Regenerate" action. */
-  generateInvitationMessage: async (definitionId: string): Promise<{ subject: string; body: string }> => {
-    return fetchApi<{ subject: string; body: string }>(
-      `/api/v1/admin/definitions/${definitionId}/generate-invitation-message`,
-      { method: "POST" }
+  generateInvitationMessage: async (definitionId: string, options?: RunTaskOptions): Promise<{ subject: string; body: string }> => {
+    // H2-F: the draft is persisted nowhere else -- it IS the task result,
+    // which is why a browser timeout used to lose it outright.
+    const task = await runTask<{ subject: string; body: string }>(
+      () => fetchApi<TaskAccepted>(
+        `/api/v1/admin/definitions/${definitionId}/generate-invitation-message`,
+        { method: "POST" }
+      ),
+      adminClient.getTask as (id: string) => Promise<Task<{ subject: string; body: string }>>,
+      options
     );
+    return task.result ?? { subject: "", body: "" };
   },
 
   createTestDrive: async (definitionId: string): Promise<PublicRegisterResponse> => {
@@ -380,10 +397,20 @@ export const adminClient = {
    *  exist (live DB sources, not the legacy final_result snapshot), for a
    *  session currently showing the generic placeholder. Can take a real
    *  several-second Groq call; the caller should show a loading state. */
-  regenerateEvaluation: async (sessionId: string): Promise<EvaluationDetail> => {
-    return fetchApi<EvaluationDetail>(`/api/v1/admin/interviews/${sessionId}/regenerate-evaluation`, {
-      method: "POST",
-    });
+  regenerateEvaluation: async (sessionId: string, options?: RunTaskOptions): Promise<EvaluationDetail> => {
+    // H2-F: wait for the task, then re-read the result view (the single
+    // source for this page) rather than duplicating it in the task result.
+    await runTask(
+      () => fetchApi<TaskAccepted>(`/api/v1/admin/interviews/${sessionId}/regenerate-evaluation`, { method: "POST" }),
+      adminClient.getTask,
+      options
+    );
+    return adminClient.getCandidateResult(sessionId);
+  },
+
+  /** H2-F: poll one background task. */
+  getTask: async <TResult = Record<string, unknown>>(taskId: string): Promise<Task<TResult>> => {
+    return fetchApi<Task<TResult>>(`/api/v1/admin/tasks/${taskId}`);
   },
 
   setSuggestedOverride: async (sessionId: string, overrideSuggested: boolean | null, reason?: string): Promise<any> => {

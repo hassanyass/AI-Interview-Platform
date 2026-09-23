@@ -586,3 +586,29 @@ class CriteriaToggleRequest(BaseModel):
     the others."""
     criteria: List[CriterionWeightSetting]
 
+# ── Background tasks (H2-F) ───────────────────────────────────────────────
+# The four AI endpoints answer 202 with one of these instead of holding the
+# connection open for a Groq call the browser would abandon at 30s.
+
+class TaskAcceptedResponse(BaseModel):
+    task_id: UUID
+    kind: str
+    status: str
+    """Always QUEUED here; poll GET /admin/tasks/{task_id}."""
+
+
+class TaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    kind: str
+    status: str
+    """QUEUED | RUNNING | SUCCEEDED | FAILED."""
+    result: Optional[dict] = None
+    """Handler output, present once SUCCEEDED. The invitation draft lives only here."""
+    error: Optional[str] = None
+    error_code: Optional[str] = None
+    attempts: int = 0
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None

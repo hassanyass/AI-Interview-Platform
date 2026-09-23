@@ -10,6 +10,9 @@ import uuid
 from httpx import AsyncClient, ASGITransport
 
 from backend.main import app
+# H2-F: generation answers 202 + a task id; this script runs the worker
+# itself (ASGITransport does not start the app's lifespan).
+from backend.services.tasks.worker import run_pending_once
 from backend.db.session import AsyncSessionLocal
 from backend.models.profile import UserRole
 from backend.api.deps import get_current_user_token_data
@@ -79,6 +82,9 @@ async def main():
         )
         print(f"\nRESPONSE STATUS: {coding_gen.status_code}")
         print(f"RESPONSE BODY:\n{json.dumps(coding_gen.json(), indent=2)}")
+        await run_pending_once()
+        coding_gen_task = await client.get(f"/api/v1/admin/tasks/{coding_gen.json()['task_id']}")
+        print(f"TASK RESULT (CODING):\n{json.dumps(coding_gen_task.json(), indent=2)}")
 
         # === MCQ generate-questions ===
         print("\n" + "=" * 70)
@@ -94,6 +100,9 @@ async def main():
         )
         print(f"\nRESPONSE STATUS: {mcq_gen.status_code}")
         print(f"RESPONSE BODY:\n{json.dumps(mcq_gen.json(), indent=2)}")
+        await run_pending_once()
+        mcq_gen_task = await client.get(f"/api/v1/admin/tasks/{mcq_gen.json()['task_id']}")
+        print(f"TASK RESULT (MCQ):\n{json.dumps(mcq_gen_task.json(), indent=2)}")
 
     app.dependency_overrides.pop(get_current_user_token_data, None)
 

@@ -24,6 +24,9 @@ process with the offending setting named (H1-A).
 - **Logs**: JSON lines to stdout in containers (`LOG_FORMAT=json`); every
   line carries `request_id` and `session_id` → `observability.md`.
 - **Metrics**: `GET /metrics` on the backend (Prometheus text) → `observability.md`.
+- **Background work**: the four admin AI actions run in the backend's task
+  worker (`tasks` table). `GET /admin/tasks/{id}` is the poll;
+  `task_queue_*` are the metrics → `runbooks/stuck-task.md`.
 - **Operational commands**: `python -m backend.cli …` (from the repo root
   with `PYTHONPATH=backend`; `make cli ARGS="…"` / `scripts/dev.ps1 cli`).
   `make-admin`, `finalize-stuck-sessions [--dry-run]`,
@@ -36,6 +39,7 @@ process with the offending setting named (H1-A).
 | Apply a database migration | `runbooks/apply-migration.md` |
 | Rotate a secret or API key | `runbooks/rotate-secret.md` |
 | An interview is stuck (`IN_PROGRESS` / `DISCONNECTED` with no agent) | `runbooks/stuck-session.md` |
+| An AI generation (questions, invitation draft, evaluation) is stuck or failed | `runbooks/stuck-task.md` |
 | Groq / LiveKit / storage is down or slow | `runbooks/provider-outage.md` |
 | Restore the database from a backup | `runbooks/restore-from-backup.md` |
 | Trace what happened in one interview | `runbooks/follow-one-interview.md` |

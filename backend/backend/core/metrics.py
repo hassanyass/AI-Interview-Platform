@@ -39,6 +39,15 @@ sweep_runs_total = Counter(
 sweep_finalized_total = Counter("sweep_finalized_total", "Sessions auto-finalized by the sweep")
 ready_check_failures_total = Counter("ready_check_failures_total", "Readiness probe failures", ["check"])
 background_tasks_pending = Gauge("background_tasks_pending", "Tracked fire-and-forget tasks in flight")
+# H2-F: the durable queue (models/task.py). Distinct from the gauge above,
+# which counts in-process fire-and-forget asyncio tasks.
+task_queue_depth = Gauge("task_queue_depth", "Tasks in the durable queue", ["status"])  # QUEUED | RUNNING
+task_queue_oldest_age_seconds = Gauge("task_queue_oldest_age_seconds", "Age of the oldest queued task")
+tasks_total = Counter("tasks_total", "Finished tasks", ["kind", "outcome"])  # succeeded | failed
+task_duration_seconds = Histogram(
+    "task_duration_seconds", "Task handler runtime", ["kind"],
+    buckets=(0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300),
+)
 
 F = TypeVar("F", bound=Callable[..., Awaitable])
 

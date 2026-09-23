@@ -107,6 +107,20 @@ class Settings(BaseSettings):
     """console = log the invitation (today's behaviour); email = render it and hand it to EMAIL_PROVIDER."""
     EMAIL_PROVIDER: Literal["null"] = "null"
     """Email transport. 'null' logs and reports not-sent; a real vendor adapter is P1 in CURRENT_DECISIONS.md."""
+    TASK_QUEUE_PROVIDER: Literal["postgres"] = "postgres"
+    """Durable background work (H2-F). 'postgres' = the `tasks` table + the in-process worker."""
+
+    # ── Background task worker (services/tasks/worker.py) ──────────────────
+    TASK_WORKER_ENABLED: bool = True
+    """Run the worker in this process. Off = the API still queues tasks but nothing drains them
+    (a deployment that runs the worker as a separate process would set this per role)."""
+    TASK_WORKER_CONCURRENCY: int = 1
+    """Tasks this process runs at once. Each is one LLM call; raising it raises provider load, not throughput per task."""
+    TASK_POLL_INTERVAL_SECONDS: float = 1.0
+    """Sleep between claim attempts when the queue is empty."""
+    TASK_STALE_MINUTES: int = 15
+    """A RUNNING task older than this is assumed abandoned by a dead process and marked FAILED,
+    so a poller is never left waiting forever. Must exceed the slowest handler (LLM timeout x retries)."""
 
     # ── LiveKit (room tokens + recording egress) ───────────────────────────
     LIVEKIT_URL: str = ""

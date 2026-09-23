@@ -302,6 +302,13 @@ data (via the fix above) a real evaluation could be generated from.
    project's existing philosophy (HR judges, the system surfaces evidence
    — same spirit as the scoring override) and avoids background-job
    scheduling/backoff design this project doesn't otherwise have.
+   **Superseded in part (2026-09-23, hardening H2-F):** the trigger is
+   unchanged — still HR-clicked, one session at a time, no sweep, no bulk
+   action — but the execution is no longer inline. The project now *does*
+   have a durable task queue (`tasks` table + in-process worker), so
+   regeneration is queued and polled instead of held open on an HTTP
+   connection the browser abandons after 30s. No backoff/retry design was
+   added: a failed task is reported and re-running it is still HR's click.
 2. **TERMINATED sessions ARE eligible** — a real AI evaluation should be
    generated from whatever partial evidence exists (the existing
    `evidence_sufficiency` field already exists precisely to flag this as

@@ -42,6 +42,11 @@ merged at the top level — e.g. the agent's `[LLM-METRICS]` line carries
   the two sides. Recipe: `runbooks/follow-one-interview.md`.
 - Frontend `ApiError.requestId` shows the id for a failed browser call
   (from the JSON body or the response header).
+- Background tasks (H2-F) log `event: task_queued` / `task_started` /
+  `task_succeeded` / `task_failed` with `task_kind`, from
+  `backend.services.tasks.worker`. A task runs after its request has
+  ended, so its lines carry the worker's context, not the enqueuing
+  request's id — join them on the task id printed in both.
 
 ## Metrics
 
@@ -58,6 +63,10 @@ merged at the top level — e.g. the agent's `[LLM-METRICS]` line carries
 | `sweep_finalized_total` | — | sessions the sweep finalized |
 | `ready_check_failures_total` | `check` (`database`) | `/ready` |
 | `background_tasks_pending` (gauge) | — | tracked fire-and-forget tasks (`core/background.py`), sampled on scrape |
+| `task_queue_depth` (gauge) | `status` (`QUEUED`/`RUNNING`) | the durable queue (`models/task.py`), published by the worker each poll |
+| `task_queue_oldest_age_seconds` (gauge) | — | how long the oldest queued task has waited; the number that says the worker is stuck |
+| `tasks_total` | `kind`, `outcome` (`succeeded`/`failed`) | finished tasks |
+| `task_duration_seconds` (histogram) | `kind` | handler runtime |
 
 Plus the default Python process/GC collectors.
 
@@ -65,6 +74,11 @@ Plus the default Python process/GC collectors.
 it). Keep it off the public ingress — allow it only from the scrape
 network, or set `METRICS_ENABLED=false` on internet-facing replicas and
 scrape a dedicated one.
+
+`task_queue_depth` and `task_queue_oldest_age_seconds` stay at 0 when
+`TASK_WORKER_ENABLED=false`: nothing publishes them. A depth that only
+grows, or an age past a minute or two, means no worker is draining —
+`runbooks/stuck-task.md`.
 
 The agent has no HTTP endpoint; its STT/TTS/LLM latencies are the
 `[STT-METRICS]`, `[TTS-METRICS]`, `[LLM-METRICS]` log lines (the LiveKit

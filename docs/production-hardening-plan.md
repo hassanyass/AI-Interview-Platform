@@ -14,10 +14,11 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–E), H3 built, verified and committed (2026-09-22; one commit per
-phase). Live DB at head `c4d1e8f2a9b7` (applied by the compose `migrate` service during the
-H3 check, §19). Owed: one live interview check (H2-C/D/E items). Next: H2-F (background
-jobs) or H4 (tests + CI), after examine + confirm.**
+Status: **H0, H1, H2 (A–F), H3 built, verified and committed (through 2026-09-23; one commit
+per phase). Live DB at head `a3f7d05c1e94` (the compose `migrate` service applied the H2-F
+table during its check, §20). Owed: one live interview check (H2-C/D/E items) and one
+live admin-driven generation through the new queue (needs an admin login). Next: H4
+(tests + CI), after examine + confirm.**
 
 ---
 
@@ -1157,4 +1158,89 @@ line. **Side effect to know:** starting the stack with the rebuilt `migrate`
 image applied `b7e2c4d9a1f3 → c4d1e8f2a9b7` (H2-B indexes, additive) to the
 live Supabase database — the item §15 left owed is therefore done. Not
 checked: a full spoken interview (still owed from H2-C/D).
+
+## 20. H2-F — verify record (2026-09-23)
+
+Owner decisions (2026-09-23): entity named **`Task`** / table `tasks`
+(`Job` is the hiring entity, AGENTS.md §1); the four endpoints **converted
+in place** (with explicit sign-off to edit the legacy assertions that
+pinned the synchronous contract); **CV extraction out of scope** (still
+inline in the candidate's upload request); finished task rows **kept**
+(no retention sweep). Two smaller calls accepted: claim with `FOR UPDATE
+SKIP LOCKED` rather than S9's single advisory lock (same exclusivity per
+row, but workers and replicas run in parallel), and **no automatic
+requeue** of a failed task.
+
+The defect this closes, stated concretely: `config.ts` gives every admin
+call a 30s abort (`VITE_API_TIMEOUT_MS`) while the Groq adapter is built
+with `timeout=30s, max_retries=2` -- up to ~90s server-side. Inline, a
+slow generation aborted in the browser while the backend carried on and
+**committed**: questions appeared that the admin had been told failed, an
+evaluation was upserted behind a failure message, and the invitation
+draft -- persisted nowhere else -- was lost outright.
+
+New: `models/task.py` (`tasks`: kind, status `QUEUED|RUNNING|SUCCEEDED|
+FAILED`, payload/result JSONB, error + error_code, attempts,
+requested_by, created/started/finished, index on `(status, created_at)`),
+registered in `db/base.py`; migration **`a3f7d05c1e94`** (additive, one
+table). `providers/queue/{base,postgres}.py` -- the `TaskQueue` port S9
+asked for, returning `TaskRecord`/`QueueStats` dataclasses rather than ORM
+objects so a non-SQLAlchemy adapter can satisfy it -- plus
+`factory.get_task_queue()` and `TASK_QUEUE_PROVIDER`.
+`services/tasks/{handlers,registry,worker}.py`: the four endpoint bodies
+moved verbatim into handlers (generators still called *through* their
+module, so the legacy `patch("backend.services.question_generator.
+generate_questions")` still intercepts), a kind->handler registry, and
+`TASK_WORKER_CONCURRENCY` claim loops started from the lifespan and
+cancelled on shutdown. Settings: 5 new, documented in `.env.example`.
+Metrics: `task_queue_depth{status}`, `task_queue_oldest_age_seconds`,
+`tasks_total{kind,outcome}`, `task_duration_seconds{kind}` -- the
+"job-queue depth/age" H3 listed and could not yet build.
+
+API: the four POSTs answer **202** with `{task_id, kind, status}`; their
+404/409 validation stays in the endpoint so a bad request still fails
+immediately rather than becoming a failed task. New
+`GET /admin/tasks/{task_id}` (admin-only). Frontend: new `lib/tasks.ts`
+`runTask(start, poll)` -- 1.5s polls, 3-minute ceiling, a FAILED task
+rethrown as the `ApiError` the pages already display; `adminClient`
+absorbs the change, so `QuestionEditor`, `InvitationComposer` and
+`CandidateResultPage` keep their existing call shapes (the composer reads
+the draft from `task.result`, the result page re-reads
+`GET .../result`). A handler failure always carries a code now:
+`NotFound`/`Conflict` have none of their own, so the worker falls back to
+`task_failed` (found by the first container check, which recorded a bare
+`None`).
+
+Interrupted work: a process that dies mid-task leaves the row `RUNNING`;
+worker 0 fails rows past `TASK_STALE_MINUTES` with `task_interrupted` so
+a poller is never left waiting. That is reporting, not a retry.
+
+Tests: `backend/tests/test_tasks.py` (11) -- 202 with the provider
+**never awaited** during the request, a missing section still 404 at
+request time, the worker running the queued generation and the rows
+landing, **six concurrent claims over four rows: each claimed exactly
+once**, unknown kind fails the task not the worker, handler failure
+recorded with its own message, a row deleted between queueing and running,
+stale-RUNNING reaped, poll 404 + admin-only, depth/age reported.
+`frontend/src/lib/tasks.test.ts` (5). Legacy edits under the owner's §7
+sign-off: `test_phase4.py` (two assertions, now 202 -> `run_pending_once()`
+-> read the questions back through the job detail, via a new
+`_questions_of` helper), `test_phase9b.py` (two, reading the rows from the
+database), and `verify_9a.py` (the manual script drains the queue and
+prints the task result). Full `pytest` **346 passed, 1 skipped**; vitest
+**27/27**; `tsc -b` clean; pyflakes clean on every touched file (the one
+warning in `admin.py` is pre-existing and untouched).
+
+Live (compose): backend + migrate rebuilt, migration applied
+(`c4d1e8f2a9b7 -> a3f7d05c1e94`) to the shared database, `/ready` 200,
+`Task worker 0 started` in the JSON log, `task_queue_*` gauges published
+on `/metrics`. Two real tasks enqueued inside the running container and
+picked up by the worker within a second -- `regenerate_evaluation` and
+`generate_invitation_message` against ids that do not exist -- each
+recorded FAILED with the handler's own message and `task_failed`,
+counted in `tasks_total{outcome="failed"}` and `task_duration_seconds`;
+both check rows deleted afterwards. `runbooks/stuck-task.md`'s inspect
+command is the one that produced that output. **Not checked live:** a
+successful generation through the browser (needs an admin login) --
+owed alongside the H2-C/D/E items.
 

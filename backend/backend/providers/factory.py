@@ -18,6 +18,8 @@ from backend.providers.llm.groq import GroqLLMProvider
 from backend.providers.notifications.base import NotificationService
 from backend.providers.notifications.console import ConsoleNotificationService
 from backend.providers.notifications.email import EmailNotificationService
+from backend.providers.queue.base import TaskQueue
+from backend.providers.queue.postgres import PostgresTaskQueue
 from backend.providers.realtime.base import RealtimeProvider
 from backend.providers.realtime.livekit import LiveKitProvider
 from backend.providers.storage.base import ObjectStorage
@@ -83,6 +85,17 @@ def get_realtime() -> RealtimeProvider:
 
 
 @lru_cache(maxsize=1)
+def get_task_queue() -> TaskQueue:
+    if settings.TASK_QUEUE_PROVIDER == "postgres":
+        from backend.db.session import AsyncSessionLocal
+
+        if AsyncSessionLocal is None:  # pragma: no cover -- the engine fails closed at import
+            raise RuntimeError("No database session factory: the task queue needs a database")
+        return PostgresTaskQueue(AsyncSessionLocal)
+    raise ValueError(f"Unknown TASK_QUEUE_PROVIDER {settings.TASK_QUEUE_PROVIDER!r}")
+
+
+@lru_cache(maxsize=1)
 def get_email() -> EmailProvider:
     if settings.EMAIL_PROVIDER == "null":
         return NullEmailProvider()
@@ -101,5 +114,5 @@ def get_notification_service() -> NotificationService:
 def reset_providers() -> None:
     """Drop every cached adapter so the next ``get_*`` rebuilds from the
     current ``settings``. For tests."""
-    for fn in (get_llm, get_recordings_storage, get_resumes_storage, get_realtime, get_email, get_notification_service):
+    for fn in (get_llm, get_recordings_storage, get_resumes_storage, get_realtime, get_email, get_notification_service, get_task_queue):
         fn.cache_clear()

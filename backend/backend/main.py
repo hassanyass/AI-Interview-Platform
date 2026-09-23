@@ -20,6 +20,7 @@ from backend.core.request_id import RequestIdMiddleware
 from backend.db.session import engine
 from backend.api.endpoints import profiles, resumes, interviews, livekit, internal, admin, invitations, public_invitations, public_apply
 from backend.services.sessions.finalization import disconnect_auto_finalize_sweep_loop
+from backend.services.tasks.worker import start_workers
 
 # H3: one handler, one format (json outside local/test), request/session
 # ids on every line; uvicorn's loggers routed through the same formatter.
@@ -27,24 +28,31 @@ configure_logging(log_format=settings.log_format, level=settings.LOG_LEVEL, envi
 logger = logging.getLogger(__name__)
 
 _disconnect_sweep_task: asyncio.Task | None = None
+_task_workers: list[asyncio.Task] = []
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Startup/shutdown (H2-B: `lifespan` replaces the deprecated on_event pair)."""
-    global _disconnect_sweep_task
+    global _disconnect_sweep_task, _task_workers
     logger.info("Application starting up...")
     # Session-finalization-contract fix (2026-09-01, see
     # docs/CURRENT_DECISIONS.md): backend-owned safety net for candidates
     # who disconnect and never resume -- see disconnect_auto_finalize_
     # sweep_loop's own docstring in services/sessions/finalization.py.
     _disconnect_sweep_task = asyncio.create_task(disconnect_auto_finalize_sweep_loop())
+    # H2-F: drains the `tasks` table (AI generation HR no longer waits on).
+    _task_workers = start_workers()
     try:
         yield
     finally:
         logger.info("Application shutting down...")
         if _disconnect_sweep_task:
             _disconnect_sweep_task.cancel()
+        for worker in _task_workers:
+            worker.cancel()
+        if _task_workers:
+            await asyncio.gather(*_task_workers, return_exceptions=True)
         # Give in-flight fire-and-forget work (recording starts) a bounded
         # chance to finish before the pool goes away.
         await background.drain(timeout=5.0)

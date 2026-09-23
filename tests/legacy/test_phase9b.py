@@ -35,9 +35,11 @@ from unittest.mock import patch, AsyncMock
 from httpx import AsyncClient, ASGITransport
 
 from backend.main import app
+# H2-F: AI endpoints answer 202; drain the queue in-test.
+from backend.services.tasks.worker import run_pending_once
 from backend.db.session import AsyncSessionLocal
 from backend.models.profile import UserRole, CandidateProfile
-from backend.models.interview import InterviewSession
+from backend.models.interview import InterviewQuestion, InterviewSession
 from backend.api.deps import get_current_user_token_data
 from backend.core.config import settings
 
@@ -204,6 +206,19 @@ async def _create_coding_section(client: AsyncClient) -> tuple[str, str]:
     return sec_resp.json()["id"], definition_id
 
 
+
+async def _questions_of(section_id):
+    """H2-F: the generation endpoints answer 202 + a task id, so the created
+    rows are read back from the database instead of the response body."""
+    from sqlalchemy import select
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(
+            select(InterviewQuestion)
+            .where(InterviewQuestion.section_id == uuid.UUID(str(section_id)))
+            .order_by(InterviewQuestion.order_index)
+        )).scalars().all()
+        return [{"title": q.title, "text": q.text, "config": q.config, "eval_criteria": q.eval_criteria} for q in rows]
+
 _VALID_CODING_CONFIG = {
     "starter_code": "def two_sum(nums, target):\n    pass",
     "supported_languages": ["python"],
@@ -268,8 +283,11 @@ async def test_9a_addendum_ai_generate_round_trips_hints():
                 f"/api/v1/admin/sections/{section_id}/generate-questions",
                 json={"num_questions": 1},
             )
-        assert resp.status_code == 201, resp.text
-        assert resp.json()[0]["config"]["hints"] == _VALID_CODING_CONFIG["hints"]
+            assert resp.status_code == 202, resp.text
+            # H2-F: the generation runs in the task worker now.
+            await run_pending_once()
+        questions = await _questions_of(section_id)
+        assert questions[0]["config"]["hints"] == _VALID_CODING_CONFIG["hints"]
 
 
 @pytest.mark.asyncio
@@ -297,8 +315,10 @@ async def test_9a_addendum_regenerate_round_trips_hints():
             new_callable=AsyncMock, return_value=mock_result,
         ):
             resp = await client.post(f"/api/v1/admin/questions/{question_id}/regenerate")
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["config"]["hints"] == _VALID_CODING_CONFIG["hints"]
+            assert resp.status_code == 202, resp.text
+            await run_pending_once()
+        question = (await _questions_of(section_id))[0]
+        assert question["config"]["hints"] == _VALID_CODING_CONFIG["hints"]
 
 
 @pytest.mark.asyncio
