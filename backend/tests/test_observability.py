@@ -118,7 +118,12 @@ async def test_unmatched_paths_do_not_explode_label_cardinality(client):
     await client.get("/no/such/route/67890")
     body = (await client.get("/metrics")).text
     assert 'route="<unmatched>",status="404"' in body
-    assert "12345" not in body
+    # Assert against the *labels*, not the whole body. Matching the bare
+    # string "12345" anywhere also matches a float value -- a duration sum
+    # of 0.0123456 contains it -- which made this fail roughly one full
+    # run in twenty (found 2026-09-24, H6-A).
+    labels = [line for line in body.splitlines() if line.startswith(("http_requests_total", "http_request_duration"))]
+    assert not [line for line in labels if "/no/such/route/" in line], "a raw path reached a metric label"
 
 
 @pytest.mark.asyncio

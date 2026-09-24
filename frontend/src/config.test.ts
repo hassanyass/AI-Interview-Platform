@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "./config";
+import { loadConfig, mergeEnv } from "./config";
 
 const COMPLETE = {
   VITE_API_BASE_URL: "http://127.0.0.1:8001",
@@ -65,5 +65,36 @@ describe("loadConfig", () => {
     expect(loadConfig({ ...COMPLETE, DEV: false, VITE_HEAD_POSE_DEBUG: "true" }).values.headPoseDebug).toBe(true);
     expect(loadConfig({ ...COMPLETE, DEV: true, VITE_HEAD_POSE_DEBUG: "false" }).values.headPoseDebug).toBe(false);
     expect(loadConfig({ ...COMPLETE, DEV: true, VITE_HEAD_POSE_DEBUG: "maybe" }).values.headPoseDebug).toBe(true);
+  });
+});
+
+describe("mergeEnv (H6-A: runtime config overlay)", () => {
+  it("returns the build-time env untouched when the container injected nothing", () => {
+    const build = { ...COMPLETE, DEV: false };
+    expect(mergeEnv(build, undefined)).toBe(build);
+  });
+
+  it("lets the container's values win over the ones baked into the bundle", () => {
+    // The production image is built with deliberate placeholders; using
+    // them would point the app at runtime.invalid.
+    const merged = mergeEnv(
+      { ...COMPLETE, VITE_API_BASE_URL: "http://runtime.invalid" },
+      { VITE_API_BASE_URL: "https://api.hire.example.com" }
+    );
+    expect(merged.VITE_API_BASE_URL).toBe("https://api.hire.example.com");
+  });
+
+  it("ignores empty injected values instead of blanking a real one", () => {
+    const merged = mergeEnv({ ...COMPLETE }, { VITE_API_BASE_URL: "", VITE_SUPABASE_URL: "   " });
+    expect(merged.VITE_API_BASE_URL).toBe(COMPLETE.VITE_API_BASE_URL);
+    expect(merged.VITE_SUPABASE_URL).toBe(COMPLETE.VITE_SUPABASE_URL);
+  });
+
+  it("carries injected values through to a loaded config", () => {
+    const { values, problems } = loadConfig(
+      mergeEnv({ DEV: false }, { ...COMPLETE } as Record<string, string>)
+    );
+    expect(problems).toEqual([]);
+    expect(values.apiBaseUrl).toBe(COMPLETE.VITE_API_BASE_URL.replace(/\/+$/, ""));
   });
 });

@@ -1,3 +1,9 @@
+> **Superseded (2026-09-24, H6-A).** This is a dated analysis of deploying the
+> prototype to Render/Vercel, kept as the record of why that path was chosen and
+> what it would have cost. The stack is now a portable container deployment:
+> see `docs/handover/deploy.md`. `render.yaml` and `DEPLOYMENT.md`, which this
+> document refers to, were removed in H6-A.
+
 # Deployment Guide — Free Tier, No Credit Card (2026-09-03 revision)
 
 Supersedes the previous "Render for everything, disguise the agent as a web

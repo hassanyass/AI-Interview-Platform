@@ -14,12 +14,12 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–F), H3, H4 (A–B), H5 (A–C) built, verified and committed (through
-2026-09-24; one commit per phase). Live DB at head `d2c58f31ae04`. CI exists but **has never
-run on GitHub — nothing is pushed** (owner's call). Owed: one live interview check
-(H2-C/D/E), one live admin-driven generation through the queue (§20), and a first CI run
-once the branch is pushed (§21). Next: H6 (packaging, handover baseline, capacity), after
-examine + confirm.**
+Status: **H0–H5 complete and H6-A built, verified and committed (through 2026-09-24; one
+commit per phase). Live DB at head `d2c58f31ae04`. CI exists but **has never run on GitHub
+— nothing is pushed** (owner's call). H6 is split: A (packaging, done), B (handover
+baseline: env matrix, data model, architecture, ADRs, k8s mapping), C (capacity). Owed: one
+live interview check (H2-C/D/E), one live admin-driven generation through the queue (§20),
+and a first CI run once the branch is pushed (§21). Next: H6-B, after examine + confirm.**
 
 ---
 
@@ -1700,4 +1700,84 @@ migrations `b6e1a94c37d2 -> d2c58f31ae04` applied (the migrate image had to
 be rebuilt first — the same trap §15 recorded); `/ready` 200. `/docs` and
 `/openapi.json` checked and found public, which is how that entry in the
 OWASP table got there.
+
+## 26. H6-A — verify record (2026-09-24)
+
+Owner decisions (2026-09-24): delete `render.yaml` and `DEPLOYMENT.md`;
+add the runtime `/config.js` overlay; **HTTP baseline only** for capacity
+(H6-C), with the agent-concurrency half written up rather than guessed;
+split H6 into A/B/C.
+
+A finding from the examination that changed H6-C's scope before it
+started: the plan's load baseline was to drive "N agent sessions with the
+existing `simulator.py`". That file is an **interactive CLI text
+simulator** from Phase 3 -- `MockPersistence`, a real Groq provider,
+`pprint` output, and no LiveKit at all. It cannot drive a room. The
+HTTP half is measurable here; the agent half needs a staging LiveKit
+project, real audio and real spend, which is exactly the U4 question.
+
+**The deployable stack.** `compose.prod.yaml`: built images rather than
+bind mounts, `restart: unless-stopped` on every long-lived service,
+per-container log rotation (Docker's default json-file driver grows
+without bound -- twelve hours of request logs and agent metrics will fill
+a small disk), both published ports bound to **loopback** because TLS
+terminates in front, and no database service by default -- production
+points at a managed Postgres, with a `with-db` profile for a single host.
+uvicorn runs with `--proxy-headers` so the rate limiter sees the real
+client address rather than the proxy's.
+
+**One image, every environment.** `frontend/Dockerfile` builds the bundle
+with node and ships only static files behind nginx, unprivileged. Vite
+bakes `VITE_*` at build time, which normally forces an image per
+environment; instead the build uses placeholders and the container writes
+`/config.js` from its own environment at start-up, so the artefact tested
+in staging is the one that runs in production. That was cheap only because
+`config.ts` already read through `loadConfig(env)` with the environment as
+an argument -- the change is a `mergeEnv` in front of it, covered by four
+new tests, including that an *empty* injected value must not blank out a
+real one.
+
+**Two nginx traps, both found by checking rather than reading.** The first
+config declared `types { application/wasm wasm; }`, which **replaces** the
+base image's whole MIME map: `.wasm` was right and `index.html` came back
+as `application/octet-stream`. nginx has shipped that type since 1.21, so
+the block is simply gone. The second: `add_header` replaces rather than
+merges across levels, so the server-level security headers vanished from
+every response the moment a `location` set its own `Cache-Control` --
+which all of them do. The headers now live in `security-headers.conf`,
+included in each location. Both checks are written into `deploy.md` as
+commands with their expected output, because both failures are silent.
+
+Also fixed by trying it: `POSTGRES_PASSWORD: ${...:?required}` blocked
+`docker compose build` for the *managed-database* path, since compose
+interpolates the whole file before applying profiles. It now defaults to
+empty and lets Postgres refuse at the right moment.
+
+**Retired:** `render.yaml` (its own header already said "NOT USED") and
+`DEPLOYMENT.md` (already carried a superseded banner pointing here).
+`docs/deployment-guide.md` and `docs/deployment-readiness.md` keep their
+content -- they are the dated record of why Render was chosen and what it
+would have cost -- and gained banners saying so.
+
+Verified by running it, not by reading it: `docker compose -f
+compose.prod.yaml up -d` from a clean start brought up migrate (exit 0) ->
+backend (**healthy**) -> agent + web. `/ready` reported the database ok,
+`/healthz` served, a deep link returned **200 text/html**, the WASM
+returned **application/wasm**, **5** security headers were present on `/`,
+`/config.js` carried the injected values, the agent logged `registered
+worker` against the real LiveKit project, and `docker inspect` confirmed
+`unless-stopped` and `max-size=20m max-file=5` on the running containers.
+Zero `"level": "ERROR"` lines across the stack. `npm test` 38/38 with the
+four new config tests.
+
+**Disclosed:** bringing that stack up registered a **second** agent worker
+against the LiveKit project the v3 booth demo also uses, for roughly two
+minutes, breaking the one-agent-at-a-time rule this project documents. The
+stack was taken down immediately afterwards; the v3 containers were left
+running and untouched. Nothing else in this phase touches v3.
+
+**Not done and not claimable:** the plan's "stranger's test" -- a clean
+machine, the handover docs only, one interview completed. This ran on the
+machine that built it, and the interview check is the one owed since
+H2-C.
 

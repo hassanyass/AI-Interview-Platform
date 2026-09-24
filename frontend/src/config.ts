@@ -84,7 +84,40 @@ export function loadConfig(env: Env): LoadedConfig {
   };
 }
 
-const loaded = loadConfig(import.meta.env as unknown as Env);
+/**
+ * Values injected at container start (H6-A). The production image is built
+ * once with placeholder `VITE_*` and writes `/config.js` from its
+ * environment when it starts, so the artefact tested in staging is the one
+ * that runs in production instead of a rebuild with different constants.
+ * `index.html` loads that file before the bundle; in dev it does not exist
+ * and this is simply undefined.
+ *
+ * Runtime wins over build time: in the container the baked values are
+ * deliberate placeholders, and using them would point the app at
+ * `runtime.invalid`.
+ */
+declare global {
+  interface Window {
+    __APP_CONFIG__?: Record<string, string>;
+  }
+}
+
+export function mergeEnv(buildTime: Env, runtime: Record<string, string> | undefined): Env {
+  if (!runtime) return buildTime;
+  // Only non-empty values override: an unset variable in the container
+  // must not blank out a value the bundle legitimately carries.
+  const overrides = Object.fromEntries(
+    Object.entries(runtime).filter(([, value]) => typeof value === "string" && value.trim() !== "")
+  );
+  return { ...buildTime, ...overrides };
+}
+
+const loaded = loadConfig(
+  mergeEnv(
+    import.meta.env as unknown as Env,
+    typeof window === "undefined" ? undefined : window.__APP_CONFIG__
+  )
+);
 
 export const config: FrontendConfig = loaded.values;
 export const configProblems: readonly string[] = loaded.problems;

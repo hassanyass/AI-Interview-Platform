@@ -1,3 +1,9 @@
+> **Superseded (2026-09-24, H6-A).** This is a dated analysis of deploying the
+> prototype to Render/Vercel, kept as the record of why that path was chosen and
+> what it would have cost. The stack is now a portable container deployment:
+> see `docs/handover/deploy.md`. `render.yaml` and `DEPLOYMENT.md`, which this
+> document refers to, were removed in H6-A.
+
 # Deployment Readiness Audit (2026-09-02)
 
 Exploration/audit only, per instruction — nothing was deployed or changed except this document. All claims below are sourced against real repo contents (file paths/line numbers given) or current, dated primary-source documentation (linked). Where a claim rests on a secondary/aggregator source instead of the vendor's own docs, that's called out explicitly.

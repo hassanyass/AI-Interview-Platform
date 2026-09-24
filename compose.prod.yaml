@@ -1,0 +1,136 @@
+# The deployable stack (H6-A).
+#
+#   docker compose -f compose.prod.yaml up -d --build
+#
+# Differences from docker-compose.yml, which is a development file and
+# stays one:
+#   - the browser app is a built nginx image, not a Vite dev server;
+#   - no bind mounts, so the image is what runs;
+#   - every service restarts by itself and rotates its own logs, because
+#     this one is expected to run unattended for days;
+#   - no database service: production points DATABASE_URL at a managed
+#     Postgres. Run `docker compose -f compose.prod.yaml --profile with-db up`
+#     to get one anyway (a single host, a demo, an air-gapped trial).
+#
+# Configuration comes from a .env file next to this one; every setting is
+# documented in the three .env.example files. The backend refuses to start
+# if a required one is missing or still a placeholder.
+#
+# See docs/handover/deploy.md for the full procedure, including TLS, which
+# terminates in front of this stack rather than inside it.
+
+name: himma
+
+x-logging: &logging
+  # Docker's default json-file driver grows without bound. Twelve hours of
+  # request logs and agent metrics will fill a small disk; these caps are
+  # per container.
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  # Optional: only for a deployment with no managed Postgres.
+  postgres:
+    profiles: ["with-db"]
+    image: postgres:15
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      # Not `:?required`: compose interpolates the whole file before it
+      # applies profiles, so a required variable here blocks even a
+      # build for the managed-database path that never starts this
+      # service. Postgres refuses to initialise without a password, so
+      # the omission still fails loudly -- just at the right moment.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+      POSTGRES_DB: ${POSTGRES_DB:-himma}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot. Runs the Alembic chain and exits; the backend waits for it to
+  # succeed, so a failed migration means nothing serves a stale schema.
+  # Never scale this past one.
+  migrate:
+    build: ./backend
+    image: himma-backend:${IMAGE_TAG:-latest}
+    restart: "no"
+    logging: *logging
+    env_file: .env
+    command: ["alembic", "upgrade", "head"]
+
+  backend:
+    build: ./backend
+    image: himma-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      PORT: "8001"
+      LOG_FORMAT: json
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    expose:
+      - "8001"
+    ports:
+      # Bound to loopback: TLS and the public listener belong to the proxy
+      # in front. Remove this mapping entirely once that proxy shares the
+      # compose network.
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=4).status == 200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  agent:
+    build: ./agent
+    image: himma-agent:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    env_file: .env
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8001
+      AGENT_STATE_DIR: /var/lib/himma-agent
+      LOG_FORMAT: json
+    volumes:
+      - agent_state:/var/lib/himma-agent
+    command: ["python", "-m", "agent.main", "start"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    # No healthcheck: a LiveKit worker binds no port. It proves it is alive
+    # by registering with LiveKit and renewing session leases -- see
+    # docs/handover/observability.md.
+
+  web:
+    build:
+      context: ./frontend
+    image: himma-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      # Written into /config.js at start-up, so this image is the same one
+      # in every environment. Public values only -- they reach the browser.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:?set VITE_API_BASE_URL}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?set VITE_SUPABASE_URL}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?set VITE_SUPABASE_PUBLISHABLE_KEY}
+      VITE_API_TIMEOUT_MS: ${VITE_API_TIMEOUT_MS:-30000}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  agent_state:

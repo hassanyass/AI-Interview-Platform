@@ -13,6 +13,16 @@ it. Written during the production-hardening initiative
 | `backend` | `backend/` image, `uvicorn backend.main:app` | 8001 | `GET /health` (liveness), `GET /ready` (readiness, checks the DB) |
 | `agent` | `agent/` image, `python -m agent.main dev` (LiveKit worker) | — | worker registers with LiveKit; logs `registered worker` |
 | `frontend` | `node:22-alpine`, Vite dev server (dev only) | 5174 | page loads |
+| `web` | `frontend/` image: nginx serving the built bundle (**production**, `compose.prod.yaml`) | 8080 | `GET /healthz` |
+| `web` | `frontend/` image: nginx serving the built bundle (**production**, `compose.prod.yaml`) | 8080 | `GET /healthz` |
+
+`docker-compose.yml` is the development stack; **`compose.prod.yaml` is the
+deployable one** — built images, no bind mounts, restart policies, log
+rotation, and nginx instead of a dev server. See `deploy.md`.
+
+`docker-compose.yml` is the development stack; **`compose.prod.yaml` is the
+deployable one** — built images, no bind mounts, restart policies, log
+rotation, and nginx instead of a dev server. See `deploy.md`.
 
 Everything reads the root `.env` (see `backend/.env.example`,
 `agent/.env.example`, `frontend/.env.example`). Boot fails closed: a
@@ -35,6 +45,8 @@ process with the offending setting named (H1-A).
 
 | Situation | Runbook |
 |---|---|
+| Deploy this system somewhere new | `deploy.md` |
+| Deploy this system somewhere new | `deploy.md` |
 | Start, stop or upgrade the stack | `runbooks/start-stop-upgrade.md` |
 | Apply a database migration | `runbooks/apply-migration.md` |
 | Rotate a secret or API key | `runbooks/rotate-secret.md` |
