@@ -54,6 +54,21 @@ docker compose --profile app up -d
    worker registered, `docker compose logs --since 5m backend agent | grep -i '"level": "ERROR"'` is empty.
 5. If the new backend fails on `alembic` errors: `runbooks/apply-migration.md`.
 
+**One-off, upgrading past H5-C:** both images now run as an unprivileged
+user. The agent writes its key-rotation state and TTS cache to the
+`agent_state` volume, and a volume created by the old root-running image
+keeps root's ownership, so the new agent cannot write to it. Remove it
+once — both contents rebuild themselves:
+
+```bash
+docker compose --profile app down
+docker volume rm himma_v2_agent_state
+docker compose --profile app up -d --build
+```
+
+If the agent logs `Permission denied` under `/var/lib/himma-agent`, this
+is why.
+
 Rollback = check out the previous commit and repeat step 3. Migrations are
 additive-only (`CLAUDE.md` §3), so the previous code runs against the newer
 schema; only run `alembic downgrade` if the release notes say the migration

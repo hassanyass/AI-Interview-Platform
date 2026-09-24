@@ -16,13 +16,16 @@ intercepts the call -- exactly as when this code lived in admin.py.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from backend.core.config import settings
 from backend.core.errors import Conflict, NotFound, UpstreamError, ValidationFailed
 from backend.models.interview import (
     InterviewDefinition,
@@ -30,9 +33,12 @@ from backend.models.interview import (
     InterviewSection,
     InterviewSession,
 )
+from backend.models import audit as audit_actions
 from backend.schemas.admin import validate_question_config
+from backend.services.audit import record_admin_action
 from backend.services import evaluation_generator, invitation_message_generator, question_generator
 from backend.services.evaluations.upsert import resolve_criteria_for_job, upsert_evaluation
+from backend.services.data_deletion import delete_candidate
 from backend.services.results.candidate_result import (
     get_live_question_records_and_submission,
     get_live_transcript,
@@ -44,6 +50,7 @@ GENERATE_QUESTIONS = "generate_questions"
 REGENERATE_QUESTION = "regenerate_question"
 GENERATE_INVITATION_MESSAGE = "generate_invitation_message"
 REGENERATE_EVALUATION = "regenerate_evaluation"
+PURGE_EXPIRED_DATA = "purge_expired_data"
 
 
 def _job_context(job) -> dict[str, Any]:
@@ -301,3 +308,75 @@ async def regenerate_evaluation(db: AsyncSession, payload: dict[str, Any]) -> di
     # The result page re-reads GET /admin/interviews/{id}/result, which is
     # the single source for that view; no need to duplicate it here.
     return {"session_id": str(session_id)}
+
+async def purge_expired_data(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+    """Delete candidates whose interviews are older than the retention
+    threshold, objects included (H5-C).
+
+    **Shipped switched off.** `DATA_PURGE_ENABLED` is False and
+    `DATA_PURGE_AFTER_DAYS` is 0 by default, and this refuses to run under
+    either. That is not caution for its own sake: how long recordings,
+    transcripts and CVs are kept, and who may authorise their deletion, is
+    an unresolved product decision (U1), and a job that erases candidate
+    data on a timer must not start working the moment someone deploys the
+    code that contains it.
+
+    `dry_run` (the default) reports what would go without touching
+    anything, so the policy can be checked against real data before it is
+    enforced. Audit rows are never purged: the record that data was
+    deleted has to outlive the data.
+    """
+    dry_run = bool(payload.get("dry_run", True))
+    after_days = int(payload.get("after_days") or settings.DATA_PURGE_AFTER_DAYS)
+
+    if not settings.DATA_PURGE_ENABLED:
+        raise Conflict(
+            "Data purging is disabled. Set the retention policy (U1 in the hardening plan) "
+            "and DATA_PURGE_ENABLED before running this.",
+            code="purge_disabled",
+        )
+    if after_days < 1:
+        raise ValidationFailed(
+            "No retention threshold: set DATA_PURGE_AFTER_DAYS, or pass after_days.",
+            code="purge_threshold_unset",
+        )
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=after_days)
+    # A candidate is in scope only when every interview they have is older
+    # than the cutoff -- someone who interviewed a year ago and again last
+    # week is not expired.
+    latest = (
+        select(
+            InterviewSession.candidate_profile_id.label("profile_id"),
+            func.max(func.coalesce(InterviewSession.completed_at, InterviewSession.created_at)).label("last_seen"),
+        )
+        .group_by(InterviewSession.candidate_profile_id)
+        .subquery()
+    )
+    profile_ids = [
+        row.profile_id for row in
+        (await db.execute(select(latest.c.profile_id).where(latest.c.last_seen < cutoff))).all()
+    ]
+
+    report = {"cutoff": cutoff.isoformat(), "candidates": len(profile_ids), "dry_run": dry_run,
+              "recordings_deleted": 0, "resumes_deleted": 0, "orphaned_objects": []}
+    if dry_run:
+        logger.info("[PURGE] dry run: %d candidate(s) older than %s", len(profile_ids), cutoff.isoformat())
+        return report
+
+    for profile_id in profile_ids:
+        profile, deletion = await delete_candidate(db, profile_id)
+        if profile is None:
+            continue
+        record_admin_action(
+            db, actor_id="system:purge", action=audit_actions.DATA_PURGED, target_type="candidate",
+            target_id=str(profile_id),
+            details={"cutoff": cutoff.isoformat(), "after_days": after_days, **deletion.as_details()},
+        )
+        report["recordings_deleted"] += deletion.recordings_deleted
+        report["resumes_deleted"] += deletion.resumes_deleted
+        report["orphaned_objects"].extend(deletion.orphaned)
+        await db.commit()
+
+    logger.warning("[PURGE] removed %d candidate(s) older than %s", len(profile_ids), cutoff.isoformat())
+    return report

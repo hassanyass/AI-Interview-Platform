@@ -44,6 +44,16 @@ process with the offending setting named (H1-A).
 | Restore the database from a backup | `runbooks/restore-from-backup.md` |
 | Trace what happened in one interview | `runbooks/follow-one-interview.md` |
 | Add or swap a provider (LLM, storage, email, …) | `runbooks/add-provider-adapter.md` |
+| Erase a candidate's data, or what is kept and for how long | `security.md` §3–§4 |
+
+## Security and personal data
+
+`security.md` holds the threat model, the data map (what personal data
+lives where and what deletes it), the PDPL/GDPR posture and an OWASP API
+top-10 review. Two things from it an operator needs on day one:
+`DELETE /api/v1/admin/candidates/{id}` is the only path that erases a
+person including their CV file, and **nothing is deleted automatically**
+because the retention policy (U1) is still open.
 
 ## Frozen contracts
 
@@ -53,6 +63,6 @@ Do not change without an approved sub-phase plan (`CLAUDE.md` §2):
 
 ## Open items an operator should know
 
-- Retention of recordings/transcripts is undecided (U1) — nothing is deleted automatically.
+- Retention of recordings/transcripts is undecided (U1) — nothing is deleted automatically. The purge job exists and is switched off (`security.md` §4).
 - Concurrency limit per worker is undecided (U4) — one LiveKit worker process handles the jobs LiveKit dispatches to it.
 - Email is the `null` provider; invitations are logged to the console, not sent (P1 in `CURRENT_DECISIONS.md`).

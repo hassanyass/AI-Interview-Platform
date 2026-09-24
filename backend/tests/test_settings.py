@@ -26,6 +26,10 @@ PRODUCTION_OK = {
     "LIVEKIT_URL": "wss://lk.example",
     "LIVEKIT_API_KEY": "key",
     "LIVEKIT_API_SECRET": "secret",
+    # H5-C: CORS is part of "complete" now -- outside local/test the shipped
+    # localhost default is refused, so a production config must say which
+    # origins the browser app is actually served from.
+    "BACKEND_CORS_ORIGINS": '["https://hire.example.com"]',
 }
 
 

@@ -38,5 +38,18 @@ COPY . .
 # a failed migration still stops the container from serving).
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
+
+# H5-C: not root. Nothing here writes to disk -- logs go to stdout and
+# migrations only touch the database -- so an unprivileged user needs no
+# writable paths, and a process that never needs root should not have it.
+RUN useradd --create-home --uid 10001 app && chown -R app:app /app
+USER app
+
+# The image says how to check itself, so an orchestrator that is not this
+# repo's compose file still knows. /ready reports the database too (H2-B);
+# /health would only say the process is alive.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os,sys,urllib.request; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('PORT','8000')}/ready\", timeout=4).status == 200 else 1)"
+
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

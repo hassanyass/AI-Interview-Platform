@@ -88,6 +88,17 @@ class Settings(BaseSettings):
     """`iss` stamped on guest tokens this backend mints. Verified when present; tokens
     minted before H5-A carry none, so they stay valid until they expire."""
 
+    # ── Data retention (services/tasks/handlers.py: purge) ─────────────────
+    # The mechanism is built and deliberately switched off: how long
+    # recordings, transcripts and CVs are kept, and who may delete them, is
+    # U1 in docs/production-hardening-plan.md and belongs in
+    # CURRENT_DECISIONS.md before anything starts erasing candidate data on
+    # a timer. Turning this on without setting the policy first is the
+    # mistake it is guarding against.
+    DATA_PURGE_ENABLED: bool = False
+    DATA_PURGE_AFTER_DAYS: int = 0
+    """Age threshold for the purge. 0 means unset; the task refuses to run without it."""
+
     # ── Rate limiting (core/ratelimit.py) ──────────────────────────────────
     # "<count>/<second|minute|hour|day>". Parsed on every request, so a bad
     # value fails that route loudly instead of silently disabling a limit.
@@ -270,6 +281,24 @@ class Settings(BaseSettings):
         for name in ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"):
             if not getattr(self, name):
                 problems.append(f"{name} is empty")
+        # H5-C: CORS is explicit per environment. The shipped default is a
+        # list of localhost origins for development; booting production
+        # with it means either the browser app cannot reach the API, or --
+        # worse, if someone "fixes" it with "*" -- any site can, carrying
+        # the user's credentials.
+        try:
+            origins = self.cors_origins
+        except (ValueError, TypeError):
+            origins = None
+            problems.append("BACKEND_CORS_ORIGINS is not a JSON list")
+        if origins is not None:
+            if not origins:
+                problems.append("BACKEND_CORS_ORIGINS is empty")
+            for origin in origins:
+                if origin == "*":
+                    problems.append("BACKEND_CORS_ORIGINS contains '*'")
+                elif "localhost" in origin or "127.0.0.1" in origin:
+                    problems.append(f"BACKEND_CORS_ORIGINS still contains a development origin ({origin})")
         if problems:
             raise ValueError(
                 f"Refusing to start in ENVIRONMENT={self.ENVIRONMENT}: " + "; ".join(problems)

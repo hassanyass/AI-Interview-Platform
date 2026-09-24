@@ -21,6 +21,7 @@ HANDLERS: dict[str, TaskHandler] = {
     handlers.REGENERATE_QUESTION: handlers.regenerate_question,
     handlers.GENERATE_INVITATION_MESSAGE: handlers.generate_invitation_message,
     handlers.REGENERATE_EVALUATION: handlers.regenerate_evaluation,
+    handlers.PURGE_EXPIRED_DATA: handlers.purge_expired_data,
 }
 
 KINDS = tuple(HANDLERS)

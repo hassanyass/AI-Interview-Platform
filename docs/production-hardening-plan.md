@@ -14,12 +14,12 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0, H1, H2 (A–F), H3, H4 (A–B), H5 (A–B) built, verified and committed (through
-2026-09-23; one commit per phase). Live DB at head `b6e1a94c37d2`. CI exists but **has never
+Status: **H0, H1, H2 (A–F), H3, H4 (A–B), H5 (A–C) built, verified and committed (through
+2026-09-24; one commit per phase). Live DB at head `d2c58f31ae04`. CI exists but **has never
 run on GitHub — nothing is pushed** (owner's call). Owed: one live interview check
 (H2-C/D/E), one live admin-driven generation through the queue (§20), and a first CI run
-once the branch is pushed (§21). Next: H5-C (containers, audits, audit log, docs) or H6,
-after examine + confirm.**
+once the branch is pushed (§21). Next: H6 (packaging, handover baseline, capacity), after
+examine + confirm.**
 
 ---
 
@@ -1596,4 +1596,108 @@ be chosen together for a given deployment -- relevant to U4 and to H6's
 capacity baseline. And a connection failure of that kind surfaces as an
 unhandled 500 rather than a 503; mapping it belongs with the error model,
 not here.
+
+## 25. H5-C — verify record (2026-09-24)
+
+Owner decisions (2026-09-24): fix the CV-deletion gap **inside** this
+phase; `npm audit` gates on production dependencies only; the agent goes
+non-root even though existing volumes must be recreated; `admin_audit_log`
+lands now.
+
+**The erasure gap, which was bigger than "wire up a delete".**
+`ResumeService.delete_object` shipped with the CV feature and had **no
+callers** — nothing in the system had ever deleted a CV from Supabase
+Storage. Deleting an interview session removes its rows and its recording
+and deliberately stops at the person, because a profile is shared with
+every other job they applied to. So there was no path at all that could
+honour "delete my data": the profile, the CVs and the recordings simply
+stayed. New `services/data_deletion.py` gives deletion two honest scopes —
+one interview's artifacts, or a person entirely — and
+`DELETE /api/v1/admin/candidates/{profile_id}` is the first route that
+erases a person: every recording, every CV object, then the profile row,
+which cascades to sessions, applications, invitations and resumes. Objects
+are deleted **before** the rows that name them, because a crash between
+the two should leave rows pointing at deleted objects (recoverable) rather
+than objects nothing points at (the failure that matters when someone asks
+to be erased). Storage remains best effort: an orphan is named in the
+audit entry rather than blocking the deletion, since refusing the row
+would leave an administrator unable to remove the person at all.
+
+**Audit trail.** Migration **`d2c58f31ae04`** (additive) adds
+`admin_audit_log` (actor, action, target type/id, details JSONB, request
+id). Written at five actions: publish, status change, job delete, session
+delete, candidate delete, plus the score override — staged on the
+request's own session so an entry and the action it records commit or roll
+back together. `actor_id` is a plain string, not a foreign key: the record
+must survive the account being removed, which is the point of an audit
+trail. Nothing updates or deletes these rows, and the purge leaves them
+alone: the record that data was deleted outlives the data.
+
+**Purge job**, a `purge_expired_data` kind in the H2-F queue. Deletes
+candidates whose *every* interview predates the threshold — someone who
+interviewed a year ago **and** last week is not expired. **Shipped
+disabled** (`DATA_PURGE_ENABLED=false`, `DATA_PURGE_AFTER_DAYS=0`) and it
+refuses to run under either, naming U1 in the refusal; `dry_run` is the
+default and reports without touching anything.
+
+**CORS is now explicit per environment.** The fail-closed check covered
+secrets but not origins, so a production deployment that forgot the
+setting booted happily on the shipped localhost list. Outside local/test
+the process now refuses an empty list, `*`, a localhost entry, or
+unparseable JSON.
+
+**Containers.** Both images run as uid 10001 with `/app` owned by that
+user; the backend carries a `HEALTHCHECK` on `/ready`. The agent creates
+and owns `AGENT_STATE_DIR`, and the Dockerfile says plainly that a named
+volume created by the old root image keeps root's ownership — the upgrade
+runbook now carries the one-off `docker volume rm` step. The agent gets
+**no** HEALTHCHECK on purpose: it is a LiveKit worker that binds no port,
+and a probe there could only test something that is not how it proves it
+is alive.
+
+**Dependency audits.** `pip-audit` on both lock files and
+`npm audit --omit=dev` gate CI; the full `npm audit` is reported without
+gating. Measured before wiring them: **zero** known vulnerabilities in
+backend, agent and frontend runtime dependencies; the only findings are
+two moderate dev-only advisories in `vitest`/`@vitest/mocker`, fixable
+solely by a breaking major bump — which is exactly why the gate is scoped
+to what ships.
+
+**Trimmed:** `blaze_face_short_range.tflite` (229 KB), dead by the code's
+own comment. The remaining ~35 MB under `frontend/public/mediapipe/` is
+three WASM variants MediaPipe selects between at runtime by browser
+capability; removing the wrong one breaks face detection on a browser we
+have not tested, so they stay, documented.
+
+**`docs/handover/security.md`** (new): trust boundaries, a threat-model
+table mapping each attack to what stops it and where, a data map naming
+every store of personal data and what deletes it — including that the
+Supabase Auth user is a separate system a full erasure must also cover —
+the PDPL/GDPR posture with storage limitation marked **not met** while U1
+is open, operational rules, and an OWASP API top-10 review done against
+this codebase. That review records two genuine open gaps rather than
+closing them quietly: a permitted burst (20) can still exceed the Supabase
+pooler's 15-connection ceiling (§24), and **`/docs` and `/openapi.json`
+are publicly reachable** — confirmed live, 200 for both, unauthenticated.
+
+Tests: `test_data_deletion.py` (7) — candidate deletion removes the CV
+object and the recordings and not merely the rows, the audit entry carries
+what was removed, storage failing does not block the deletion but is
+recorded as an orphan, 404 writes no audit row, **deleting one session
+leaves the person's CV alone**, publish/status-change are recorded, and a
+failed action leaves no record. `test_purge_and_cors.py` (12) — production
+refuses the development origins, `*`, an empty list and unparseable JSON;
+local keeps its defaults; the purge refuses while disabled and again
+without a threshold; a dry run deletes nothing; a real run removes the
+expired candidate, leaves the returning one and deletes the CV object; the
+purge records what it erased. `test_settings.py`'s production fixture
+gained the CORS entry, since "complete" now includes it. Full `pytest`
+**461 passed, 1 skipped** (from 442), `ruff check .` clean.
+
+Live (compose): both images rebuilt and confirmed running as
+`uid=10001(app)`, with the agent able to write `/var/lib/himma-agent`;
+migrations `b6e1a94c37d2 -> d2c58f31ae04` applied (the migrate image had to
+be rebuilt first — the same trap §15 recorded); `/ready` 200. `/docs` and
+`/openapi.json` checked and found public, which is how that entry in the
+OWASP table got there.
 

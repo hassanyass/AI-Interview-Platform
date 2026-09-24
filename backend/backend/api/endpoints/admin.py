@@ -33,6 +33,9 @@ from backend.models.profile import CandidateProfile
 from backend.services.candidate_profile_service import get_or_create_candidate_profile
 from backend.services.guest_jwt_service import mint_guest_jwt
 from backend.services.sessions.room_token import issue_candidate_room_token
+from backend.models import audit as audit_actions
+from backend.services.audit import record_admin_action
+from backend.services.data_deletion import delete_candidate, delete_session_artifacts
 from backend.services.publish_rules import assert_definition_publishable
 # H2-F: the four AI endpoints queue a Task; the generator calls themselves
 # live in services/tasks/handlers.py, which the worker runs.
@@ -311,6 +314,10 @@ async def delete_job(
 ):
     """Delete a job. Will cascade delete definitions, criteria, sessions, and evaluations."""
     job = await _get_job_or_404(db, job_id)
+    record_admin_action(
+        db, actor_id=admin_id, action=audit_actions.JOB_DELETED, target_type="job", target_id=str(job_id),
+        details={"title": job.title, "status": job.status},
+    )
     await db.delete(job)
     await db.commit()
     return None
@@ -345,7 +352,12 @@ async def update_job_status(
         # Same completeness rules as publish_job (services/publish_rules.py).
         await assert_definition_publishable(db, job.definition.id)
 
+    previous_status = job.status
     job.status = payload.status.value
+    record_admin_action(
+        db, actor_id=admin_id, action=audit_actions.JOB_STATUS_CHANGED, target_type="job",
+        target_id=str(job_id), details={"from": previous_status, "to": job.status},
+    )
     await db.commit()
     await db.refresh(job)
     return job
@@ -381,6 +393,10 @@ async def publish_job(
     # permission to skip that.
 
     job.status = "PUBLISHED"
+    record_admin_action(
+        db, actor_id=admin_id, action=audit_actions.JOB_PUBLISHED, target_type="job",
+        target_id=str(job_id), details={"title": job.title},
+    )
     await db.commit()
     await db.refresh(job)
     return job
@@ -827,15 +843,66 @@ async def delete_interview_session(
     # commit expires it and forces a lazy-load outside an async-safe
     # context (the MissingGreenlet bug class this module has hit before).
     storage_path = session.recording_storage_path
+    candidate_profile_id = str(session.candidate_profile_id)
 
+    # H5-C: the recording goes through the shared deletion service, which
+    # the candidate-wide delete and the purge job also use, so there is one
+    # implementation of "remove the objects that belong to this".
+    report = await delete_session_artifacts(session)
+
+    record_admin_action(
+        db, actor_id=admin_id, action=audit_actions.SESSION_DELETED, target_type="session",
+        target_id=str(session_id),
+        details={"candidate_profile_id": candidate_profile_id, "status": session.status, **report.as_details()},
+    )
     await db.delete(session)
     await db.commit()
 
-    if not await _delete_recording_object(storage_path):
+    if not report.complete:
         logger.error(
             "Session %s deleted, but its recording object %s could not be removed from R2 "
             "and is now orphaned -- manual cleanup required.",
             session_id, storage_path,
+        )
+    return None
+
+
+@router.delete("/candidates/{profile_id}", status_code=204)
+async def delete_candidate_completely(
+    profile_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    admin_id: str = Depends(get_current_admin),
+):
+    """Erase a person: every interview they sat, every recording, every CV,
+    and the profile row itself (H5-C).
+
+    This is the counterpart to DELETE /admin/interviews/{id}, which removes
+    one interview and deliberately leaves the person intact because a
+    profile is shared across every job they applied to. Until this
+    endpoint existed there was no way to honour "delete my data" at all --
+    `ResumeService.delete_object` had no caller, so a CV uploaded to
+    Supabase Storage was never removed by anything.
+
+    Object storage is best effort and the database is not: a failed object
+    delete is reported in the audit entry as an orphan needing manual
+    cleanup, rather than aborting the deletion and leaving the admin
+    unable to remove the person. There is no undo.
+    """
+    profile, report = await delete_candidate(db, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Candidate profile not found.")
+
+    record_admin_action(
+        db, actor_id=admin_id, action=audit_actions.CANDIDATE_DELETED, target_type="candidate",
+        target_id=str(profile_id), details={"email": profile.email, **report.as_details()},
+    )
+    await db.commit()
+
+    if not report.complete:
+        logger.error(
+            "Candidate %s deleted, but %d object(s) could not be removed from storage and are "
+            "now orphaned -- manual cleanup required: %s",
+            profile_id, len(report.orphaned), report.orphaned,
         )
     return None
 
@@ -1026,6 +1093,11 @@ async def set_suggested_override(
 
     evaluation.override_suggested = payload.override_suggested
     evaluation.override_reason = payload.reason
+    record_admin_action(
+        db, actor_id=admin_id, action=audit_actions.EVALUATION_OVERRIDDEN, target_type="evaluation",
+        target_id=str(session_id),
+        details={"override_suggested": payload.override_suggested, "reason": payload.reason},
+    )
     await db.commit()
     await db.refresh(evaluation)
 

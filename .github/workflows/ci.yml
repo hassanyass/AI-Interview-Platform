@@ -69,6 +69,12 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      - name: Audit dependencies (pip-audit)
+        # Runtime dependencies only -- these are what ship in the images.
+        run: |
+          pip-audit -r backend/requirements.txt --progress-spinner off
+          pip-audit -r agent/requirements.txt --progress-spinner off
+
       - name: Backend + agent tests
         # testpaths in pytest.ini: backend/tests, agent, tests/legacy.
         # conftest.py rebuilds the schema from the Alembic chain first, so a
@@ -126,6 +132,15 @@ jobs:
 
       - name: Unit tests (vitest + jsdom)
         run: npm test
+
+      - name: Audit dependencies (npm)
+        # Production dependencies fail the build; dev-only findings are
+        # reported and do not, because the current two are in vitest and
+        # only "fixable" by a breaking major bump. Read the second block
+        # when it prints -- it is information, not noise to be ignored.
+        run: |
+          npm audit --omit=dev --audit-level=low
+          npm audit || echo "::notice::dev-dependency advisories above (not gating)"
 
       - name: Build
         # `npm run build` re-runs typecheck and lint; build:only is the bare
