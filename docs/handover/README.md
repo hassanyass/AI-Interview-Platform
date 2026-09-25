@@ -47,6 +47,7 @@ process with the offending setting named (H1-A).
 |---|---|
 | Deploy this system somewhere new | `deploy.md` |
 | Map this onto Kubernetes | `kubernetes.md` |
+| Size a deployment, or ask how many candidates at once | `capacity.md` |
 | Look up a setting: what it does, whether it is required | `env-matrix.md` (generated) |
 | Deploy this system somewhere new | `deploy.md` |
 | Start, stop or upgrade the stack | `runbooks/start-stop-upgrade.md` |
@@ -91,5 +92,5 @@ Do not change without an approved sub-phase plan (`CLAUDE.md` §2):
 ## Open items an operator should know
 
 - Retention of recordings/transcripts is undecided (U1) — nothing is deleted automatically. The purge job exists and is switched off (`security.md` §4).
-- Concurrency limit per worker is undecided (U4) — one LiveKit worker process handles the jobs LiveKit dispatches to it.
+- Concurrency limit per worker is **unmeasured** (U4) — `capacity.md` has the HTTP baseline and the procedure for the agent half — one LiveKit worker process handles the jobs LiveKit dispatches to it.
 - Email is the `null` provider; invitations are logged to the console, not sent (P1 in `CURRENT_DECISIONS.md`).

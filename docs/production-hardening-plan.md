@@ -14,11 +14,21 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0–H5 complete and H6 (A–B) built, verified and committed (through 2026-09-25;
-one commit per phase). Live DB at head `d2c58f31ae04`. CI exists but **has never run on
-GitHub — nothing is pushed** (owner's call). Owed: one live interview check (H2-C/D/E), one
-live admin-driven generation through the queue (§20), and a first CI run once the branch is
-pushed (§21). Next and last: H6-C (the HTTP capacity baseline), after examine + confirm.**
+Status: **COMPLETE — H0 through H6 built, verified and committed (2026-09-21 → 2026-09-25;
+one commit per phase, verify records §8–§28). Live DB at head `d2c58f31ae04`.
+
+Owed, and none of it code: a live spoken interview (outstanding since H2-C), one
+admin-driven generation through the task queue in a browser, the admin retry screen and
+test-drive, and a first CI run — `.github/workflows/ci.yml` has never executed because
+nothing is pushed (owner's call).
+
+Open decisions: U1 (retention — the purge job ships disabled because of it), U4
+(concurrency acceptance — `capacity.md` has the HTTP baseline; interviews per worker is
+unmeasured), U5 (CV extraction failure status, kept as-is).
+
+Recorded gaps, deliberately not closed: `/docs` and `/openapi.json` are publicly
+reachable, and a permitted rate-limit burst can exceed the Supabase pooler's 15-client
+ceiling — both in `docs/handover/security.md` §7.**
 
 ---
 
@@ -1859,4 +1869,72 @@ One thing worth recording because it nearly became churn: normalising the
 docs' line endings to LF touched 65 files, but `core.autocrlf=true` means
 the index already stores LF, so git sees no content change -- the commit is
 26 files, all of them this phase's.
+
+## 28. H6-C — verify record (2026-09-25)
+
+Owner decisions (2026-09-25): measure against the **disposable** database,
+**include** `POST /livekit/token`, **run it now** (the v3 demo stack was up
+on the same machine, which the numbers reflect).
+
+`scripts/load_baseline.py` drives the candidate path — public preview,
+registration, an authenticated session read, the room token — at rising
+concurrency and reports what the client observed. Two arrangements keep it
+about this system: `R2_*` unset, so `storage.configured` is false and no
+egress is started or billed; and the CV gate satisfied by seeding the
+resume row, because the real upload runs a Groq extraction and would make
+this a measurement of Groq. It refuses to run against a Supabase host, and
+deletes every profile, session and job it creates — 600 profiles and 600
+sessions were removed at the end of the full sweep.
+
+**The result is not a capacity number, and saying so is the finding.**
+Across concurrency 1 → 40, throughput stayed flat at roughly 6–12 req/s
+while latency rose in proportion, with **zero errors at every level**. Flat
+throughput plus rising latency is a serialised bottleneck, not a ceiling,
+so the question is where the time went — and the server's own histogram
+answers it: `GET /health` averaged **4.0 ms** inside the server, while
+every database route averaged 500–1100 ms (`register` 1083 ms,
+`/interviews/{id}` 967 ms, `/apply/{token}` 775 ms, `/livekit/token`
+523 ms). The framework costs 4 ms; the rest is waiting on a Postgres that
+lives across Docker Desktop's virtual network, ~28 ms per round trip at
+concurrency 1, several per registration, queued through a pool of 5 + 10
+once 40 requests contend.
+
+So `capacity.md` records the numbers and then says plainly which of them
+transfer: the ~4 ms framework overhead and the shape of the curve do, the
+absolute latencies and the 6–12 req/s do not, and a figure worth sizing a
+deployment from needs the generator on a separate host against a Linux
+deployment with the real database. The 390 ms p50 on `/health` (4 ms
+server-side) is the clearest evidence that the harness and the host, not
+the app, set that ceiling.
+
+**The ceiling that does transfer** is the one H5-B found by accident and
+this phase did not have to re-measure: the Supabase pooler refuses
+connections past 15 in session mode (`EMAXCONNSESSION`), which is lower
+than anything in the application, surfaces as an unhandled 500, and sits
+below the 20-request burst the rate limiter permits. All three facts are in
+`capacity.md` and `security.md` §7.
+
+**U4 stays unmeasured, with a procedure instead of a guess.** Interviews
+per agent worker cannot be produced from this repository — `simulator.py`
+is an interactive CLI text simulator with `MockPersistence` and no LiveKit.
+`capacity.md` lists what a real measurement needs (a staging LiveKit
+project that shares nothing live, clients publishing actual audio, a Groq
+budget estimated from one real interview's metrics lines) and the four
+signals to watch while adding sessions to one worker: STT/TTS latency
+climbing, `Lease renewal failed`, `sweep_finalized_total` rising, and RSS
+against `JOB_MEMORY_LIMIT_MB`.
+
+Two defects the run itself surfaced, both in the harness rather than the
+product: registrations returned 422 for every request until the generated
+addresses moved off `.invalid`, which `email-validator` rejects as a
+reserved TLD; and the first sweep reported nothing for the authenticated
+phase because of it. Both fixed before the numbers above were taken.
+
+Also added: `make load-baseline` and `make docs`, a line in
+`testing-strategy.md` marking the baseline a tool and not a gate, and
+`capacity.md` linked from the handover index with U4 restated as
+*unmeasured* rather than *undecided*.
+
+**This closes the hardening plan.** H0 through H6, twenty-eight verify
+records, 2026-09-21 to 2026-09-25.
 

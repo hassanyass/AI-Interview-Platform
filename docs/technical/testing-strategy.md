@@ -48,6 +48,12 @@ Counts at the last full run: **pytest 468 passed, 1 skipped; vitest 38/38.**
 - **Provider contracts** — Groq, LiveKit, Supabase, R2 are never called in
   tests. Adapter behaviour (timeouts, retries, error mapping) is tested with
   fakes; the vendor is trusted to match its SDK.
+- **Capacity.** `make load-baseline` (`scripts/load_baseline.py`) measures
+  the HTTP layer against the disposable database and writes numbers a human
+  reads; it is not a pass/fail gate, and `docs/handover/capacity.md` is
+  explicit that the figures measure the host they were taken on. Interviews
+  per agent worker is unmeasured (U4) and the procedure for it is in that
+  same file.
 - **Frontend layout** — `npm run responsive` (`scripts/responsive-shots.cjs`,
   puppeteer) produces screenshots at the breakpoints in
   `docs/responsive-checklist.md` for a human to compare; it is not a pass/fail gate.
