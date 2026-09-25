@@ -14,12 +14,11 @@ same discipline as `.claude/skills/transition-phase/SKILL.md` and
 `AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
 one phase (or sub-phase) per approval. Nothing in this document is code.
 
-Status: **H0–H5 complete and H6-A built, verified and committed (through 2026-09-24; one
-commit per phase). Live DB at head `d2c58f31ae04`. CI exists but **has never run on GitHub
-— nothing is pushed** (owner's call). H6 is split: A (packaging, done), B (handover
-baseline: env matrix, data model, architecture, ADRs, k8s mapping), C (capacity). Owed: one
-live interview check (H2-C/D/E), one live admin-driven generation through the queue (§20),
-and a first CI run once the branch is pushed (§21). Next: H6-B, after examine + confirm.**
+Status: **H0–H5 complete and H6 (A–B) built, verified and committed (through 2026-09-25;
+one commit per phase). Live DB at head `d2c58f31ae04`. CI exists but **has never run on
+GitHub — nothing is pushed** (owner's call). Owed: one live interview check (H2-C/D/E), one
+live admin-driven generation through the queue (§20), and a first CI run once the branch is
+pushed (§21). Next and last: H6-C (the HTTP capacity baseline), after examine + confirm.**
 
 ---
 
@@ -1780,4 +1779,84 @@ running and untouched. Nothing else in this phase touches v3.
 machine, the handover docs only, one interview completed. This ran on the
 machine that built it, and the interview check is the one owed since
 H2-C.
+
+## 27. H6-B — verify record (2026-09-25)
+
+Owner decisions (2026-09-25): **mermaid** for diagrams, **S1–S12 only** for
+ADRs, **write** the missing setting docstrings, **keep** the Phase-0
+baseline as history.
+
+The examination's finding, which is the reason this phase existed:
+`docs/architecture/system-context.md` named **Deepgram** for speech and
+**OpenAI GPT-4o** for reasoning, and described candidates configuring their
+own interviews. The providers are Groq, and interviews are authored by HR.
+Across all four architecture files -- 104 lines -- there was not one
+mention of `Job`, `InterviewDefinition` or any other B2B entity. Those
+documents were not thin, they were wrong, and someone provisioning this
+from them would have bought the wrong vendors. `docs/technical/data-model.md`
+was the same story in miniature: three tables that had never existed
+(`users`, `candidate_responses`, `code_submissions`) and fifteen missing.
+
+**Generated, not written.** `scripts/generate_docs.py` produces
+`docs/handover/env-matrix.md` (all 113 settings: type, default, what it is
+for, which are required and which are fail-closed) and
+`docs/technical/data-model.md` (20 tables with columns, nullability,
+defaults, foreign keys with their `ON DELETE`, indexes, and a lock marker
+on the ten holding personal data, cross-referenced to `security.md` §3).
+Settings documentation comes from the attribute docstrings via `ast` --
+pydantic does not expose them unless `use_attribute_docstrings` is enabled,
+and enabling that would change the OpenAPI schema of every model in the
+project. `backend/tests/test_docs.py` (7) fails when a checked-in file no
+longer matches the code, when a setting has no docstring, when a table is
+missing from the data model, when a personal-data marker disappears, or if
+someone "fixes" the Phase-0 baseline by regenerating it.
+
+That gate had a price: **29 of 113 settings had no docstring** (17 backend,
+12 agent) and each now says what it is for or what breaks without it --
+`LIVEKIT_URL`, every `R2_*`, the Groq model and voice names, the Azure
+fallbacks, both `LOG_LEVEL`s.
+
+**Rewritten from the code:** `system-context.md` (actors, the four
+processes, the real external services and what breaks without each),
+`system-architecture.md` (the repository as it stands -- the plan's §2
+target layout names `providers/jobs/`, `workers/`, `compose.yaml` and
+`storage/s3_compatible.py`, none of which exist; the code has
+`providers/queue/`, `services/tasks/`, `docker-compose.yml` and
+`storage/s3.py`), `voice-sequence.md` (apply -> interview -> finalize as
+three sequence diagrams; the old one described a route that does not exist
+and had the backend dispatching agent jobs, which LiveKit does), and
+`interview-state-machine.md` (ten phases, not the five it listed -- it was
+missing `BRIEFING` and `WAITING_ROOM`, the two that shape the B2B flow).
+
+**`docs/adr/`**: twelve ADRs, one per S-decision, each recording the
+context, the decision, the consequences and -- the part worth having --
+**how it actually turned out**, because several did not turn out as
+expected. S9 assumed an advisory lock and got `SKIP LOCKED`; S1 did not
+anticipate that Vite bakes config at build time; S6's inert email provider
+is what later forced H5-A to *remove* the profile email field rather than
+gate it behind verification; S10's legacy suites are what caught the
+invitation-redemption dependency in H5-A. `CURRENT_DECISIONS.md` stays the
+product decision log and is not duplicated.
+
+**`docs/handover/kubernetes.md`**: the compose-to-Kubernetes mapping, and
+four places it is not mechanical -- `migrate` must run exactly once, the
+agent has nothing a kubelet can probe (and inventing an endpoint for the
+probe's benefit would be worse than none), draining an agent takes as long
+as an interview so `terminationGracePeriodSeconds` has to exceed one, and
+rate limits multiply by replica count because they live in process memory.
+It says plainly what it does not contain: no manifests, no chart, no
+NetworkPolicy, no HPA, and no capacity numbers to size one from.
+
+Verified: the six mermaid diagrams were parsed with **mermaid's own
+parser** (11.x, under jsdom -- without a DOM it reports
+`DOMPurify.addHook is not a function`, which reads like a syntax error and
+is not one). That check found a real one: a `<br/>` inside a
+sequence-diagram `Note`, which mermaid rejects outright. All six parse
+clean. `test_docs.py` 7/7; full `pytest` **468 passed, 1 skipped**; vitest
+38/38; `ruff check .` clean.
+
+One thing worth recording because it nearly became churn: normalising the
+docs' line endings to LF touched 65 files, but `core.autocrlf=true` means
+the index already stores LF, so git sees no content change -- the commit is
+26 files, all of them this phase's.
 

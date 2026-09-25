@@ -55,8 +55,11 @@ def load_env_files() -> None:
 class AgentSettings(BaseSettings):
     # ── Required for any interview job (validate_for_job) ──────────────────
     LIVEKIT_URL: str = ""
+    """LiveKit project the worker registers with. Without it the worker starts and receives no jobs."""
     LIVEKIT_API_KEY: str = ""
+    """Credential the worker registers with; must belong to the same project as the backend's."""
     LIVEKIT_API_SECRET: str = ""
+    """Signs the worker's registration. A mismatch with the project is a silent no-jobs state."""
     GROQ_API_KEY: str = ""
     """LLM + STT key; also the only TTS key when no GROQ_API_KEY_n is set."""
     AGENT_API_SECRET: str = ""
@@ -87,6 +90,7 @@ class AgentSettings(BaseSettings):
 
     # ── STT ────────────────────────────────────────────────────────────────
     GROQ_STT_MODEL: str = "whisper-large-v3-turbo"
+    """Speech-to-text model for the candidate's audio."""
     STT_ENDPOINT_DELAY_SECONDS: float = 0.8
     """Candidate end-of-turn coalescing delay; floor 0.25."""
 
@@ -94,14 +98,21 @@ class AgentSettings(BaseSettings):
     TTS_PROVIDER: Literal["azure", "groq"] = "azure"
     """Code default is azure (2026-08-27 quota decision); the deployed .env selects groq."""
     GROQ_TTS_ENGLISH_MODEL: str = "canopylabs/orpheus-v1-english"
+    """Text-to-speech model used for English interviews."""
     GROQ_TTS_ENGLISH_VOICE: str = "troy"
+    """Voice for English interviews. Part of the TTS cache key, so a change invalidates cached audio."""
     GROQ_TTS_ARABIC_MODEL: str = "canopylabs/orpheus-arabic-saudi"
+    """Text-to-speech model used for Arabic interviews."""
     GROQ_TTS_ARABIC_VOICE: str = "abdullah"
+    """Voice for Arabic interviews. Also part of the TTS cache key."""
     AZURE_SPEECH_KEY: str = ""
     """Read by the LiveKit azure plugin; required when TTS_PROVIDER=azure."""
     AZURE_SPEECH_REGION: str = ""
+    """Azure region for the speech resource; required when TTS_PROVIDER=azure."""
     AZURE_TTS_ENGLISH_VOICE: str = "en-US-AvaNeural"
+    """Azure neural voice for English, when TTS_PROVIDER=azure."""
     AZURE_TTS_ARABIC_VOICE: str = "ar-SA-HamedNeural"
+    """Azure neural voice for Arabic, when TTS_PROVIDER=azure."""
 
     # ── Voice activity / pacing ────────────────────────────────────────────
     VAD_MIN_SILENCE_DURATION_SECONDS: float = 0.85
@@ -115,6 +126,7 @@ class AgentSettings(BaseSettings):
     LOG_FORMAT: Literal["json", "text", "auto"] = "auto"
     """auto = text in `dev` mode / local, json otherwise (logging_setup.py). Same line shape as the backend."""
     LOG_LEVEL: str = "INFO"
+    """Root log level for the worker, including the LiveKit SDK's loggers."""
     ENVIRONMENT: str = "local"
     """Stamped on every log line as `env`; shares the backend's variable."""
 

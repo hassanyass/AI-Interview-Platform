@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     LOG_FORMAT: Literal["json", "text", "auto"] = "auto"
     """auto = text when ENVIRONMENT is local/test, json otherwise. One line per event, request/session ids on every line (core/logging.py)."""
     LOG_LEVEL: str = "INFO"
+    """Root log level for every logger, including uvicorn's."""
     METRICS_ENABLED: bool = True
     """Expose GET /metrics (Prometheus text). Protect it at the network layer; it is unauthenticated."""
     BACKEND_CORS_ORIGINS: str = (
@@ -96,6 +97,7 @@ class Settings(BaseSettings):
     # a timer. Turning this on without setting the policy first is the
     # mistake it is guarding against.
     DATA_PURGE_ENABLED: bool = False
+    """Master switch for the retention purge. Off until U1 sets the policy; the task refuses to run."""
     DATA_PURGE_AFTER_DAYS: int = 0
     """Age threshold for the purge. 0 means unset; the task refuses to run without it."""
 
@@ -105,6 +107,7 @@ class Settings(BaseSettings):
     # Anonymous routes are keyed by IP and everyone behind one NAT -- a
     # booth, an office -- shares it, which is why those two are generous.
     RATE_LIMIT_ENABLED: bool = True
+    """Master switch for the token buckets in core/ratelimit.py. Off means every limit is skipped."""
     RATE_LIMIT_APPLY_PREVIEW: str = "120/minute"
     """GET /apply/{token}: a cheap read, keyed by IP."""
     RATE_LIMIT_PUBLIC_REGISTER: str = "20/minute"
@@ -148,9 +151,11 @@ class Settings(BaseSettings):
     # ── Provider selectors (backend/backend/providers/factory.py) ──────────
     # One Literal per port; adding a vendor adds a value here and a branch there.
     REALTIME_PROVIDER: Literal["livekit"] = "livekit"
+    """Real-time media provider: rooms, participant tokens and recording egress."""
     RECORDINGS_STORAGE_PROVIDER: Literal["s3"] = "s3"
     """S3-compatible store the recordings land in (Cloudflare R2 today)."""
     RESUMES_STORAGE_PROVIDER: Literal["supabase"] = "supabase"
+    """Object store the candidates' CV files live in."""
     NOTIFICATIONS_PROVIDER: Literal["console", "email"] = "console"
     """console = log the invitation (today's behaviour); email = render it and hand it to EMAIL_PROVIDER."""
     EMAIL_PROVIDER: Literal["null"] = "null"
@@ -172,8 +177,11 @@ class Settings(BaseSettings):
 
     # ── LiveKit (room tokens + recording egress) ───────────────────────────
     LIVEKIT_URL: str = ""
+    """LiveKit project's wss:// URL. Handed to the browser with each room token; without it no interview can connect."""
     LIVEKIT_API_KEY: str = ""
+    """LiveKit server API key, used to mint room tokens and start egress."""
     LIVEKIT_API_SECRET: str = ""
+    """Signs the room tokens the browser and the worker present. Rotating it invalidates tokens in flight."""
     LIVEKIT_API_TIMEOUT_SECONDS: float = 10.0
     """Per-call timeout for LiveKit server API calls (egress start/stop, room delete)."""
     LIVEKIT_TOKEN_TTL_MINUTES: int = 360
@@ -189,14 +197,21 @@ class Settings(BaseSettings):
 
     # ── Cloudflare R2 (S3-compatible) — recordings ─────────────────────────
     R2_ACCOUNT_ID: str = ""
+    """Cloudflare account the recordings bucket belongs to; part of the S3 endpoint LiveKit egress writes to."""
     R2_ACCESS_KEY_ID: str = ""
+    """S3 access key for the recordings bucket, used by this backend and handed to LiveKit egress."""
     R2_SECRET_ACCESS_KEY: str = ""
+    """Secret for the recordings bucket. A wrong value surfaces only when egress stops, not when it starts."""
     R2_BUCKET_NAME: str = ""
+    """Bucket the interview recordings are written to and presigned from."""
     R2_ENDPOINT: str = ""
+    """S3-compatible endpoint for that bucket. Empty disables recording rather than failing an interview."""
     RECORDING_URL_TTL_SECONDS: int = 3600
     """Lifetime of the presigned GET URL handed to HR for a recording."""
     S3_CONNECT_TIMEOUT_SECONDS: float = 5.0
+    """How long boto3 waits to establish a connection before giving up."""
     S3_READ_TIMEOUT_SECONDS: float = 30.0
+    """How long boto3 waits for a response once connected."""
     S3_MAX_ATTEMPTS: int = 3
     """boto3 standard-mode retry budget for R2 calls."""
 
@@ -210,6 +225,7 @@ class Settings(BaseSettings):
     LLM_PROVIDER: Literal["groq"] = "groq"
     """Which LLM adapter the provider factory builds (H1-B). Only Groq exists today."""
     GROQ_API_KEY: str = ""
+    """Groq key for the backend's own LLM calls: question generation, invitation drafts and evaluations."""
     GROQ_API_BASE_URL: str = "https://api.groq.com"
     """Groq API origin. The SDK appends /openai/v1 itself; a value ending in /openai/v1 is accepted and normalised."""
     GROQ_MODEL: str = _DEFAULT_GROQ_MODEL
@@ -231,6 +247,7 @@ class Settings(BaseSettings):
     ADMIN_TEST_CANDIDATE_EMAIL: str = "admin_tester@path2hire.local"
     """Synthetic candidate used by HR's 'test interview' button; kept out of candidate results."""
     ADMIN_TEST_CANDIDATE_NAME: str = "Admin Tester"
+    """Display name for the profile the admin test-drive reuses, so it is recognisable in results."""
 
     # ── HR dashboard ───────────────────────────────────────────────────────
     SUGGESTED_EVIDENCE_SUFFICIENCY_FLOOR: float = 0.5

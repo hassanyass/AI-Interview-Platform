@@ -46,6 +46,8 @@ process with the offending setting named (H1-A).
 | Situation | Runbook |
 |---|---|
 | Deploy this system somewhere new | `deploy.md` |
+| Map this onto Kubernetes | `kubernetes.md` |
+| Look up a setting: what it does, whether it is required | `env-matrix.md` (generated) |
 | Deploy this system somewhere new | `deploy.md` |
 | Start, stop or upgrade the stack | `runbooks/start-stop-upgrade.md` |
 | Apply a database migration | `runbooks/apply-migration.md` |
@@ -57,6 +59,19 @@ process with the offending setting named (H1-A).
 | Trace what happened in one interview | `runbooks/follow-one-interview.md` |
 | Add or swap a provider (LLM, storage, email, …) | `runbooks/add-provider-adapter.md` |
 | Erase a candidate's data, or what is kept and for how long | `security.md` §3–§4 |
+
+## Architecture and decisions
+
+`../architecture/` describes the system as it is: `system-context.md` (the
+four processes and the external services), `system-architecture.md` (the
+repository and the runtime), `voice-sequence.md` (apply → interview →
+finalize, as sequence diagrams) and `interview-state-machine.md` (the ten
+phases and what each allows). `../adr/` records the twelve architectural
+decisions; `../CURRENT_DECISIONS.md` remains the product decision log.
+
+Both `env-matrix.md` and `../technical/data-model.md` are **generated** from
+the code by `scripts/generate_docs.py`, and a test fails when they drift.
+Edit the code, then re-run it.
 
 ## Security and personal data
 
