@@ -52,6 +52,14 @@ jobs:
       SUPABASE_JWKS_URL: https://ci.invalid/.well-known/jwks.json
       SECRET_KEY: ci-placeholder-secret-key-at-least-32-chars
       AGENT_API_SECRET: ci-placeholder-agent-secret
+      # Room tokens are signed locally -- `mint_participant_token` makes no
+      # network call and creates no room -- so placeholders are enough for
+      # the CV-gate test to reach a 200. Without them the route answers 500,
+      # which is how CI's second run failed: that test had been passing on
+      # developer machines only because a real .env was present.
+      LIVEKIT_URL: wss://ci.invalid
+      LIVEKIT_API_KEY: ci-placeholder-livekit-key
+      LIVEKIT_API_SECRET: ci-placeholder-livekit-secret-at-least-32-chars
 
     steps:
       - uses: actions/checkout@v4

@@ -37,7 +37,30 @@ def make(**overrides) -> Settings:
     return Settings(_env_file=None, **{**REQUIRED, **overrides})
 
 
-def test_defaults_match_the_lifted_literals():
+# `_env_file=None` stops pydantic reading a .env, but **not** the process
+# environment -- which CI populates (ENVIRONMENT, AGENT_API_SECRET, the
+# LiveKit and Supabase placeholders). A test asserting what the *shipped
+# defaults* are must not read whatever the shell happens to export, or it
+# passes on a developer's machine and fails on a clean one, which is
+# exactly what happened on CI's second run (2026-09-26).
+DEFAULTED = (
+    "ENVIRONMENT", "APP_VERSION", "SECRET_KEY", "AGENT_API_SECRET",
+    "LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
+    "BACKEND_CORS_ORIGINS", "LOG_FORMAT", "LOG_LEVEL",
+    "SUPABASE_PUBLISHABLE_KEY", "METRICS_ENABLED",
+)
+
+
+@pytest.fixture
+def bare_environment(monkeypatch):
+    """No ambient value for anything with a default, so `make()` really does
+    construct the shipped configuration."""
+    for name in DEFAULTED:
+        monkeypatch.delenv(name, raising=False)
+    return monkeypatch
+
+
+def test_defaults_match_the_lifted_literals(bare_environment):
     s = make()
     assert s.ENVIRONMENT == "local"
     assert s.APP_VERSION == "0.1.0"
@@ -70,7 +93,7 @@ def test_defaults_match_the_lifted_literals():
     assert s.SUPABASE_PUBLISHABLE_KEY == ""  # optional now: the backend never reads it
 
 
-def test_local_accepts_the_shipped_defaults():
+def test_local_accepts_the_shipped_defaults(bare_environment):
     s = make()
     assert s.is_local
     assert s.AGENT_API_SECRET == ""
