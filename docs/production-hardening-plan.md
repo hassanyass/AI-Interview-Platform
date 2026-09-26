@@ -1938,3 +1938,54 @@ Also added: `make load-baseline` and `make docs`, a line in
 **This closes the hardening plan.** H0 through H6, twenty-eight verify
 records, 2026-09-21 to 2026-09-25.
 
+## 29. Postscript — what CI's first run found (2026-09-26)
+
+The branch was pushed on the owner's instruction (37 commits to a new
+`origin/master`; `main` untouched) and `ci.yml` executed for the first time.
+Images built, the frontend job passed, and the Python job **failed at
+`Install dependencies`** — before a single test ran.
+
+Reproduced in `python:3.13-slim` rather than guessed at:
+
+```
+ERROR: Cannot install anyio==4.14.2 and anyio==4.15.0 because these
+package versions have conflicting dependencies.
+```
+
+`backend/requirements.txt` and `agent/requirements.txt` were compiled
+independently (H1-B), and both install into **one** environment because the
+test suite imports both packages. Their shared transitive dependencies had
+drifted: **eleven** of them disagreed — `anyio`, `click`, `idna`,
+`livekit-api`, `livekit-protocol`, `protobuf`, `pydantic`, `pydantic-core`,
+`python-dotenv`, `types-protobuf`, `typing-inspection`. `pip install -r
+backend -r agent -r dev` was impossible, which means `make install` had been
+broken on any clean machine for weeks. Nobody noticed because every
+developer's virtualenv predated the drift and was only ever added to. A
+clean machine in the loop is the entire value of the gate, and it paid for
+itself on its first run.
+
+**What was *not* done.** Recompiling both locks properly on Linux (the
+deployment platform) resolves the conflicts — verified — but also bumps 50
+packages including **SQLAlchemy 2.0.52 → 2.1.0** and **livekit-agents 1.7.1
+→ 1.8.3**, the ORM and the voice SDK. That is a dependency-upgrade project
+with its own verification, not something to slip inside "make CI pass"
+(AGENTS.md §6). It is recorded here as available and deliberately deferred.
+
+**What was done**, surgically: the eleven conflicting pins in the backend
+lock were aligned to the agent's versions — the agent's because
+`livekit-agents` carries the tighter bounds, and every difference is a
+patch or minor bump with no framework jump. The exact CI install command
+then succeeded in a clean `python:3.13-slim` with SQLAlchemy still at
+2.0.52. `make lock` (and `dev.ps1 lock`) now compile the agent first and
+constrain the backend to its result, so the drift cannot recur silently,
+and `backend/tests/test_requirements.py` (5) fails on the *files* in
+milliseconds rather than after a two-minute install: no package pinned
+twice, every lock pinned exactly, every `.in` entry present in its lock.
+
+Also observed and left alone: the locks were compiled on Windows, so they
+carry `colorama` with no platform marker and omit `uvloop`. Harmless — both
+are optional — but it is why a Linux recompile is not a no-op, and it
+belongs with the deferred upgrade.
+
+Full `pytest` **473 passed, 1 skipped** on the aligned set; `ruff` clean.
+

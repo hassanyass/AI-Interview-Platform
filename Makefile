@@ -24,9 +24,16 @@ install:
 	$(PY) -m pip install -r backend/requirements.txt -r agent/requirements.txt -r requirements-dev.txt
 	cd frontend && npm ci
 
+# The two locks are installed into ONE environment -- the test suite imports
+# both packages -- so their shared transitive dependencies must agree. They
+# used to be compiled independently, which let 11 of them drift apart until
+# `pip install -r backend -r agent` was impossible (found by CI's first real
+# run, 2026-09-25). The agent is compiled first because livekit-agents
+# carries the tighter bounds, then the backend is constrained by its result.
 lock:
-	$(PY) -m piptools compile --strip-extras --no-header -o backend/requirements.txt backend/requirements.in
 	$(PY) -m piptools compile --strip-extras --no-header -o agent/requirements.txt agent/requirements.in
+	$(PY) -m piptools compile --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in
+	$(PY) -m pytest -q backend/tests/test_requirements.py
 
 up:
 	docker compose --profile app up --build

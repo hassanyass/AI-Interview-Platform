@@ -46,8 +46,12 @@ try {
             Invoke-Step "npm ci" { Push-Location frontend; npm ci; Pop-Location }
         }
         "lock" {
-            Invoke-Step "compile backend lock" { & $Py -m piptools compile --strip-extras --no-header -o backend/requirements.txt backend/requirements.in }
+            # Agent first: both locks install into one environment, so the
+            # backend is compiled against the agent's result as a constraint.
+            # See the Makefile's `lock` target for why.
             Invoke-Step "compile agent lock" { & $Py -m piptools compile --strip-extras --no-header -o agent/requirements.txt agent/requirements.in }
+            Invoke-Step "compile backend lock" { & $Py -m piptools compile --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in }
+            Invoke-Step "check they coexist" { & $Py -m pytest -q backend/tests/test_requirements.py }
         }
         "up"   { Invoke-Step "docker compose up" { docker compose --profile app up --build } }
         "down" { Invoke-Step "docker compose down" { docker compose --profile app down } }
