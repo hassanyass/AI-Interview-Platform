@@ -260,9 +260,9 @@ changes. Depends on R0, R1.
 
 - **R3-A — `JobResultsPage`** (done, §12): the table, the header, the page's
   i18n, and `/dev/results-preview` so the harness can reach it at all.
-- **R3-B — `CandidateResultPage`**: header wrap, the two-line criteria row,
-  its ~75 strings, and the rail quick-nav, which the user decided is
-  **hidden below `lg`** rather than becoming a chip row — on a phone the
+- **R3-B — `CandidateResultPage`** (done, §13): header wrap, the two-line
+  criteria row, its strings, and the rail quick-nav, which the user decided
+  is **hidden below `lg`** rather than becoming a chip row — on a phone the
   whole report is one scroll, and scrolling is the replacement that keeps
   it off the "hidden without a replacement" list.
 
@@ -420,6 +420,12 @@ Per surface, per matrix entry, LTR and RTL:
   icon in `JobCreatePage`/`JobDetailPage` is not mirrored.
 - (R3-A) `JobResultsPage`'s error branch uses a hard-coded `bg-white/50`
   instead of a token, so it ignores theming. Left alone: colour, not layout.
+- (R3-B, user decision) `CandidateResultPage` renders `completed_at` with
+  `toLocaleString()`, which follows the **browser** locale, not the app
+  language — so the date stays English/Gregorian in Arabic. Deliberately not
+  fixed here: doing it properly means choosing a calendar and digit set for
+  Arabic (Gregorian vs Hijri, Arabic-Indic vs Western numerals), which is a
+  product decision that would apply to every date in the app, not one page.
 - (R3-A) **40px at exactly 1024 is now a track-wide decision, not a page
   one.** Every control the harness still flags at `tablet-land` is exactly
   40px: the sidebar's Jobs/Settings/Sign Out, `LanguageToggle`, and any
@@ -579,3 +585,85 @@ pass along with the H2-E/H2-F items.
 Still open, unchanged by this phase: `LanguageToggle` at 40px on touch
 widths (R2-A leftover, R7), and the 1024/40px question now recorded in §7
 as a track-wide decision for R7.
+
+## 13. R3-B — verify record (2026-09-28)
+
+Scope confirmed by the user: its own dev preview route, fix the override
+form's unlabelled controls, park the date-locale question.
+
+Changed: `CandidateResultPage.tsx` — **61 asserted replacements**, every one
+anchored so a partial application was impossible. Header stacks below `sm`
+with an `inline-flex` Link (the R3-A anchor-collapse finding, present here
+too); the candidate **name** and the **email** now wrap instead of
+truncating, because both are data; the criteria row is two lines below `sm`
+(label, then bar + score) and its boxes are `<span>`s, since a `<button>`
+may only contain phrasing content and the old markup nested a `<div>`; the
+rail quick-nav is `hidden lg:flex`; the override `select`/`textarea` gained
+`id`/`htmlFor` (they had **no accessible name at all**) and 16px text on
+phone so iOS does not zoom on focus; Save/Cancel/Regenerate are 44px below
+`lg`; `mr-2` became `me-2` so the spinner's spacing flips with direction.
+
+New `routes/dev/CandidateResultPreview.tsx` + its route + the harness entry;
+`locales/en.json` and `ar.json` gain `candidateResult` (98 EN leaf keys, 110
+AR — the difference is Arabic's extra plural forms), with existing
+namespaces asserted byte-identical and key parity checked on plural stems.
+
+**The preview renders the real page, not a copy.** `CandidateResultPage` is
+one 828-line component, so extracting a presentational shell purely to make
+a preview possible would have been a risky refactor of a page nobody can
+exercise without a login. Instead the dev file stubs `window.fetch` for the
+single GET the page makes. Two things had to be got right, both found by
+running it:
+
+1. A nested `MemoryRouter` (so `useParams` would resolve) is rejected
+   outright by React Router v7 — *"You cannot render a `<Router>` inside
+   another `<Router>`"*. The dev route carries `:jobId/:sessionId` itself
+   instead, with a redirect from the bare path.
+2. Restoring `window.fetch` in an effect cleanup **silently defeated the
+   stub under StrictMode**: React mounts, runs effects, runs cleanups, then
+   runs effects again, and child effects run *before* parent effects — so
+   the page re-fetched against the restored real `fetch`. Observed as a live
+   request to :8001, `ERR_CONNECTION_REFUSED`, and a permanent skeleton. A
+   parent effect cannot win that race, so the stub installs once and is
+   never removed; it is pinned to the fixture's own `sess-preview` id, which
+   a real result can never have.
+
+The four English `+ "s"` plural hacks (`flagged moment`, `hint`,
+`follow-up`, `clarification`) are now i18next plurals, following the
+convention already in `ar.json` (`sectionsEditor.summaryQuestions` carries
+the full CLDR set): English `_one/_other`, Arabic
+`_one/_two/_few/_many/_other`.
+
+`OUTCOME_STYLE` and `INTEGRITY_EVENT_META` are module-level, where `t()`
+cannot be called, so their 12 English labels left the maps entirely; each
+entry's key is now also its translation key, resolved at the call site by
+`outcomeKey()` / `integrityKey()`, which reproduce the old
+NOT_ATTEMPTED/DEFAULT fallbacks. Icons and tones stayed in the maps.
+
+Checked: harness on the new route, 14 shots — `overflow: 0, errors: 0`.
+Full `DEFAULT_ROUTES` afterwards, **112 shots across 8 routes: `overflow:
+0, errors: 0`**. The only inner scroller is the `<pre>` code block
+(794/341), which §2.3 records as acceptable for code. Live at 375 RTL: the
+long criterion label wraps in full instead of being cut at 160px, the bar
+and score take their own line, the unscored criterion reads "لا توجد أدلة",
+the name wraps to two lines, and the email wraps rather than truncating.
+
+One thing the harness improved: the three quick-nav anchors were 36px, so
+hiding them below `lg` left them visible only at a width where they were
+still under even the project's own 40px convention. They are now 40px,
+matching the sidebar's links, and **every** flagged control at 1024 is now
+exactly 40px with no outliers — the same track-wide question R3-A recorded
+in §7, unchanged by this phase.
+
+`npm run typecheck` clean; oxlint **16 warnings, identical to the count
+before this phase** (`CandidateResultPage`'s `exhaustive-deps` is the same
+`useEffect(..., [sessionId])` that is in `HEAD`); `npm test` 40/40.
+
+Not verified here: the real page behind a login. The fixture covers an
+incomplete (DISCONNECTED) session, a placeholder evaluation, a manual
+override, a missing recording, a long name and email, a long criterion
+label, a criterion with no score, a question with no title, four outcomes,
+three integrity events including one with no offset, a code submission and
+a transcript — but Regenerate Evaluation and Save Override deliberately go
+through the real client and are not stubbed, so those two actions remain
+part of the owner's manual pass.
