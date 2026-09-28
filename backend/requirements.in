@@ -1,0 +1,20 @@
+# Backend (FastAPI) top-level dependencies. Only what backend/backend,
+# backend/alembic and scripts/ import. Compile the pinned lockfile with:
+#   pip-compile backend/requirements.in -o backend/requirements.txt
+# (see Makefile `lock`). Do not edit requirements.txt by hand.
+fastapi
+uvicorn[standard]
+python-multipart          # FastAPI UploadFile (CV upload)
+pydantic
+pydantic-settings
+email-validator           # pydantic EmailStr
+SQLAlchemy[asyncio]
+asyncpg
+alembic
+PyJWT[crypto]             # Supabase JWKS (ES256/RS256) + guest HS256
+httpx
+groq
+boto3                     # Cloudflare R2 (S3-compatible) recordings
+pymupdf                   # CV text extraction
+prometheus-client         # GET /metrics (H3)
+livekit-api               # room tokens + egress

@@ -33,18 +33,26 @@ db_url = URL.create(
     query=dict(parse_qsl(parts.query)),
 )
 
-try:
-    engine = create_async_engine(db_url, echo=False)
-    AsyncSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
-except Exception as e:
-    logger.error(f"Failed to initialize database engine: {e}")
-    engine = None
-    AsyncSessionLocal = None
+# Fail closed (H2-B): a DATABASE_URL the engine cannot even parse used to
+# leave `engine = None` and let the process boot, 500ing on first use.
+# Now the import raises and the process does not start. Connectivity is
+# not checked here (the engine connects lazily) -- /ready reports that.
+engine = create_async_engine(
+    db_url,
+    echo=False,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
+    pool_timeout=settings.DB_POOL_TIMEOUT_SECONDS,
+    # A connection the pooler/NAT silently dropped is detected and replaced
+    # instead of surfacing as one failed request.
+    pool_pre_ping=True,
+)
+AsyncSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+
 async def get_db():
-    if not AsyncSessionLocal:
-        raise RuntimeError("Database not initialized")
     async with AsyncSessionLocal() as session:
         yield session

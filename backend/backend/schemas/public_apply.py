@@ -25,5 +25,9 @@ class PublicRegisterResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     session: RedeemedSessionInfo
-    livekit_token: str
-    livekit_url: str
+    # Background subsection step 2: no longer minted here (a room token is
+    # only issued once the application has a CV -- see livekit.py). Kept
+    # optional so the admin test-drive, which has no CV gate, can still
+    # return one through this same shape.
+    livekit_token: Optional[str] = None
+    livekit_url: Optional[str] = None

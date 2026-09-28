@@ -7,6 +7,36 @@
 @import "@fontsource/ibm-plex-sans-arabic/600.css";
 @config "../tailwind.config.js";
 
+/* Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B4): the one
+   animation TimeBonusIndicator needs. Defined here because this project has
+   no Tailwind animation plugin wired for v4 -- the `animate-in / fade-in /
+   slide-in-from-*` classes used elsewhere are not emitted at all (verified
+   against the built CSS), so a new component must not depend on them. */
+@keyframes himma-bonus-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive plan R0 (docs/responsive-design-plan.md §3): safe-area insets
+   as plain custom properties so sticky/fixed bars in the interview can pad
+   for a notch or home indicator (`pb-[var(--safe-bottom)]`) once
+   index.html opts in with viewport-fit=cover. Zero on every desktop. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-start: env(safe-area-inset-left, 0px);
+  --safe-end: env(safe-area-inset-right, 0px);
+}
+
+/* Minimum touch target (WCAG 2.5.8 / platform guidance: 44x44 CSS px).
+   Applied to icon-only controls that are otherwise sized by their icon
+   (the p-1.5 + 16px icon pattern in the editors is ~28px). Additive: it
+   never shrinks a control that is already larger. */
+@utility touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
 @layer base {
   :root {
     /* Background: White */

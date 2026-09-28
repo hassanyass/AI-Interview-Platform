@@ -1,0 +1,1991 @@
+# Production hardening — phased plan (2026-09-21)
+
+Goal: turn the Himma / Path2Hire prototype (FastAPI backend, LiveKit
+`livekit-agents` voice worker, React/Vite frontend) into a production-grade,
+handover-ready product for e&: packaged as portable containers, no
+hard-coded provider or policy values, provider logic behind interfaces,
+consistent error handling, observability, automated tests with CI, and a
+security posture that survives an audit. **Product behaviour is frozen** —
+every screen and API keeps doing what it does today; only structure,
+reliability, operations, tests and security change.
+
+This is the *overall* plan. Each phase is executed as its own task under the
+same discipline as `.claude/skills/transition-phase/SKILL.md` and
+`AGENTS.md` §4: **Explore → Plan → wait for approval → Execute → Verify**,
+one phase (or sub-phase) per approval. Nothing in this document is code.
+
+Status: **COMPLETE — H0 through H6 built, verified and committed (2026-09-21 → 2026-09-25;
+one commit per phase, verify records §8–§28). Live DB at head `d2c58f31ae04`.
+
+Owed, and none of it code: a live spoken interview (outstanding since H2-C), one
+admin-driven generation through the task queue in a browser, the admin retry screen and
+test-drive, and a first CI run — `.github/workflows/ci.yml` has never executed because
+nothing is pushed (owner's call).
+
+Open decisions: U1 (retention — the purge job ships disabled because of it), U4
+(concurrency acceptance — `capacity.md` has the HTTP baseline; interviews per worker is
+unmeasured), U5 (CV extraction failure status, kept as-is).
+
+Recorded gaps, deliberately not closed: `/docs` and `/openapi.json` are publicly
+reachable, and a permitted rate-limit burst can exceed the Supabase pooler's 15-client
+ceiling — both in `docs/handover/security.md` §7.**
+
+---
+
+## 0. Decisions that scope this plan (all confirmed by the owner)
+
+| # | Decision (2026-09-17 / 2026-09-21) | Consequence |
+|---|---|---|
+| S1 | Hosting undecided; explicitly **not** Render/Vercel/Railway long-term | Deliverable is a portable container stack (compose today, k8s-mappable), not a cloud-specific deploy. `render.yaml` is kept until H6 decides its fate. |
+| S2 | Load = 1000+ candidates **total**; no concurrency target | H6 measures a baseline (concurrent live interviews on one worker) and records it; no autoscaling work. |
+| S3 | Single tenant (e&), current flow only; no multi-tenancy, RBAC expansion or white-label | No schema changes for tenancy. Existing `admin` role stays. |
+| S4 | Priorities in order: **reliability & error handling → observability & ops → tests & CI/CD → security & compliance** | Phase order below follows this after the two foundation phases (H0, H1) that everything else depends on. |
+| S5 | Fixed stack: **Python/FastAPI + React/Vite/TS only**. Supabase, LiveKit, Groq/TTS/STT, storage, email are *not* fixed | Each external dependency sits behind a provider interface selected by configuration (H1). No vendor is switched in this plan. |
+| S6 | Behaviour frozen; production gaps (email) get the provider **infrastructure and integration point**, but stay inert until a vendor is chosen | `EmailProvider` port + `NullEmailProvider`; the composer's Send keeps its current outcome. |
+| S7 | Testing: unit + integration against a **real disposable Postgres**; no browser e2e in CI | Docker Postgres + real Alembic migrations in CI; frontend component tests in jsdom. |
+| S8 | Handover-grade documentation for **e& IT / another vendor** | Runbooks, architecture, env matrix, ADRs live in a tracked `docs/handover/` (not in the git-ignored `CLAUDE.md`/`AGENTS.md`, which are deliberately untracked). |
+| S9 | Background jobs: **DB-backed job table + in-process worker, Postgres advisory lock** | No Redis/Celery. `JobQueue` port so it can be swapped later. |
+| S10 | Root test scripts (`test_phase*.py`, `verify_9*.py`, `conftest.py`): **move under `tests/legacy/`, run against the test DB** | Moved unchanged (git `mv`), pointed at `TEST_DATABASE_URL`, kept green as regression coverage. |
+| S11 | Cleanup may delete: dead frontend code, stray root artefacts, `frontend/test_5c.cjs`, `New Avatar/` | A final listing is shown for OK at that step (H0-B) before anything is removed. |
+| S12 | Frozen `controller.py`: **one scoped sub-phase** (H2-C) with its own approval gate | Fix the `IM_READY` `NameError`, route English fallback strings through the language table, require a confirmation control before keyword-triggered `END_INTERVIEW`. No contract change. |
+
+Standing rules that bind every phase (AGENTS.md): additive-only migrations;
+`agent/agent/interview/controller.py` and `/internal/*` are frozen except
+under H2-C; `InterviewerCharacter.tsx` untouched; legacy names
+(`InterviewConfiguration`, `InterviewSession`) stay; no test file deleted
+or moved without the consent recorded in S10/S11; the responsive track
+(`docs/responsive-design-plan.md`, R0–R2B staged uncommitted) is parallel
+work this plan must not undo.
+
+### Still unresolved — the plan does NOT decide these (AGENTS.md §5)
+- **U1 Data retention.** How long candidate recordings, transcripts and
+  CVs are kept, and who may delete them. H5 builds the deletion *mechanism*
+  (a job that can purge by age/status) but ships it disabled until you set
+  the policy in `CURRENT_DECISIONS.md`.
+- **U2 Commit cadence — RESOLVED 2026-09-22.** Responsive R0–R2B and
+  hardening H0–H2-D were committed as two separate commits (`c2dff10`,
+  `d6079cc`); from H2-E on, one commit per verified phase.
+- **U3 Duplicate `users_roles` rows.** The audit found no unique index
+  (`MultipleResultsFound` risk). Adding one is additive, but if duplicates
+  exist in the live DB the migration fails. H2 adds the index only after a
+  read-only check you approve; the dedupe itself needs your OK.
+- **U4 Concurrency acceptance.** H6 will *measure* how many simultaneous
+  live interviews one agent worker sustains; whether that number is enough
+  is a product call.
+- **U5 CV extraction failure status.** A transient LLM failure during CV
+  parsing today keeps the upload and marks the resume `COMPLETED` with an
+  empty profile (deliberate: the candidate is not blocked by a Groq blip;
+  the upload endpoint 500s on `FAILED`). Kept as-is in H2-B by the owner's
+  decision; revisit if HR needs "profile missing" to be visible.
+
+---
+
+## 1. Ground rules for every phase ("no leftovers" guardrails)
+
+1. **Behaviour parity is the acceptance test.** Every phase ends by running
+   the existing live flows (login → publish → apply → intro → one verbal
+   section → results) and the full test suite; any diff in behaviour is a
+   defect unless the phase explicitly lists it.
+2. **Config, not code.** A value is hard-coded only if it is a *protocol*
+   constant. Everything else (models, bucket names, TTLs, timeouts, limits,
+   sweep intervals, provider names, CORS, feature switches) is a typed,
+   validated setting with a documented default. §1 of H1 lists every value
+   being lifted; a phase may not add a new hard-coded value.
+3. **Ports before adapters.** External systems are reached only through an
+   interface in `backend/backend/providers/` or `agent/agent/providers/`;
+   the concrete adapter is chosen by a factory from settings. No router,
+   service or controller imports `groq`, `boto3`, `httpx`, `aiohttp`,
+   `livekit.api` directly after H1.
+4. **Fail closed, fail loud.** Missing required config refuses to boot in
+   any `ENVIRONMENT != local`. No `except Exception: pass`; every catch
+   either handles, translates to a typed error, or re-raises. Every external
+   call has a timeout; every retry has a cap and is logged.
+5. **Additive migrations only.** New tables, nullable columns, indexes.
+   Nothing dropped or made mandatory in this plan.
+6. **Frozen contracts.** `controller.py` and `/internal/*` change only in
+   H2-C, byte-identical otherwise. `InterviewerCharacter.tsx` never.
+7. **Scope discipline.** A phase touches only the files in its own plan.
+   Findings on the way go to §6 (parking lot).
+8. **Test-file discipline.** Existing tests are moved only as S10 allows,
+   never deleted or rewritten; new tests are added beside them.
+9. **Verification is evidence.** Each phase pastes: `pytest` output (backend
+   + agent + legacy), `npm run typecheck && npm run lint && npm test`,
+   container build output, and the live-flow checklist ticked.
+
+---
+
+## 2. Target architecture (what "done" looks like)
+
+```
+repo/
+  compose.yaml            # dev: postgres, migrate (one-shot), backend, agent, frontend(dev)
+  compose.prod.yaml       # prod: migrate, backend, agent, web (nginx + built frontend)
+  .github/workflows/ci.yml
+  backend/
+    backend/
+      core/config.py      # single typed Settings; fail-closed validation
+      core/errors.py      # AppError hierarchy → RFC 7807 problem responses
+      core/logging.py     # JSON logs, request_id / session_id context
+      providers/          # ports + adapters, chosen by settings
+        llm/  (base.py, groq.py)
+        storage/ (base.py, s3_compatible.py)        # R2 today, S3-compatible
+        realtime/ (base.py, livekit.py)             # token + egress
+        email/ (base.py, null.py)                   # inert until vendor chosen
+        notifications/ (existing base.py, console.py — moved, unchanged)
+        jobs/ (base.py, db_queue.py)                # JobQueue port + advisory-lock worker
+      services/           # domain logic lifted out of routers
+        sessions/finalization.py, evaluation/upsert.py, jobs/publish_rules.py, ...
+      api/endpoints/      # thin routers: parse → call service → respond
+      workers/            # sweep loop + job worker, each guarded by pg_advisory_lock
+      cli.py              # `python -m backend.cli <cmd>` replaces root scripts/
+    tests/                # unit + integration (disposable Postgres, real migrations)
+  agent/
+    agent/
+      config.py           # replaces 20 os.getenv sites
+      providers/          # LLM (existing ABC moved), STT/TTS factory, persistence (existing ABC)
+      runtime/            # entrypoint split: bootstrap, session lifecycle, teardown
+      interview/controller.py   # FROZEN (H2-C only)
+    tests/
+  frontend/
+    src/lib/api.ts        # ApiError with status; timeout/abort
+    src/components/ErrorBoundary.tsx
+    src/config.ts         # validated import.meta.env
+  tests/legacy/           # moved root scripts (S10), pointed at TEST_DATABASE_URL
+  docs/handover/          # architecture, runbooks, env matrix, ADRs
+```
+
+Runtime shape is unchanged: one backend, one agent worker (N replicas
+allowed once H2's locks land), static frontend, Supabase Postgres/Auth,
+LiveKit Cloud. What changes is that every one of those is a config-selected
+adapter behind a port, and the process boundaries are safe to replicate.
+
+---
+
+## 3. Phases
+
+Order rationale: H0/H1 are foundations every later phase builds on (you
+cannot add retries without a place to configure them, or integration tests
+without a disposable DB). Then S4's priority order: H2 reliability, H3
+observability, H4 tests/CI (the harness exists from H0; H4 makes it the
+gate), H5 security, H6 packaging + handover + baseline measurement.
+Sub-phases (`-A`, `-B`, …) are separate approvals.
+
+### H0 — Groundwork: repo hygiene and a one-command dev stack *(no behaviour change)*
+
+**H0-A Test database harness.** `compose.yaml` gains a `postgres-test`
+service; a `TEST_DATABASE_URL` setting; a `backend/tests/conftest.py`
+fixture that creates a schema per session, runs `alembic upgrade head`,
+truncates between tests. Root `conftest.py`'s regex-cleanup fixture is
+retargeted at the test DB (content otherwise unchanged).
+**H0-B Cleanup (S11).** Present the exact `git rm` list for a final OK,
+then remove: `frontend/src/App.css`, `components/layout/AppShell.tsx`,
+`Container.tsx`, `routes/admin/AdminResultView.tsx`, unreferenced
+`assets/*.svg`; root `temp.tsx`, `replace.py`, `rtl_replace.py`,
+`9a_responses.txt`, `frontend/error_jobs.png`; `frontend/test_5c.cjs`;
+`New Avatar/`, and the unreferenced `frontend/src/assets/hero.png`.
+**H0-C Move legacy tests (S10).** `git mv` root `test_phase*.py`,
+`verify_9*.py`, `conftest.py` → `tests/legacy/`; `pytest.ini` gains
+`testpaths = backend/tests agent tests/legacy`; imports fixed only where
+the move breaks them. They must pass against the test DB before this step
+closes.
+**H0-D Dev stack + pins.** `compose.yaml` with `postgres`, `migrate`
+(one-shot `alembic upgrade head`), `backend`, `agent`, `frontend` (Vite
+dev, port 5174); `.env.example` per service listing *every* read setting
+and none that isn't read; `.python-version`/`.nvmrc` + `engines`;
+`requirements.txt` split into `backend/requirements.txt` and
+`agent/requirements.txt` (each only what it imports) — image size and
+supply-chain surface. `scripts/dev.ps1` / `Makefile` targets: `up`,
+`test`, `lint`, `typecheck`. Stale docs corrected to the real commands
+(`README.md`, `DEPLOYMENT.md`, `docs/LOCAL_DEMO_SETUP.md`).
+
+Files: new compose/env/pins/`tests/legacy/`; `pytest.ini`; docs. No
+`src` logic changes. **Verify:** fresh clone → `docker compose up` → all
+services healthy; `pytest` green (backend + agent + legacy) against the
+test DB; frontend typecheck/lint/test green.
+
+### H1 — Configuration and provider ports *(the "no hard-coding, object-oriented" ask)*
+
+**H1-A Backend settings.** `core/config.py` becomes the single typed
+`Settings` (pydantic-settings): every value below lifted with a default
+and a docstring; `model_validator` refuses to boot when
+`ENVIRONMENT != local` and `SECRET_KEY` is the shipped default, or any
+required provider key is missing; dead settings (`STT_PROVIDER`,
+`LLM_PROVIDER`, `TTS_PROVIDER`, `SUPABASE_PUBLISHABLE_KEY`) either wired or
+removed. Values lifted: resumes bucket name, 5 MB CV cap, Groq base URL +
+model fallbacks, HTTP timeouts, `AGENT_LEASE_DURATION`, sweep interval,
+egress retry/layout/path template, presign TTL, guest-JWT TTL, LiveKit
+token TTL (new), `admin_tester@path2hire.local`, JWT algorithms/audience,
+version string, CORS origins, pool sizes.
+**H1-B Backend provider ports.** `providers/` package as in §2:
+`LLMProvider` (Groq adapter wrapping the four inline call sites +
+`resume_ingest`), `StorageProvider` (S3-compatible adapter for R2; presign,
+put, delete), `RealtimeProvider` (LiveKit token + egress), `EmailProvider`
+(`NullEmailProvider` logs and returns "not sent" — S6), existing
+`NotificationService` moved under `providers/notifications/` unchanged.
+One `providers/factory.py` builds them from `Settings`; FastAPI
+dependencies inject them. Routers/services stop importing vendor SDKs.
+**H1-C Agent settings + factory.** `agent/agent/config.py` replaces the
+20 `os.getenv` sites; `required_vars` becomes the settings validator
+(adds `LLM_MODEL`, `AZURE_SPEECH_*` when the provider needs them);
+defaults reconciled with `.env`/docs (`TTS_PROVIDER`); the Arabic Groq
+voice becomes a setting; provider factory (`main.py` L471–568) moves to
+`agent/agent/providers/factory.py`; `prewarm_fnc` loads VAD once;
+`WorkerOptions` gets `agent_name`, `job_memory_limit_mb`; `.groq_key_state`
+and `.tts_cache` paths become settings pointing at a writable volume, not
+the app dir. `controller.py` untouched.
+**H1-D Frontend config.** `src/config.ts` validates `VITE_API_BASE_URL`,
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` at boot (no silent
+`localhost:8000` / `""` fallbacks); `frontend/.env.example`; `/dev/*`
+routes behind `import.meta.glob`/lazy import so they leave the prod bundle;
+head-pose debug logging defaults **off**.
+
+**Verify:** parity run of the live flows; `pytest` green; a deliberately
+missing `SECRET_KEY` in `ENVIRONMENT=staging` refuses to boot (test);
+`grep` proves no vendor SDK import outside `providers/`.
+
+### H2 — Reliability and error handling *(priority 1)*
+
+**H2-A Backend error model + service layer.** `core/errors.py`
+(`AppError` → `NotFound`, `Conflict`, `Forbidden`, `UpstreamTimeout`,
+`ValidationFailed`…), one global exception handler producing RFC 7807
+`application/problem+json` with `request_id`; the 17 `except Exception`
+sites classified (handle / translate / re-raise); typed response models on
+every route (`get_transcript`, `get_events`, internal routes). Domain
+logic moves out of `admin.py` (1674 LOC) and `internal.py` (847) into
+`services/` — finalization state machine, evaluation upsert, aggregation,
+egress orchestration, publish rules (single source; today duplicated at
+`admin.py:451-473` vs `497-524`). Cross-router private imports and direct
+route-function calls removed. Fixes the P0 `PATCH /admin/jobs/{id}/status →
+DRAFT` 500 (`admin.py:442`, phantom `backend.models.session`, undefined
+`func`). Pagination on list endpoints (additive query params; defaults
+preserve today's "all" behaviour so the frontend is unchanged).
+**H2-B Backend resilience.** Timeouts + bounded retries (tenacity) on
+every provider call; sync I/O (`PyJWKClient`, boto3, PyMuPDF) moved to
+`asyncio.to_thread`; engine gets `pool_size`, `max_overflow`,
+`pool_pre_ping`, `pool_recycle`; no commits inside auth dependencies;
+`resume_ingest` writes the DB row before the upload and the extraction
+failure becomes `FAILED`, not `COMPLETED`; `livekit.py:205` egress task
+tracked and awaited on shutdown; LiveKit token TTL. Additive migration:
+FK indexes on `interview_sessions(job_id)`, `(candidate_profile_id)`,
+`(status, disconnected_at)`, `interview_checkpoints(session_id, created_at)`,
+`interview_events(session_id)`, `interview_questions(section_id)`,
+`users_roles(user_id)` (+ unique only after U3). `/health` = liveness,
+`/ready` = DB + providers reachable and returns 503 when degraded;
+`engine=None` boot path removed (fail closed). Migrations leave the
+container start (they run in the `migrate` one-shot); the disconnect sweep
+and finalization become idempotent and run under `pg_try_advisory_lock`
+so N replicas are safe.
+**H2-C Agent controller sub-phase (S12 — frozen file, own approval).**
+Minimal diff to `controller.py`: (1) `IM_READY` `NameError` at L1281 in the
+legacy `TECHNICAL_INTRO` path; (2) fallback strings at L515, L547,
+L609–611, L1286, L1903–1904 routed through the existing language table;
+(3) keyword intents at L1325–1368 (`"i'm done"`, `"let's move on"`,
+`"help me"`) no longer perform the state change directly — they emit a
+`CONFIRM_INTENT` UI event and the transition happens only on the existing
+`END_INTERVIEW` / `END_SECTION_EARLY` / `REQUEST_HINT` control. Wire
+contract (`ui_state`, `/internal/*`) unchanged; any needed frontend
+confirmation reuses `EndInterviewDialog`/`EndSectionEarlyDialog`.
+**H2-D Agent runtime resilience.** `entrypoint` split into
+`runtime/bootstrap.py`, `runtime/session.py`, `runtime/teardown.py` with a
+`try/finally` that always leaves the session in a terminal or
+`DISCONNECTED` state (never stranded `IN_PROGRESS`); LLM calls get a
+timeout (setting) and the `_turn_lock` is released on timeout so
+`END_INTERVIEW` can't be blocked; `APIPersistence` gets retries with
+backoff and a local outbox so sequence counters advance only on success,
+completion is retried until acknowledged, and a failed lease renewal
+triggers a controlled shutdown (no dual agents); STT stream bound to the
+candidate participant only, restarted on error, closed on teardown;
+`ui_command` validated (sender, schema, size) and tasks referenced;
+`ctx.shutdown()` after `COMPLETED`; TTS plugin rebuild re-attaches the
+`metrics_collected` listener; key-state file written atomically.
+**H2-E Frontend resilience.** `ApiError { status, code, detail,
+requestId }` from `lib/api.ts` (pages stop string-matching "404"/"409");
+request timeout + `AbortController`; `ErrorBoundary` at the router root
+and around `InterviewWorkspace` (a render throw shows a recoverable
+screen, not white); `RoleContext` distinguishes 401/403 from network
+failure (admins are not bounced to `/login` on a backend blip);
+`CandidateAccess.handleTestDrive` opens `/interviews/:id` and stops
+writing the orphan token; `alert()`/`confirm()` replaced with the existing
+modal components; realtime type drift fixed (`ActiveQuestion.source`,
+`AllowedControl`, `RealtimeMessage`).
+
+**Verify (each sub-phase):** parity run; new tests for every fixed defect
+(a test that fails on the old code first); agent fault-injection tests
+(kill the backend mid-session → session ends `DISCONNECTED`, resumes);
+two backend replicas + one sweep → single execution proven by log.
+
+### H3 — Observability and operations *(priority 2)*
+
+Structured JSON logging (`structlog` or stdlib `JSONFormatter`) in backend
+and agent with `request_id`, `session_id`, `job_id` bound in context; the
+backend generates `X-Request-ID` and the agent propagates it on every
+`/internal/*` call so one interview is one trace across both services;
+agent's double logging (basicConfig + SDK handler) removed. Prometheus
+metrics (`prometheus_client` is already installed): request latency/
+status, provider call latency/errors/retries, job-queue depth/age, active
+sessions, sweep outcomes; agent exposes STT/TTS/LLM latencies already
+collected via `metrics_collected`. `/metrics` guarded by network policy
+(documented). Health/readiness from H2 documented per service. Root
+`scripts/*.py` become `python -m backend.cli` sub-commands
+(`create-admin`, `seed-demo`, `finalize-stuck`, `backfill-evaluations`)
+with the same behaviour. `docs/handover/runbooks/`: start/stop/upgrade,
+rotate keys, stuck session, provider outage, restore from backup, read
+the logs of one interview.
+
+**Verify:** one full interview produces a single `request_id`-correlated
+log trail across backend + agent; `/metrics` scrapes; each runbook is
+executed once against the compose stack.
+
+### H4 — Tests and CI/CD *(priority 3)*
+
+Backend: unit tests for services and providers (fakes), integration tests
+against the disposable Postgres for every router (auth matrix, publish
+rules, finalization idempotency, job queue, sweep lock); Alembic
+`upgrade head` + `downgrade -1` + `upgrade head` smoke in CI; a check that
+the SQLAlchemy metadata and the migration head agree. Agent: tests with
+fakes for `APIPersistence` (retry/outbox), `LLMProvider` timeout,
+resume-restore, TTS retry/cache/rotator, STT loop restart,
+completion/teardown; existing `agent/test_*.py` untouched. Frontend:
+`tsconfig` `strict: true` reached incrementally (per-folder, `any` count
+tracked to zero), oxlint rule set widened, `vitest` + jsdom component tests
+for `ErrorBoundary`, `RoleContext`, `api.ts`, `ResponsiveTable`; `npm run
+build` runs typecheck + lint first. GitHub Actions `ci.yml`: lint →
+typecheck → unit → integration (services: postgres) → legacy suite →
+container builds for backend/agent/web; `pre-commit` with ruff, oxlint,
+end-of-file/secret scan. Coverage reported, no arbitrary threshold gate.
+
+**Verify:** CI green on a PR that deliberately breaks a rule (proves the
+gate), green on `main`; `docs/technical/testing-strategy.md` rewritten to
+describe what actually runs.
+
+### H5 — Security and compliance *(priority 4)*
+
+`core/security.py`: Supabase-JWT and guest-JWT verification are selected
+by issuer/`kid`, never by "Supabase failed, try guest"; algorithms pinned;
+audience checked. `api/deps.py` auto-link-by-email replaced with an
+explicit, logged link that requires a verified email; `profiles.py` email
+change requires re-verification (or is disabled — the current UI never
+changes it; confirm). Rate limiting without Redis: a DB/in-memory token
+bucket per IP and per token on `public_apply`, `/redeem`, `/livekit/token`,
+login-adjacent routes (`slowapi` in-process is sufficient for one replica;
+the DB variant is the swap for N). `POST /livekit/token` no longer spawns an
+egress per call (idempotent per session). `ui_command` sender check (H2-D)
+plus a schema allow-list. Dockerfiles run as non-root, have `HEALTHCHECK`,
+copy only the package (no tests/caches/`.env`); `pip-audit` + `npm audit`
+in CI; `frontend/public/mediapipe/` (38 MB, unreferenced tflite) trimmed
+to what is loaded. Data lifecycle: a `purge` job (H2's `JobQueue`) that can
+delete recordings/CVs/transcripts by age and status — **shipped disabled
+pending U1**. Audit trail: `InterviewEvent` already exists; admin
+mutations (publish, delete, override) additionally write an
+`admin_audit_log` row (additive table). CORS explicit per environment.
+Secrets: documented sources (env/secret files), never defaults;
+`.env.example` files contain no real values. `docs/handover/security.md`:
+threat model, data map (what personal data lives where), PDPL/GDPR
+posture and the open U1.
+
+**Verify:** auth tests for every rejection path (expired, wrong audience,
+guest-on-admin, admin-on-candidate); rate-limit tests; container image
+scan output; a manual pass with the OWASP API top-10 checklist recorded.
+
+### H6 — Packaging, handover and baseline
+
+`compose.prod.yaml` (migrate → backend → agent; `web` = nginx serving the
+built frontend with SPA fallback and security headers) runnable on any
+Docker host; a `docs/handover/kubernetes.md` mapping each compose service
+to a Deployment/Job/Service/Ingress (no Helm chart until hosting is
+decided); env matrix (every setting × local/staging/prod, required or
+default); architecture doc with the §2 diagram, data model regenerated
+(`BASELINE_SCHEMA.md` is 20 migrations behind), sequence diagrams for
+apply → interview → finalize; ADR directory seeded with S1–S12 and the
+decisions already in `CURRENT_DECISIONS.md` (that file remains the product
+decision log). Load baseline: a script that drives N simulated candidates
+through `/apply` → `/livekit/token` and N agent sessions with the existing
+`simulator.py` against a staging LiveKit room; the sustained N per worker
+and the p95 latencies are recorded in `docs/handover/capacity.md` (U4).
+`render.yaml` either updated to the new images or removed (your call at
+this step). `docs/PROJECT_STATUS.md` updated; `DEPLOYMENT.md` replaced by
+`docs/handover/deploy.md`.
+
+**Verify:** a stranger's test — a clean machine, the handover docs only,
+stack up and one interview completed; the numbers in `capacity.md` come
+from the script's output, pasted.
+
+---
+
+## 4. Per-phase template (what each phase's own plan must contain)
+
+```
+## Hn-X — <name>
+Explore: quoted current contents of every file to be touched (re-read live).
+Plan:    files touched; new modules/tables (additive); settings added;
+         Frozen Contracts Confirmation (controller.py, /internal/*,
+         InterviewerCharacter.tsx — untouched, or H2-C approval cited);
+         decisions from §0 this phase relies on (by ID); unresolved U-items it must not decide.
+Execute: after approval only. One commit per logical step (subject to U2).
+Verify:  parity run of live flows; pytest (backend, agent, legacy) pasted;
+         npm typecheck/lint/test pasted; container build pasted;
+         fault-injection evidence where the phase claims resilience.
+Left over: anything discovered and NOT fixed, appended to §6.
+```
+
+---
+
+## 5. Dependencies and sequencing
+
+```
+H0-A ─┬─ H0-C (legacy tests need the test DB)
+      └─ H1-A ─ H1-B ─ H2-A ─ H2-B ─ H3 ─ H4 ─ H5 ─ H6
+H0-B (cleanup) any time after the final listing is OK'd
+H0-D (dev stack) after H0-A; before H1 so every phase runs on the stack
+H1-C, H1-D (agent/frontend config) in parallel with H1-B
+H2-C (controller) after H1-C; own approval gate
+H2-D after H1-C and H2-C (the confirm-intent event is consumed by the runtime)
+H2-E after H1-D; coordinate with the responsive track (U2)
+```
+
+Estimated size (not time): H0 small; H1 medium; H2 large (five sub-phases,
+the bulk of the initiative); H3 medium; H4 medium-large; H5 medium; H6
+medium. The responsive track's remaining phases (R2-C, R3–R7) can
+interleave; the only shared files are in H2-E.
+
+---
+
+## 6. Parking lot (found, deliberately not in this plan)
+
+- Frontend i18n gaps in the live workspace chrome and results pages —
+  responsive track / a dedicated i18n pass.
+- `document.documentElement.dir` set only by `LanguageToggle` — responsive R7.
+- Transition Phase 8 (Evaluation/Score tables) and Phase 10 (retire
+  `InterviewConfiguration`) — the transition plan owns these.
+- Head-pose thresholds on handheld devices — responsive D5.
+- `QuestionEditor`/`SectionsEditor` use `window.confirm` — H2-E replaces
+  with the modal only where it already exists; UX redesign is not in scope.
+- The VAD/endpoint-delay coalescing race noted in
+  `docs/realtime-voice-hardening.md` — voice-quality work, not hardening.
+
+---
+
+## 7. Audit findings (2026-09-17) — the evidence this plan is built on
+
+### Backend (`backend/backend/`, ~5.8k LOC, FastAPI, async SQLAlchemy + asyncpg, 21 Alembic revisions)
+
+Structure: routers own the domain — `api/endpoints/admin.py` (1674 LOC) and
+`internal.py` (847) hold aggregation, finalization state machine, evaluation
+upsert, R2 presign/delete, egress orchestration; routers import each other's
+private helpers (`admin.py:1296`, `interviews.py:23`) and call route
+functions directly (`admin.py:673`, `:1391`); 11 in-function imports work
+around cycles; publish rules duplicated (`admin.py:451-473` vs `497-524`).
+
+P0: `admin.py:442-443` imports non-existent `backend.models.session` and
+uses undefined `func` → `PATCH /admin/jobs/{id}/status` to DRAFT always
+500s. `core/security.py:34-44` `except Exception` turns every Supabase-JWT
+failure into a guest-HS256 attempt; `config.py:7` ships a default
+`SECRET_KEY` and nothing refuses to boot with it. `api/deps.py:37-46`
+auto-links any existing profile to a JWT by email; `profiles.py:58-81` lets
+a user change that email → cross-account link. No rate limiting;
+`public_apply.py:69-139` mints unlimited guest JWTs/sessions; each
+`POST /livekit/token` spawns an egress task. `main.py:61-78` `/health`
+returns 200 while "degraded"; `db/session.py:36-42` boots with
+`engine=None`. `backend/Dockerfile` runs `alembic upgrade head` on every
+start (replica race); `internal.py:193-231` sweep loop assumes one process.
+
+P1: no pool sizing/`pool_pre_ping`/`pool_recycle`; commits inside the auth
+dependency (`deps.py:45,59,71`). Missing FK indexes (see H2-B).
+Groq calls inline in requests, no timeout/retry/queue: `admin.py:591,892,
+963,1277`, `resume_ingest.py:52`; two different silent default models.
+Sync I/O on the event loop: `PyJWKClient` (`security.py:26`), boto3
+(`admin.py:196,242`), PyMuPDF (`resume_service.py:98`).
+`resume_ingest.py:33-70` uploads before any DB row, 3 commits;
+`resume_service.py:193` swallows LLM extraction failure → `COMPLETED`.
+`livekit.py:205` fire-and-forget task; `:190-196` LiveKit token has no TTL.
+
+P2: 17 `except Exception`; no global exception handler, request-id,
+structured logs or metrics (`prometheus_client` installed, unused);
+deprecated `on_event`; no pagination; untyped responses; dead settings;
+`.env.example` missing 9 settings; `requirements.txt` is a merged
+backend+agent freeze; `docker-compose.yml` = Postgres only;
+`DEPLOYMENT.md` contradicts `render.yaml`; tests hit the live
+`DATABASE_URL` with a regex cleanup fixture; `docs/technical/*`
+aspirational. Existing abstraction to generalise:
+`services/notifications/{base,console}.py`.
+
+### Agent worker (`agent/agent/`, ~11k LOC incl. tests; livekit-agents 1.7.1)
+
+Structure: `main.py` `entrypoint()` is ~440 lines (env validation, `/load`,
+checkpoint restore, provider factory L471-568, teardown L600-642);
+`controller.py` 2639 LOC (FROZEN), `voice_adapter.py` 1153,
+`persistence.py` (`InterviewPersistence` ABC + `APIPersistence`, aiohttp),
+`llm/provider.py` ABC + `GroqProvider`. No config module: 20 `os.getenv`
+sites.
+
+P0: no try/finally around `entrypoint` → sessions stranded `IN_PROGRESS`
+(backend sweep only finalizes `DISCONNECTED`); no timeout on LLM calls
+while `_turn_lock` is held → a hung Groq call blocks `END_INTERVIEW`;
+`APIPersistence` 10 s timeout, zero retries, failures swallowed, sequence
+counters advance on failure, lease renewal failures ignored (dual-agent
+risk); STT pipeline (`voice_adapter.py:476-521`) no error handling, any
+participant treated as the candidate, streams leak; keyword intents in the
+frozen controller (`controller.py:1325-1368`) cause hard state changes.
+
+P1: `ui_command` unvalidated (`voice_adapter.py:291-305`);
+`controller.py:1281` `NameError` on `IM_READY`; config defaults contradict
+`.env`; Arabic voice hard-coded (`main.py:521`); `WorkerOptions` untuned
+(no `prewarm_fnc`, `agent_name`, memory limit, no `ctx.shutdown()`); disk
+state in the app dir baked into the image; logs emitted twice; English
+fallback strings reach Arabic candidates; TTS rebuild drops the metrics
+listener.
+
+P2: frontend realtime type drift; zero tests for persistence/provider/
+restore/retry/cache/rotator/STT/teardown; Dockerfile root, no HEALTHCHECK;
+no `agent/.env.example`.
+
+### Frontend + repo/infra
+
+Frontend: single fetch wrapper (`lib/api.ts`) but errors lose HTTP status
+(pages string-match "404"/"409"); no timeout/abort; `tsconfig.app.json`
+not strict, ~70 `any`s, oxlint 2 rules, `npm run build` skips
+typecheck/lint; no `ErrorBoundary`; `RoleContext.tsx:33-41` maps any ping
+failure to "candidate"; `CandidateAccess.tsx:101-102` opens
+`/interview/:id` (route is `/interviews/:id`); head-pose debug log on by
+default; silent env fallbacks; `/dev/*` routes in the prod bundle;
+`alert()`/`confirm()` in 4 places; 1 test file. Dead files and stray
+artefacts as listed in H0-B; `frontend/public/mediapipe/` 38 MB in git.
+
+Repo/infra: no CI, pre-commit or task runner; `docker-compose.yml` =
+Postgres only; a fresh clone cannot run with one command; root
+`.env.example` missing 14 keys incl. required `SECRET_KEY`/
+`AGENT_API_SECRET`; Python 3.13 in Dockerfiles vs "3.11+" README, Node
+unpinned; `README.md`/`DEPLOYMENT.md`/`docs/LOCAL_DEMO_SETUP.md` stale;
+`BASELINE_SCHEMA.md` 20 migrations behind; no ADR dir. `.gitignore`
+excludes `CLAUDE.md`/`AGENTS.md`/skills **deliberately** (public repo) —
+not a defect; handover docs go to tracked `docs/handover/` instead. No
+real secrets in tracked files.
+
+---
+
+## 8. H0 — verify record (2026-09-21)
+
+**H0-A.** `requirements-dev.txt` (pytest, pytest-asyncio, httpx, pip-tools) —
+`pytest-asyncio` was in neither `.venv` nor any requirements file, so nine
+backend/legacy modules could not even be collected before this step.
+`docker-compose.yml` gained `postgres-test` (postgres:15, port 5433, tmpfs).
+New root `conftest.py`: sets `DATABASE_URL = TEST_DATABASE_URL` before any
+`backend` import, aborts if the host contains "supabase", and — once per
+session, only when backend/legacy tests are collected — drops/recreates
+`public` and runs `alembic upgrade head` as a subprocess from `backend/`.
+`pytest.ini` gained `testpaths = backend/tests agent tests/legacy`. The old
+root `conftest.py` moved unchanged to `tests/legacy/conftest.py`.
+
+Finding fixed on the way: **the Alembic chain could not build a database
+from scratch.** Revision `cfaa8eeb37cf` (4th of 21) did
+`op.drop_table('code_submissions')` for a table no revision ever creates —
+it pre-dated the initial revision on the original database. Changed to
+`DROP TABLE IF EXISTS`; identical where the table existed, a no-op on a
+fresh DB. The live DB is past this revision, so it is unaffected.
+
+Checked: `TEST_DATABASE_URL=…supabase.com…` → run refused with the message;
+fresh container → `alembic_version = b7e2c4d9a1f3`, 19 tables;
+`pytest backend/tests` 19 passed; `pytest agent` 127 passed with no DB
+setup (skip path).
+
+**H0-B.** Removed (all confirmed unreferenced by import/grep): `frontend/src/
+App.css`, `components/layout/AppShell.tsx`, `components/layout/Container.tsx`,
+`routes/admin/AdminResultView.tsx`, `assets/{hero.png,react.svg,vite.svg}`,
+root `temp.tsx`, `replace.py`, `rtl_replace.py`, `9a_responses.txt`,
+`frontend/error_jobs.png`, `frontend/test_5c.cjs`, `New Avatar/` (26 files).
+Correction to §3: no `__pycache__` was tracked. Checked: `tsc -b` clean,
+oxlint 17 warnings all pre-existing in untouched files, vitest 3/3,
+`vite build` OK.
+
+**H0-C.** `git mv` of 17 `test_phase*.py` + `verify_9a.py` + `verify_9b.py` →
+`tests/legacy/` (no `__init__.py` — a root `tests` package shadowed
+`backend/tests`). No content edits. Checked: `pytest tests/legacy` 68 passed,
+1 skipped against the from-scratch DB. Full run: **214 passed, 1 skipped**.
+
+**H0-D.** `docker-compose.yml` `app` profile: `migrate` (one-shot
+`alembic upgrade head`) → `backend` (uvicorn 8001, healthcheck) → `agent`
+(`BACKEND_INTERNAL_URL=http://backend:8001`) → `frontend` (node:22, Vite
+5174, node_modules volume, install only when empty, `PUPPETEER_SKIP_DOWNLOAD`).
+Dockerfiles unchanged; `.dockerignore` (already excluded `.env`) extended
+with `tests/`, key-state and TTS cache. `backend/requirements.in` and
+`agent/requirements.in` written from the real import lists and compiled
+with pip-tools constrained to the versions already in use: agent set
+identical; backend drops 47 packages it never imports (livekit-agents,
+numpy, supabase client, opentelemetry, typer…) and gains six that the old
+freeze was missing (boto3's `s3transfer`/`jmespath`/`six`/
+`python-dateutil`, `dnspython`, `httptools`). Pins: `.python-version` 3.13,
+`frontend/.nvmrc` 22, `engines` in `package.json`. `backend/`, `agent/`,
+`frontend/.env.example` list exactly what each service reads today (root
+`.env.example` = the local-dev union). `Makefile` + `scripts/dev.ps1`
+(`install lock up down test test-* lint typecheck migrate`). `README.md`
+rewritten to the real commands; `docs/LOCAL_DEMO_SETUP.md` corrected in
+place (path, 8001/5174, `.venv`); `DEPLOYMENT.md` banner "superseded → H6".
+
+Checked: three images build from the split lockfiles; `docker compose
+--profile app up` → migrate exit 0, backend `/health` 200 `database:
+connected`, agent `registered worker` (AW_…, region UAE), frontend 200 with
+the e& title. Stack stopped afterwards (a containerised agent competes with
+the local worker for LiveKit jobs). **Side effect to record:** `migrate`
+ran against the live `DATABASE_URL` in `.env` and applied
+`c3f9a72e4d18 → b7e2c4d9a1f3` (inserts the TEMPLATE `cv_alignment` row into
+`assessment_criteria`); the live DB had been one revision behind the
+committed code (`16f9f2a`). Additive; nothing else changed.
+
+Left over → §6: none new. `frontend/public/mediapipe/` (38 MB) stays for H5.
+
+## 9. H1-A — verify record (2026-09-21)
+
+`core/config.py` rewritten as one grouped, documented `Settings` (still the
+mutable `settings` singleton — `tests/legacy/test_phase1.py`/`3a.py` assign
+to it). `ENVIRONMENT` is now `Literal[local|test|staging|production]`; an
+`after` validator refuses to boot outside local/test when `SECRET_KEY` is
+the shipped default or < 32 chars, or `AGENT_API_SECRET`/`LIVEKIT_*` are
+empty. Dead fields: `SUPABASE_PUBLISHABLE_KEY` required→optional (never
+read), `STT_PROVIDER`/`TTS_PROVIDER` removed (agent concerns; `extra=ignore`
+keeps shared .env files valid), `LLM_PROVIDER` kept as `Literal["groq"]`
+for H1-B's factory. `BACKEND_CORS_ORIGINS` default gains 5174.
+
+17 literals lifted, defaults = previous behaviour: `RESUMES_BUCKET`,
+`MAX_RESUME_BYTES`, `SUPABASE_STORAGE_TIMEOUT_SECONDS`, `GROQ_API_BASE_URL`,
+`GROQ_MODEL` (default replaces the three `or "llama-3.3-70b-versatile"`
+fallbacks; an empty value still means default), `GROQ_EXTRACTION_MODEL`,
+`GROQ_TIMEOUT_SECONDS` + `GROQ_MAX_RETRIES` (now passed to the Groq SDK
+client — before, the SDK's own 60 s/2 applied to three call sites and 30 s
+to the fourth; the SDK sites therefore now time out at 30 s instead of 60 s
+— the one deliberate, documented change), `RECORDING_URL_TTL_SECONDS`,
+`ADMIN_TEST_CANDIDATE_EMAIL/NAME`, `AGENT_LEASE_MINUTES`,
+`DISCONNECT_SWEEP_INTERVAL_SECONDS`, `EGRESS_START_RETRY_ATTEMPTS/
+DELAY_SECONDS`, `EGRESS_LAYOUT`, `RECORDING_PATH_TEMPLATE`,
+`LIVEKIT_TOKEN_TTL_MINUTES` (360 = the SDK's `DEFAULT_TTL`, verified in
+`livekit.api.access_token`), `GUEST_JWT_TTL_HOURS`, `GUEST_JWT_ALGORITHM`,
+`SUPABASE_JWT_ALGORITHMS`, `SUPABASE_JWT_AUDIENCE`, `APP_VERSION`. Left as
+constants (R2 protocol, not policy): `region_name="auto"`, `s3v4`,
+path-style addressing.
+
+Files: `core/config.py`, `core/security.py`, `services/{resume_service,
+question_generator,evaluation_generator,invitation_message_generator,
+guest_jwt_service}.py`, `api/endpoints/{admin,internal,livekit}.py`,
+`main.py`; `backend/.env.example`, root `.env.example`; new
+`backend/tests/test_settings.py` (11 tests). No migration, no frozen file,
+no `agent/` change; `/internal/*` payloads and routes unchanged.
+
+Checked: full `pytest` **225 passed, 1 skipped**; backend imports with the
+real `.env` (`ENVIRONMENT=local`, `GROQ_MODEL=openai/gpt-oss-120b` kept);
+grep finds no lifted literal outside `config.py`; backend container with
+`ENVIRONMENT=production` + shipped `SECRET_KEY` exits 1 with "Refusing to
+start … SECRET_KEY is the shipped default; AGENT_API_SECRET is empty";
+with a complete production config it boots.
+
+## 10. H1-B — verify record (2026-09-21)
+
+New `backend/backend/providers/`: `llm/` (`LLMProvider.complete_json`,
+`GroqLLMProvider` on `AsyncGroq` — async end-to-end, replacing three
+sync-SDK-in-`to_thread` sites and one hand-rolled httpx call), `storage/`
+(`ObjectStorage` + `S3Destination`; `S3CompatibleStorage` for R2,
+`SupabaseStorage` for CVs), `realtime/` (`RealtimeProvider`;
+`LiveKitProvider` owns token minting, the egress `not_found` retry loop,
+stop, delete-room), `email/` (`EmailProvider`; `NullEmailProvider` logs and
+returns `sent=False` — S6), `notifications/` (existing `NotificationService`
++ `ConsoleNotificationService` `git mv`'d unchanged; new
+`EmailNotificationService(EmailProvider)`), `factory.py` (one `lru_cache`'d
+`get_<port>()` per port, `reset_providers()` for tests). `Settings` gained
+`REALTIME_PROVIDER`, `RECORDINGS_STORAGE_PROVIDER`, `RESUMES_STORAGE_PROVIDER`,
+`NOTIFICATIONS_PROVIDER` (console default = today's behaviour),
+`EMAIL_PROVIDER` (null).
+
+Call sites rewired, behaviour-identical: the three generators and
+`ResumeService.build_candidate_profile` take `llm: LLMProvider | None`
+(default `get_llm()`; the "no GROQ_API_KEY → RuntimeError / empty profile"
+outcomes preserved); `ResumeService.upload/delete_object` take
+`storage: ObjectStorage | None` with the same 502/500/False mappings;
+`admin.py` presign/delete use `get_recordings_storage()` (`configured`
+replaces the five-field `all([...])` check; `_delete_recording_object` is
+now `async`, its one caller awaits it); `livekit.py` egress start and token
+minting, `internal.py` room delete and egress stop use `get_realtime()`;
+`invitations.py` uses `get_notification_service()`. Vendor imports outside
+`providers/`: only `core/security.py`'s unused `import httpx` (H5 file).
+
+Tests: `backend/tests/fakes.py` (`FakeLLMProvider`, `FakeEmailProvider`,
+`MemoryStorage`); `backend/tests/test_providers.py` (12: factory selection
++ caching, LLM key requirement, email routing, selector validation, null
+email result, invitation rendering, S3 presign URL + egress destination,
+Supabase no-presign, LiveKit token claims via PyJWT, generators/resume
+through injected fakes). **With the owner's OK (2026-09-21), the two tests
+welded to the old wiring were edited** — `test_background_evaluation.py`
+(one test, two blocks) and `test_resume_profile_extraction.py` (two tests)
+now inject `FakeLLMProvider` instead of patching `evaluation_generator.Groq`
+/ `resume_service.httpx.AsyncClient`; every assertion kept except
+`response_format == json_object`, which is now the port's contract rather
+than a per-call argument.
+
+Checked: full `pytest` **237 passed, 1 skipped**; backend container builds
+and boots, `/health` connected; token minting exercised by
+`test_room_token_is_gated_on_the_cv` through the real `LiveKitProvider`.
+**Owed:** a live interview start on the owner's side to confirm egress
+start/stop and room delete against LiveKit Cloud through the adapter
+(`recording_egress_id` set on the session; recording stops at end).
+
+Tooling note: the Bash tool's transport drops one backslash from `\
+`
+sequences inside heredocs — Python edit scripts containing escaped
+backslashes must be written with the Write tool, not heredoc'd.
+
+## 11. H1-C — verify record (2026-09-21)
+
+New `agent/agent/config.py`: `AgentSettings` (pydantic-settings, added to
+`agent/requirements.in`; the only lockfile change) declaring every variable
+the worker reads, defaults = the inline literals, the inline parsing
+semantics preserved by validators (unparseable → default, then floor:
+VAD .85/.55, STT endpoint .8/.25, waiting room 300/1), `TTS_PROVIDER`
+lower-cased and validated, `groq_tts_keys` (the `_1.._20` scan with the
+legacy fallback), `missing_for_job()` (the six historical required vars
+**plus `LLM_MODEL`, plus `AZURE_SPEECH_KEY/REGION` when azure**), new knobs
+`GROQ_TTS_ARABIC_VOICE` (was hard-coded "abdullah"), `LEASE_RENEWAL_INTERVAL_
+SECONDS`, `AGENT_NAME`, `JOB_MEMORY_LIMIT_MB/WARN_MB`, `AGENT_STATE_DIR`,
+`TTS_CACHE_DIR`. `get_settings()` is cached and **side-effect free**: dotenv
+loading stays in `main._load_env()` (→ `config.load_env_files`, same
+override=True precedence) at entrypoint start and `__main__` only — a
+first draft loaded .env inside `get_settings()` and would have clobbered
+the pytest process's test `DATABASE_URL` the moment a test built a
+`VoiceInterviewAdapter`; caught before running the suite. `entrypoint`
+resets the cache after the per-job reload so a rotated key is still picked
+up per job.
+
+New `agent/agent/providers/factory.py`: `build_llm/stt/tts/vad`, `prewarm`
+(VAD into `proc.userdata`), `vad_for`. The 100-line inline block in
+`entrypoint` (L471–568) is now four calls; the per-language/per-provider
+rationale comments moved with the code. `WorkerOptions` built by
+`worker_options()` with `prewarm_fnc`, `agent_name`, optional memory
+limits. Backward-compatible constructors: `GroqProvider(api_key=None,
+model=None)`, `GroqKeyRotator(..., keys=None, state_dir=None)`,
+`tts_cache.configure(dir)`. `voice_adapter.py` reads its two values from
+settings. `groq.STT` now receives `api_key` explicitly (the new test
+exposed that the plugin otherwise reads the env itself). `main.py` has no
+`os.getenv` left; the only env reads outside `config.py` are the documented
+fallbacks in `groq_provider.py`/`groq_key_rotator.py` and the frozen
+`controller.py:56`. Compose: agent gets `AGENT_STATE_DIR=/var/lib/himma-agent`
+on a named volume. `.dockerignore` gains `**/tests/`.
+
+Behaviour deltas (both safer, both deliberate): a missing `LLM_MODEL` or
+Azure credential now aborts before the session is touched (previously after
+`PATCH IN_PROGRESS` → stranded session); the Silero VAD loads once per job
+process instead of once per interview (in `dev` mode the SDK keeps 0 idle
+processes, so prewarm runs at the first job; `start` mode prewarms up to 4).
+
+Tests: `agent/agent/tests/` (package `agent.tests` — a top-level
+`agent/tests` would collide with `backend/tests`), `test_config.py` (9) +
+`test_factory.py` (7). Full `pytest` **253 passed, 1 skipped**; agent
+container rebuilt with the new lock, `registered worker` (UAE) against
+LiveKit Cloud; stack stopped afterwards. **Owed (shared with H1-B):** one
+live interview to hear STT/TTS through the factory and confirm egress.
+
+## 12. H1-D — verify record (2026-09-21)
+
+New `frontend/src/config.ts`: pure `loadConfig(env)` + `config`/
+`configProblems`. `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`,
+`VITE_SUPABASE_PUBLISHABLE_KEY` are required with **no fallbacks** (the
+`localhost:8000` fallback in `lib/api.ts` and the `|| ""` in
+`lib/supabase.ts` are gone; `createClient("")` used to throw at module load
+= blank page); the API base must be absolute and loses a trailing slash;
+the three proctoring tunables keep `Number(x) || default`;
+`headPoseDebug` = on in dev builds, off in production, `VITE_HEAD_POSE_DEBUG`
+overrides (owner's pick (b); recorded in `docs/CURRENT_DECISIONS.md`).
+`loadConfig` never throws. `main.tsx` renders the new
+`components/ConfigErrorScreen.tsx` (operator-facing, no i18n/auth/API
+dependency) instead of `<App/>` when there are problems; `lib/supabase.ts`
+exports a failing proxy in that case so nothing else explodes at import.
+`vite-env.d.ts` types the seven `VITE_*` keys. `useFaceDetectionMonitor.ts`
+reads its four values from `config`. After this, `import.meta.env.VITE_*`
+appears only in `config.ts`.
+
+Audit correction: the `/dev/*` preview routes were **never** in the
+production bundle — the `import.meta.env.DEV` route gates let Rollup drop
+the static imports (0 occurrences of any preview route in
+`dist/assets/index-*.js`). The planned lazy-import item was dropped, so
+H1-D touches no file shared with the staged responsive work (`App.tsx`
+untouched).
+
+Tests: `src/config.test.ts` (6). Checked: `tsc -b` clean; oxlint clean on
+touched files; vitest **9/9**; `vite build` OK, bundle still has no dev
+previews and no `localhost:8000`; dev server with `VITE_API_BASE_URL`
+blanked via a temporary `.env.local` renders "Configuration error —
+VITE_API_BASE_URL is not set" (card centred, verified by DOM rects; the
+override was removed afterwards), restored env renders the login page with
+no console errors.
+
+## 13. H2-A1 — verify record (2026-09-21)
+
+New `core/errors.py` (`AppError` + `BadRequest/Unauthorized/Forbidden/
+NotFound/Conflict/PayloadTooLarge/ValidationFailed/UpstreamError/
+ServiceUnavailable/UpstreamTimeout`, `problem()`, `install_exception_handlers`)
+and `core/request_id.py` (pure-ASGI middleware: inbound `X-Request-ID`
+honoured when safe, else UUID4; echoed on every response; outermost
+middleware). Every failure — typed error, legacy `HTTPException` (95 raises,
+untouched), `RequestValidationError`, unhandled exception — returns
+`{type,title,status,detail,instance,request_id[,code]}`. **`detail` is
+byte-identical to what was raised** (str/list/dict) and the media type stays
+`application/json` (the agent's aiohttp `resp.json()` rejects
+problem+json). Unhandled exceptions: full traceback logged with the
+request id, body says "quote the request_id", nothing leaked; the 500
+handler sets the header itself because it runs in Starlette's outermost
+`ServerErrorMiddleware`, above ours (found by the test).
+
+Broad excepts: all 17 now carry `# noqa: BLE001 -- <reason>`: 8 best-effort
+by contract (recordings presign/delete, room delete, egress start/stop,
+sweep loop, CV extraction non-fatal, resume ingest FAILED), 2 translated to
+typed `UpstreamError(code="llm_generation_failed")` (still 502), **3
+narrowed to `IntegrityError`** (message/event/consent idempotency paths —
+any other DB failure now propagates instead of being swallowed into "return
+existing"), 1 typed (pymupdf), 3 explicitly deferred (`security.py` JWT
+fallback → H5; `db/session.py` engine=None and `/health` → H2-B).
+
+Fixed: `PATCH /admin/jobs/{id}/status → DRAFT` 500 (phantom
+`backend.models.session` import + unimported `func`). Typed:
+`GET /interviews/{id}/transcript` (`TranscriptEntryResponse`),
+`/events` (`SessionEventResponse`), `/admin/ping` (`AdminPingResponse`) —
+same JSON shapes.
+
+Tests: `backend/tests/test_errors.py` (8; a probe router exercises each
+path; the DRAFT test fails on the old code with 500 and passes now —
+checked by temporarily restoring the old lines). Full `pytest` **261
+passed, 1 skipped**. Container smoke over real HTTP: 404 / 401 / 422 all
+return the problem body with `content-type: application/json` and
+`x-request-id`; an inbound `X-Request-ID: smoke-42` is echoed in header and
+body. `internal.py` touched only at the two narrowed excepts (routes and
+payloads unchanged).
+
+## 14. H2-A2 — verify record (2026-09-21)
+
+Extracted verbatim (docstrings and the dated rationale comments moved with
+the code): `services/sessions/finalization.py` (`ensure_evaluation_placeholder`,
+`delete_livekit_room`, `stop_recording_egress`, `finalize_live_session`,
+`disconnect_auto_finalize_sweep_loop`), `services/evaluations/upsert.py`
+(`resolve_criteria_for_job`, `upsert_evaluation`), `services/sessions/
+room_token.py` (`assert_cv_gate_satisfied`, `issue_candidate_room_token`,
+`start_recording_egress`), `services/results/candidate_result.py`
+(`presign_recording_url`, `INTEGRITY_EVENT_TYPES`, `get_integrity_events`,
+`get_live_transcript`, `get_live_question_records_and_submission`,
+`build_candidate_result`), `services/publish_rules.py`
+(`assert_sections_publishable` / `assert_definition_publishable` — the two
+verbatim copies in `publish_job` and `update_job_status` are now one;
+messages unchanged). `internal.py` re-imports the moved helpers under their
+old private names so its routes are textually unchanged (frozen file,
+sub-phase OK given 2026-09-21); `interviews.py` and `main.py` import from
+the services; `admin.py`'s test-drive uses `issue_candidate_room_token`
+instead of calling the `/livekit/token` route function with a synthetic
+request; `regenerate_evaluation` returns `build_candidate_result(...)`
+instead of calling the result route. No router imports another router;
+no in-function service imports remain (both enforced by a new AST test).
+`admin.py` 1647 → 1317 lines, `internal.py` 841 → 554, `livekit.py` 178 →
+53. `load_session_for_agent` deliberately stays in `internal.py`.
+
+Two things the extraction surfaced:
+1. **Real H1-B regression, now fixed.** `GroqLLMProvider` passed
+   `GROQ_API_BASE_URL=https://api.groq.com/openai/v1` to the SDK, which
+   appends `/openai/v1` itself → every real backend Groq call since H1-B
+   404'd (`.../openai/v1/openai/v1/chat/completions`). The H1-B unit tests
+   use fakes, so it only showed when the legacy generation tests hit the
+   network (see 2). Setting default is now the origin
+   (`https://api.groq.com`); the provider normalises a `/openai/v1`
+   suffix; tests for both; a live completion through the provider
+   returned `{"ok":true}`.
+2. **Patch-target late binding.** `tests/legacy/test_phase4.py`/`9b.py` patch
+   `backend.services.question_generator.generate_questions`; the old
+   in-function imports resolved that name at call time, a top-level `from
+   … import generate_questions` would not. `admin.py` now calls the three
+   generators through their modules (`question_generator.generate_questions(…)`),
+   preserving the late binding — no legacy test edited.
+3. `backend/tests/test_session_cv_gate.py:68` patch target updated to the
+   moved `backend.services.sessions.room_token.start_recording_egress`
+   (same category as the H1-B test edits; one line).
+
+Tests: `backend/tests/test_services_extraction.py` (5: publish-rule
+messages, router-coupling AST check, finalization idempotency + placeholder
+never overwrites a real evaluation on the test DB, room-token mint +
+single egress schedule, unconfigured-LiveKit refusal); `test_providers.py`
++4 base-url cases; `test_settings.py` default updated. Full `pytest` **270
+passed, 1 skipped**; pyflakes clean on every touched file; backend
+container rebuilt, `/health` connected, `/admin/ping` 401, no errors in
+the log.
+
+## 15. H2-B — verify record (2026-09-22)
+
+Scope decisions (owner, 2026-09-22): the DB-backed job queue (S9) moves to
+its own sub-phase **H2-F** after H2-E (it changes four admin endpoints to
+job-id + polling and touches admin pages carrying staged responsive edits);
+H2-B has **no API contract change**. U3: read-only check on the live
+`users_roles` (260 rows, 0 duplicate `user_id`) → unique index safe. U5
+recorded (above). `/health` became liveness-only, `/ready` added.
+
+Changed: `db/session.py` — `pool_size/max_overflow/pool_recycle/
+pool_timeout` from settings, `pool_pre_ping`, **fail closed** (the
+`engine=None` boot path is gone). Sync I/O off the loop: JWKS lookup
+(`security.py`, `to_thread`), PDF parse (`ResumeService.extract_text_async`),
+boto3 put/delete (S3 adapter). Provider resilience: LiveKit API
+`aiohttp.ClientTimeout` (`LIVEKIT_API_TIMEOUT_SECONDS`), Supabase Storage
+bounded retry on transport errors only (`STORAGE_RETRY_ATTEMPTS`), boto3
+connect/read timeouts + standard-mode retries (`S3_*`). Migration
+**`c4d1e8f2a9b7`** (additive): 12 FK/filter indexes + `uq_users_roles_user_id`.
+`main.py`: `lifespan` replaces `on_event`; `/health` (no DB) and `/ready`
+(200/503); shutdown drains tracked background tasks then disposes the
+engine. New `core/background.py` (`spawn/pending/drain`); egress start is
+spawned through it. `finalization.py`: sweep iteration under
+`pg_try_advisory_xact_lock(SWEEP_LOCK_KEY)`; `finalize_live_session`
+re-selects the row `FOR UPDATE` and re-checks the terminal status;
+`ensure_evaluation_placeholder` inserts inside a savepoint and treats the
+unique-violation as "already written". `resume_ingest`: row first
+(deterministic key via `ResumeService.storage_path_for`), upload second,
+`FAILED` on upload failure — a first draft read `profile.id` after the
+commit (expired instance, `MissingGreenlet`); caught by the cv-gate test.
+Pagination: `limit`/`offset` on `GET /admin/jobs` and the invitations
+list, defaults = unbounded. Dockerfile: `docker-entrypoint.sh`, migrations
+only with `RUN_MIGRATIONS_ON_START=true` (`$PORT` still honoured); compose
+healthcheck → `/ready`. `backend/.env.example` documents the 10 new keys.
+`deps.py` auto-link commits deliberately left for H5.
+
+Tests: `backend/tests/test_resilience.py` (8): liveness vs readiness incl.
+503 with a broken engine; sweep skips while a second real connection holds
+the advisory lock and runs once it is released; **two concurrent finalizers
+→ exactly one finalizes, one placeholder, one egress stop**; background
+registry; storage retry then give-up; ingest row-before-upload + FAILED on
+upload error; pagination defaults + `limit=0` → 422. Full `pytest` **278
+passed, 1 skipped**; the migration applies on the from-scratch test DB
+(head `c4d1e8f2a9b7`, 13 new indexes). Container: rebuilt backend boots
+through the entrypoint without running alembic, `/health` ok, `/ready`
+200, compose healthcheck healthy.
+
+**Live DB state:** `migrate` ran yesterday's image (compose tags images per
+service; only `backend` was rebuilt) → live head still `b7e2c4d9a1f3`, the
+index migration is **not** applied there. The code does not depend on the
+indexes; applying it (`docker compose --profile app build migrate && docker
+compose --profile app up migrate`, or `alembic upgrade head`) is the
+owner's call — brief locks on small tables plus the unique index.
+
+Left over: `--scale backend=2` fails on the fixed `8001:8001` mapping —
+ports belong on a proxy in the prod compose (H6).
+
+## 16. H2-C — verify record (2026-09-22) — frozen-file sub-phase (S12)
+
+Owner signed off hunks C1–C7 on 2026-09-22 after a line-level examination;
+the diff to `agent/agent/interview/controller.py` is 55 lines in a
+2,600-line file, applied by an assert-every-hunk script. Wire contract
+(`/internal/*`, `ui_state`, data-channel commands, `StructuredAction`)
+unchanged; `main.py`, `voice_adapter.py`, `persistence.py` untouched.
+
+- **C1** `IM_READY` in `TECHNICAL_INTRO`: `current` (never bound in
+  `process_ui_command`) → `self.context.current_phase`; the `NameError`
+  is gone and the transition to `TECHNICAL` happens.
+- **C2–C6** nine spoken English lines (already-completed, time-up wrap,
+  LLM-failure fallback, IM_READY ack, five forced-transition lines) now
+  come from `SYSTEM_MESSAGES[language]` via a 2-line `_msg()` helper; 14
+  new keys in `llm/prompts.py`, `en` and `ar` (Saudi conversational
+  register matching the existing entries; parity 32/32 asserted).
+- **C7** `process_candidate_input`: a spoken control in
+  `CONFIRM_BEFORE_EXECUTING` (END_INTERVIEW, SKIP_QUESTION,
+  CHANGE_QUESTION, MOVE_TO_TECHNICAL, SKIP_SECTION) is held in
+  `_pending_voice_control` and the controller returns an `ASK` with
+  `confirm_<intent>`; the next utterance executes it only if
+  `voice_intents.is_affirmative()` (short, contains an affirmative, no
+  negation; en + ar tables), otherwise the pending intent is dropped and
+  the utterance is processed as ordinary speech. Hint / repeat /
+  clarification stay immediate; UI buttons unaffected; pending intent is
+  in-memory only. New non-frozen module `interview/voice_intents.py`.
+
+Tests: `agent/agent/tests/test_controller_h2c.py` (22): IM_READY no longer
+raises (en + ar ack), key parity, completed/LLM-failure/forced lines in
+Arabic contain no Latin letters, "i'm done" → ASK with no state change →
+"yes" ends; "no wait…" cancels and goes to the LLM; a later bare "yes" is
+not a stale confirmation; Arabic end request confirmed in Arabic; skip
+confirmation stays out of LLM history; repeat immediate; 12
+`is_affirmative` cases incl. the too-long-utterance rule. The one
+pre-existing keyword-dependent test
+(`test_skip_acknowledgement_is_not_added_to_llm_history`) passes
+**unmodified**. Full `pytest` **300 passed, 1 skipped**; agent image
+rebuilt and imports the new module. Behaviour delta (by decision): one
+extra spoken confirmation turn for irreversible voice commands.
+
+## 17. H2-D — verify record (2026-09-22)
+
+**D1 lifecycle.** New `agent/agent/runtime/bootstrap.py` (`build_context`,
+the 140-line context-build block moved verbatim; helpers stay in
+`agent.main` for the existing tests and are imported lazily) and
+`runtime/teardown.py` (`finalize_session`, the old teardown moved verbatim;
+`mark_disconnected_after_failure`, new). `entrypoint` now: validate →
+connect → load → `try: _run_session(...) except: mark DISCONNECTED (unless
+the lease was lost) finally: cancel lease task, `adapter.aclose()`,
+`persistence.close()`, `ctx.shutdown(reason)`. A `_SessionSlots` object
+carries what the failure path needs from wherever the session stopped.
+**No path leaves a session `IN_PROGRESS`**; the job process exits after
+`COMPLETED` instead of lingering until the room closes.
+**D2** `GroqProvider(timeout_seconds, max_retries)` from settings (30 s / 1;
+the SDK default was 60 s × 2) — a stalled model becomes the controller's
+localized fallback and the turn lock is released. **D3** `APIPersistence`:
+one `_request` transport (timeout + 0.5/1/2 s retries on transport errors
+and 5xx, never 4xx) and an in-memory **outbox** for messages/events/
+checkpoints that still fail, flushed in order before every write, on each
+lease tick and at close (idempotent: backend unique constraints). `renew_lease`
+returns `LeaseState.RENEWED|LOST|ERROR`; the ABC gained default
+`renew_lease`/`close` so any persistence works in the runtime. **D4** the
+lease loop: `LOST` (409) or `LEASE_ERROR_SHUTDOWN_AFTER` consecutive errors →
+leave the room without writing `DISCONNECTED` (another worker owns it).
+**D5** STT: only `candidate-*` participants are transcribed, one at a time;
+both loops run under a guard that rebuilds the pipeline up to
+`STT_RESTART_MAX` times; `aclose()` cancels tasks and closes the stream.
+**D6** `ui_command`: sender must be `candidate-*`, ≤ `UI_COMMAND_MAX_BYTES`,
+JSON object with `command` matching `^[A-Z_]{1,64}$`; handlers tracked and
+cancelled on close. **D7** `metrics_collected` re-attached after a TTS
+rebuild. **D8** key-rotation state written via temp file + `os.replace`.
+Settings: 7 new (documented in `agent/.env.example`). `controller.py`,
+the wire contract and `/internal/*` untouched.
+
+Tests (`agent/agent/tests/`): `test_runtime.py` (7) — failure after
+`IN_PROGRESS` → event + checkpoint + `DISCONNECTED`, never raises even with
+persistence broken; completed / unfinished finalization; **the real
+`entrypoint` with fakes**: crash → `DISCONNECTED` + `shutdown("agent_failure")`,
+lease lost → no `DISCONNECTED` write + `aclose` + `shutdown("lease_lost")`,
+room disconnect after completion → completion + evaluation +
+`shutdown("completed")`. `test_persistence_transport.py` (8) — retries then
+success, 4xx unretried, outbox park/replay in order, ordering kept when the
+replay fails, evaluation never parked, lease tri-state + flush, close flushes,
+load status mapping. `test_adapter_guards.py` (7) — candidate-only audio,
+STT crash restart then give-up, cancellation not a crash, `aclose`, sender /
+shape / size validation, valid command dispatched and tracked. Full
+`pytest` **322 passed, 1 skipped** (165 pre-existing agent tests unchanged
+and green); agent image rebuilt and imports the runtime modules.
+
+## 18. H2-E — verify record (2026-09-22)
+
+`lib/api.ts`: `ApiError { status, code?, detail, requestId? }` thrown for
+every failure — `message` is still the `detail` string (every
+`err.message` consumer unchanged); network failure → `status 0, code
+"network"`, timeout → `code "timeout"`; `AbortController` with
+`config.apiTimeoutMs` (`VITE_API_TIMEOUT_MS`, default 30 000) and a
+per-call `timeoutMs` (CV upload: 120 000); the caller's own `signal` still
+works; `X-Request-ID` read from body or header. Pages: `JobDetailPage` →
+`err.status === 404`, `SectionsEditor` → `err.status === 409` (no more
+message string-matching). New `components/ErrorBoundary.tsx` (i18n en+ar,
+reload button, collapsible details) at the router root and, with
+candidate copy ("your progress is saved"), around `/interviews/:id`.
+`RoleContext`: 401/403 → candidate; anything else → `unknown` + `roleError`
++ `retryRoleCheck`; `AdminLayout` shows "couldn't verify your access —
+Retry" instead of `signOut()` + redirect. Test-drive
+(`CandidateAccess`): `/interviews/:id`, `setGuestToken()` + `navigate()`
+in the same tab (sessionStorage is per tab; `api.ts` prefers the guest
+token minted for that session id) — the old code opened a non-existent
+route and wrote a `localStorage` key nothing read (verified live:
+`/interview/abc` → catch-all → `/login`). `alert()`/`confirm()` gone:
+`JobCreatePage` hands a one-time notice to `JobDetailPage` via router
+state; `JobsListPage` inline error; `QuestionEditor`/`SectionsEditor` use
+`ConfirmDeleteModal`. `types/realtime.ts`: `source` gains
+`HR_APPROVED | BACKGROUND`; `AllowedControl` gains the four spoken-only
+controls; new `UiCommand`; `ControlIntentPayload` now `{ command, payload? }`
+(the real wire shape). DEV-only `/dev/boom` route to exercise the boundary.
+
+Tests: `lib/api.errors.test.ts` (6), `components/ErrorBoundary.test.tsx`
+(3, jsdom), `context/RoleContext.test.tsx` (4, jsdom) — `jsdom` +
+`@testing-library/react` added as devDependencies. vitest **22/22**;
+`tsc -b` 0 errors; oxlint: only pre-existing warnings; `vite build` OK
+(old test-drive code absent from the bundle). Live: `/dev/boom` renders
+the boundary. Not checked live (needs an admin login): the retry screen
+and the test-drive flow — covered by the RoleContext test and left to the
+owner's pass.
+
+## 19. H3 — verify record (2026-09-22)
+
+**Logging.** Backend `core/logging.py`: `request_id_var` / `session_id_var`
+contextvars, `ContextFilter` stamps `service`/`env`/`request_id`/`session_id`
+on every record, `JsonFormatter` (ts, level, logger, message, service, env,
+request_id, session_id, extras, exception) and `TextFormatter` (readable
+line + ` request_id=… session_id=…`), `configure_logging()` replaces
+`basicConfig` and routes the uvicorn loggers through the same handler.
+`RequestIdMiddleware` binds the id for the request's lifetime; a router-level
+dependency (`deps.bind_session_id_from_path`) binds `session_id` for every
+`/api/v1/interviews/*` and `/api/v1/internal/interviews/*` route before the
+handler (and before auth fails). Agent `logging_setup.py`: the SDK's root
+handler is reused (exactly one plain `StreamHandler` kept; pytest's capture
+handlers are subclasses and untouched), JSON formatter with the same shape
+plus `agent_id`/`job_id`, text mode wraps the SDK's coloured formatter and
+appends the context; `bind_session()` from `entrypoint` (job id) and after
+`agent_id` creation; the old `basicConfig` block is gone (no more doubled
+lines). Settings: backend `LOG_FORMAT` (json|text|auto), `LOG_LEVEL`,
+`METRICS_ENABLED`; agent `LOG_FORMAT`, `LOG_LEVEL`, `ENVIRONMENT`
+(`log_format_for(devmode)`); compose sets `LOG_FORMAT=json` for both.
+
+**Correlation.** `APIPersistence._request()` sends
+`X-Request-ID: <session_id>.<agent_id>.<n>` on every backend call. The
+`[LLM-METRICS]` line carries `extra={event, llm_model, duration_ms,
+prompt_tokens, completion_tokens}` which the JSON formatter unpacks.
+
+**Metrics.** `core/metrics.py` (`prometheus_client` added to the lock):
+`http_requests_total{method,route,status}`, `http_request_duration_seconds`,
+`provider_call_duration_seconds{provider,op}`, `provider_call_failures_total`,
+`sweep_runs_total{outcome}`, `sweep_finalized_total`,
+`ready_check_failures_total{check}`, `background_tasks_pending`.
+`MetricsMiddleware` labels by path **template**; the map now recurses into
+`_IncludedRouter` entries (FastAPI 0.141 lists `include_router` routers that
+way in `app.routes`) with the include prefix — the first container check
+had labelled the agent's `renew-lease` 403 `<unmatched>`. `/metrics`
+(unauthenticated, `include_in_schema=False`) — exposure rule documented.
+Adapters decorated: groq `complete_json`; s3/supabase `put`/`delete`;
+livekit `start_room_recording`/`stop_recording`/`delete_room`.
+
+**CLI.** `backend/backend/cli.py`: `make-admin`, `finalize-stuck-sessions
+[--dry-run]`, `backfill-evaluations [--dry-run]`, `create-demo-admin`,
+`seed-demo-data`, using the app's engine and services (the backfill's
+private copy of `resolve_criteria_for_job` is gone). `scripts/*.py` are
+shims; `make cli ARGS=…` / `dev.ps1 cli -CliArgs …` set `PYTHONPATH=backend`.
+
+**Docs.** `docs/handover/README.md`, `observability.md`, `runbooks/`
+(start-stop-upgrade, apply-migration, rotate-secret, stuck-session,
+provider-outage, restore-from-backup, follow-one-interview,
+add-provider-adapter); `docs/technical/testing-strategy.md` rewritten to
+what actually runs; hardening table added to `docs/PROJECT_STATUS.md`;
+`.env.example` files extended.
+
+**Tests.** `backend/tests/test_observability.py` (10): JSON shape, context
+vars, request + session binding through a probe route, `/metrics` by
+template, **included-router template** (`…/{session_id}/renew-lease`),
+`<unmatched>` cardinality, provider decorator, CLI dry runs on the test DB,
+parser. `agent/agent/tests/test_observability.py` (4): single handler, text
+suffix, JSON context + SDK `extra` unpacking, `X-Request-ID` per call.
+`test_runtime.py` fake settings extended. Full `pytest` **335 passed,
+1 skipped**; vitest 22/22.
+
+**Live (compose).** Backend image rebuilt; `POST …/internal/interviews/<sid>/renew-lease`
+with a bad secret and `X-Request-ID: <sid>.runbook.1` → the JSON access line
+carries `request_id` and `session_id`; `/metrics` shows
+`http_requests_total{method="POST",route="/api/v1/internal/interviews/{session_id}/renew-lease",status="403"}`
+and `route="/api/v1/admin/jobs/{job_id}"` for an admin route. Earlier in the
+same phase the real agent container's `renew_lease` produced the same
+correlated pair (`<sid>.agent-demo.1`). Runbooks executed once each:
+`alembic current` = `alembic heads` = `c4d1e8f2a9b7`; `finalize-stuck-sessions
+--dry-run` inside the backend container (0 stuck); `provider_call_*` /
+`sweep_runs_total{outcome="ran"}` scraped; `pg_dump -Fc` → `pg_restore` into
+a fresh DB (19 tables, head `c4d1e8f2a9b7`) on `postgres-test`;
+`up -d --force-recreate backend` re-read the env and came back ready; the
+log-merge one-liner from `follow-one-interview.md` printed the correlated
+line. **Side effect to know:** starting the stack with the rebuilt `migrate`
+image applied `b7e2c4d9a1f3 → c4d1e8f2a9b7` (H2-B indexes, additive) to the
+live Supabase database — the item §15 left owed is therefore done. Not
+checked: a full spoken interview (still owed from H2-C/D).
+
+## 20. H2-F — verify record (2026-09-23)
+
+Owner decisions (2026-09-23): entity named **`Task`** / table `tasks`
+(`Job` is the hiring entity, AGENTS.md §1); the four endpoints **converted
+in place** (with explicit sign-off to edit the legacy assertions that
+pinned the synchronous contract); **CV extraction out of scope** (still
+inline in the candidate's upload request); finished task rows **kept**
+(no retention sweep). Two smaller calls accepted: claim with `FOR UPDATE
+SKIP LOCKED` rather than S9's single advisory lock (same exclusivity per
+row, but workers and replicas run in parallel), and **no automatic
+requeue** of a failed task.
+
+The defect this closes, stated concretely: `config.ts` gives every admin
+call a 30s abort (`VITE_API_TIMEOUT_MS`) while the Groq adapter is built
+with `timeout=30s, max_retries=2` -- up to ~90s server-side. Inline, a
+slow generation aborted in the browser while the backend carried on and
+**committed**: questions appeared that the admin had been told failed, an
+evaluation was upserted behind a failure message, and the invitation
+draft -- persisted nowhere else -- was lost outright.
+
+New: `models/task.py` (`tasks`: kind, status `QUEUED|RUNNING|SUCCEEDED|
+FAILED`, payload/result JSONB, error + error_code, attempts,
+requested_by, created/started/finished, index on `(status, created_at)`),
+registered in `db/base.py`; migration **`a3f7d05c1e94`** (additive, one
+table). `providers/queue/{base,postgres}.py` -- the `TaskQueue` port S9
+asked for, returning `TaskRecord`/`QueueStats` dataclasses rather than ORM
+objects so a non-SQLAlchemy adapter can satisfy it -- plus
+`factory.get_task_queue()` and `TASK_QUEUE_PROVIDER`.
+`services/tasks/{handlers,registry,worker}.py`: the four endpoint bodies
+moved verbatim into handlers (generators still called *through* their
+module, so the legacy `patch("backend.services.question_generator.
+generate_questions")` still intercepts), a kind->handler registry, and
+`TASK_WORKER_CONCURRENCY` claim loops started from the lifespan and
+cancelled on shutdown. Settings: 5 new, documented in `.env.example`.
+Metrics: `task_queue_depth{status}`, `task_queue_oldest_age_seconds`,
+`tasks_total{kind,outcome}`, `task_duration_seconds{kind}` -- the
+"job-queue depth/age" H3 listed and could not yet build.
+
+API: the four POSTs answer **202** with `{task_id, kind, status}`; their
+404/409 validation stays in the endpoint so a bad request still fails
+immediately rather than becoming a failed task. New
+`GET /admin/tasks/{task_id}` (admin-only). Frontend: new `lib/tasks.ts`
+`runTask(start, poll)` -- 1.5s polls, 3-minute ceiling, a FAILED task
+rethrown as the `ApiError` the pages already display; `adminClient`
+absorbs the change, so `QuestionEditor`, `InvitationComposer` and
+`CandidateResultPage` keep their existing call shapes (the composer reads
+the draft from `task.result`, the result page re-reads
+`GET .../result`). A handler failure always carries a code now:
+`NotFound`/`Conflict` have none of their own, so the worker falls back to
+`task_failed` (found by the first container check, which recorded a bare
+`None`).
+
+Interrupted work: a process that dies mid-task leaves the row `RUNNING`;
+worker 0 fails rows past `TASK_STALE_MINUTES` with `task_interrupted` so
+a poller is never left waiting. That is reporting, not a retry.
+
+Tests: `backend/tests/test_tasks.py` (11) -- 202 with the provider
+**never awaited** during the request, a missing section still 404 at
+request time, the worker running the queued generation and the rows
+landing, **six concurrent claims over four rows: each claimed exactly
+once**, unknown kind fails the task not the worker, handler failure
+recorded with its own message, a row deleted between queueing and running,
+stale-RUNNING reaped, poll 404 + admin-only, depth/age reported.
+`frontend/src/lib/tasks.test.ts` (5). Legacy edits under the owner's §7
+sign-off: `test_phase4.py` (two assertions, now 202 -> `run_pending_once()`
+-> read the questions back through the job detail, via a new
+`_questions_of` helper), `test_phase9b.py` (two, reading the rows from the
+database), and `verify_9a.py` (the manual script drains the queue and
+prints the task result). Full `pytest` **346 passed, 1 skipped**; vitest
+**27/27**; `tsc -b` clean; pyflakes clean on every touched file (the one
+warning in `admin.py` is pre-existing and untouched).
+
+Live (compose): backend + migrate rebuilt, migration applied
+(`c4d1e8f2a9b7 -> a3f7d05c1e94`) to the shared database, `/ready` 200,
+`Task worker 0 started` in the JSON log, `task_queue_*` gauges published
+on `/metrics`. Two real tasks enqueued inside the running container and
+picked up by the worker within a second -- `regenerate_evaluation` and
+`generate_invitation_message` against ids that do not exist -- each
+recorded FAILED with the handler's own message and `task_failed`,
+counted in `tasks_total{outcome="failed"}` and `task_duration_seconds`;
+both check rows deleted afterwards. `runbooks/stuck-task.md`'s inspect
+command is the one that produced that output. **Not checked live:** a
+successful generation through the browser (needs an admin login) --
+owed alongside the H2-C/D/E items.
+
+## 21. H4-A — verify record (2026-09-23)
+
+Owner decisions (2026-09-23): **do not push yet**, so the pipeline ships
+unrun on GitHub; **split H4** into A (pipeline + tooling) and B (test
+gaps); ruff on a **minimal rule set**, no reformat; the frontend lint gate
+fails on **errors**, `exhaustive-deps` stays a warning.
+
+Two findings from the examination changed the shape of the work. First,
+`tsc --strict` already passes with **0 errors** -- the plan's incremental
+per-folder migration with an "any count tracked to zero" was unnecessary,
+because the 75 `any`s are explicit and `noImplicitAny` never fires. Strict
+is now on, one line. Second, the suite **cannot start without a `.env`**
+(`Settings` has four fields with no default), which is why the CI jobs
+carry an explicit placeholder env block.
+
+New: `.github/workflows/ci.yml` -- three jobs, no secrets. *python*: ruff,
+then the full pytest run with coverage against a `services: postgres`
+(conftest rebuilds the schema from the Alembic chain, so a broken
+migration fails before any test), coverage summary into the job summary
+and `coverage.xml` as an artifact. *frontend*: typecheck, lint, vitest,
+`build:only`. *images*: `docker build` for backend and agent, then
+`alembic upgrade head -> downgrade -1 -> upgrade head` on the built image
+against a throwaway Postgres. `.pre-commit-config.yaml` -- ruff (no
+autofix: a hook that edits while you commit hides what changed),
+end-of-file/trailing-whitespace, merge-conflict, YAML/JSON validity,
+large files, `detect-private-key`, a local hook that refuses any `.env`,
+and oxlint on `frontend/src`. `ruff.toml` -- `E4`, `E9`, `F` only;
+excludes the frozen `controller.py` and the legacy suites (a linter may
+not demand edits to files AGENTS.md §2/§7 forbid touching), with
+`per-file-ignores` for `db/base.py`'s side-effect imports. `make lint-py`,
+`make hooks`, `make ci` and the same three in `scripts/dev.ps1`.
+`requirements-dev.txt` gains ruff, pre-commit, pytest-cov (pinned);
+coverage output git-ignored.
+
+Changed: `tsconfig.app.json` `"strict": true`; `"build"` now runs
+typecheck + lint first (`build:only` is the bare bundler step CI uses,
+already gated by the two before it); `npm run lint` scoped to `src` --
+unscoped, oxlint walks `public/mediapipe/**` (vendored WASM glue) and
+fails the build on it. New `backend/tests/test_migrations.py` (3): the
+last revision downgrades and re-applies, every model has a table, no
+model column is missing from the migrated schema.
+
+Ruff's first run found 82 issues; 40 were in application code and are
+fixed (39 unused imports, a duplicated `ConfigDict`/`BaseModel` import
+mid-file in `schemas/persistence.py`, and two dead locals -- one of them
+the `job = await _get_job_or_404(...)` in the criteria endpoint that had
+been flagged as out of scope in H2-F and is now in scope precisely
+because the linter is the thing that flags it).
+
+Two real defects the new gates found, both fixed:
+- **Duplicate keys in the i18n bundles.** `check-json` rejected `en.json`
+  and `ar.json`: `showTranscript`/`hideTranscript` were defined twice
+  (different values -- the later "Show transcript" is what rendered) and
+  `backgroundTitle` twice (identical). The earlier copies were removed and
+  each file re-parsed and compared to its pre-edit parse, so every rendered
+  string is byte-identical to before.
+- **A flaky frontend test.** `RoleContext.test.tsx`'s network-failure case
+  failed about **one run in two**. Not timing: the mocked `useAuth`
+  returned a fresh object literal per render, so `RoleProvider`'s effect
+  (keyed on `user`) re-ran every render and consumed the
+  `mockRejectedValueOnce`, leaving the probe showing whatever the *next*
+  call produced. The mock now returns a stable value and `ping` is reset
+  between tests; 10/10 runs of the file and 5/5 of the whole suite green.
+  The real app's `user` comes from context state, so the loop was the
+  mock's, not the component's.
+
+Scope discipline: `pre-commit run --all-files` also normalised trailing
+whitespace and missing final newlines across 45 otherwise-untouched files.
+That is a drive-by change (AGENTS.md §6), so it was **reverted**; the hooks
+will normalise each file as it is next edited. A one-shot normalisation
+commit is available on request.
+
+Verified locally, command by command, because CI cannot run yet: the
+workflow parses (3 jobs, 19 steps); `ruff check .` clean; `pytest -q
+--cov=...` **349 passed, 1 skipped**, line rate **74.6%** (5667/7597) and
+the summary snippet from the workflow renders it; `npm run typecheck`,
+`npm run lint`, `npm test` (**27/27**, five consecutive runs) and
+`npm run build` (typecheck + lint + bundle) all green; `docker build`
+produced both images; the containerised `upgrade head -> downgrade -1 ->
+upgrade head` ran against a throwaway Postgres. That last one **failed on
+the first attempt** -- `alembic/env.py` imports `Settings`, so the step
+died at import for want of the Supabase placeholders, not at the database.
+The workflow now carries a `MIGRATE_ENV` block; the fix came from running
+the job's own commands rather than from reading them.
+
+**Not verified: the pipeline has never executed on GitHub.** The plan's
+verify step for H4 -- green on `main`, red on a PR that deliberately
+breaks a rule -- is owed and cannot be met until the branch is pushed
+(local `master` is 29+ commits ahead of `origin/main`, which last moved on
+2026-09-14). Nothing about the workflow is proven by a local run except
+that every command it issues succeeds here.
+
+## 22. H4-B — verify record (2026-09-23)
+
+The remaining test gaps from H4, plus the dead-code fix the examination
+turned up. No production behaviour changed.
+
+**Auth matrix** (`backend/tests/test_auth_matrix.py`, 7 tests over all 55
+API routes). Built from the route table, not a hand-written list, so a
+route shipped without an auth dependency fails the suite rather than
+waiting to be noticed: the walker classifies each route by its dependency
+(`get_current_admin` / `get_current_candidate_profile_id` /
+`verify_agent_secret` / none) exactly as `core/metrics.py` has to walk
+`_IncludedRouter`. Asserted: **30 admin and 15 candidate routes answer 401
+with no credentials**; a signed-in identity with no `users_roles` row gets
+**403 on all 30 admin routes** (401 vs 403 is the distinction `RoleContext`
+depends on -- a 401 here would sign a real admin out on a blip); internal
+routes reject a missing header (422, and the error must name the header)
+and a wrong secret (403) and get past auth with the right one; the three
+deliberately public routes never start demanding credentials. Plus a real
+two-candidate fixture -- two guest JWTs minted through the public-apply
+flow -- proving **candidate B cannot reach candidate A's session** on any
+of the six ownership-checked routes or the room token, while A still can.
+
+Two behaviours the probe corrected before the test was written, both
+sound and now documented in the test: `terminate` and `/livekit/token`
+scope their SELECT by `candidate_profile_id`, so a stranger gets **404**
+rather than 403 -- a refusal that does not confirm the session exists;
+and a missing `X-Agent-Secret` is a **422**, not 401, because the header
+is declared required. Changing the latter would touch `/internal/*`, a
+frozen contract, so it is pinned as current behaviour, not corrected.
+
+**Agent** (`agent/agent/tests/`, 34 new tests).
+`test_bootstrap_resume.py` (9) runs the **real `build_context`** -- every
+previous runtime test replaced it with a fake, leaving the ~110 lines that
+decide what a reconnecting candidate comes back to untested. Covered: a
+persisted greeting (not the status) is what makes it a resume; phase,
+counters and the clock are restored rather than reset; the message
+sequence takes the **higher** of checkpoint and messages, because
+checkpoints lag and re-using a sequence number would collide on every
+later save; the ordered pointer resumes mid-section against a question
+list always rebuilt fresh from `/load`; background questions are restored
+**before** the pointer is applied, since the pointer counts them; history,
+question records and evaluation signals; an unreadable background
+snapshot degrades instead of killing the reconnect; a legacy session with
+no `sections` still builds. `test_tts_cache.py` (8): every field that
+changes the audio changes the key (a collision would play one voice's
+audio for another), round trip, no temp file left, empty audio is never
+cached, and read/write failures degrade to a miss instead of raising.
+`test_key_rotator.py` (12): namespace isolation, rotate-to-exhaustion
+without wrapping, persistence across processes, **a new UTC day starts
+again at key 1** (the daily quota is the whole point), a corrupt or stale
+state file starts fresh, atomic write. `test_llm_timeout.py` (5): the
+configured timeout and retry budget reach the SDK client (its own
+defaults are 60s x 2 -- minutes of a wedged turn), the provider refuses to
+start without a key or model, the turn lock is released when a turn raises
+**and** when it is cancelled, and the frozen controller turns an LLM
+failure into its spoken fallback rather than silence.
+
+**Frontend** `ResponsiveTable.test.tsx` (7): both renderings are in the
+DOM at once, so jsdom asserts each -- the table with every column, one
+card per row titled by the `primary` column, `hideOnCard` columns absent,
+**actions last in the card** (R3's finding was that the action column was
+what scrolled off-screen), the empty state, and the caption naming both.
+
+**Dead code fixed (owner asked for it explicitly).**
+`getInterviewResult` in `services/api/interviews.ts` called
+`GET /api/v1/interviews/{id}/result` with a **guest token**, but that
+route requires `get_current_admin` -- it would have returned 403. It had
+no callers, so nothing was broken; the function and the
+`InterviewResultResponse` type it was the sole user of are removed, a
+stale reference in `guestSession.ts`'s docstring updated, and the route
+itself now carries a comment saying the admin-only auth is deliberate and
+must not be loosened to match a caller that no longer exists.
+
+**Not fixed, reported:** `build_context` guards
+`restore_background_questions` against an unreadable snapshot but calls
+`Question(**current_question_snapshot)` unguarded -- a malformed
+`current_question_snapshot` raises and fails the reconnect. Found while
+writing the fixtures (an incomplete snapshot raised a pydantic
+`ValidationError` rather than degrading). Left alone under scope
+discipline: this phase writes tests, and changing it is a behaviour
+change worth its own approval.
+
+Full `pytest` **390 passed, 1 skipped** (from 349), vitest **34/34** (from
+27, three consecutive runs), `ruff check .` clean, `npm run build`
+(typecheck + lint + bundle) clean.
+
+## 23. H5-A — verify record (2026-09-23)
+
+Scope: the identity half of H5. Rate limiting, egress idempotency, the
+`ui_command` allow-list, container hardening, dependency audits, the audit
+log and `security.md` are H5-B and H5-C.
+
+**Token verification** (`core/security.py`, rewritten). The two token
+kinds are now told apart **before** either is verified, by the one
+structural difference: a Supabase token is asymmetric and carries a `kid`
+naming a key in the project's JWKS; a guest token is minted here, HS256,
+and never has one. Each token gets exactly one path -- the old code tried
+Supabase, caught `except Exception`, and re-decoded the same string with
+the guest key, so a token was accepted by whichever path happened to
+succeed. Both paths pin algorithms and check `iss`; Supabase also checks
+`aud`, and both now require `exp` and `sub` to be present at all.
+
+The other half of that old `except Exception` was an operational bug: a
+JWKS outage took the same branch as a forged token, so an incident on our
+side was reported to every admin and candidate as "invalid authentication
+credentials". Now an **unreachable** key server is a 503 with code
+`jwks_unavailable`, while a **reachable** one with no matching key stays
+401 -- a distinction that only appeared because a test asked what an
+unknown `kid` should answer, and the first implementation answered 503 for
+both.
+
+Guest tokens now carry `iss: himma-guest`, verified **when present**, so
+the ones already in candidates' browsers keep working until they expire.
+
+**Identity linking** (`api/deps.py`). Resolving a Supabase identity to a
+profile with the same email hands over that profile's sessions, CV and
+evaluation, and it used to happen silently for any address. The first
+implementation required a verified address outright -- and the suite
+immediately failed `test_phase6b`'s three redemption tests, which was the
+finding that shaped the design: **personalized invitations depend on this
+link**. HR creates an invitation, which creates a profile for the invited
+address, and the candidate signs in to redeem it.
+
+So the rule follows the data rather than the address. A profile with **no
+sessions and no CV** is adopted as before (the invitation path, and the
+redemption route independently requires the JWT's email to equal the
+invitation's). A profile that **already holds interview work** is adopted
+only when the token proves the address was verified; otherwise 403 with a
+message saying what to do. Every outcome is logged with an `event` field.
+`IDENTITY_AUTOLINK` (`verified_only` default / `always` / `never`)
+overrides it: `always` is the pre-H5-A behaviour for a deployment that has
+confirmed its provider verifies addresses first. `email_verified` is read
+from the top level, `user_metadata` or `app_metadata`, and its **absence
+is treated as unproven, never as proven** -- which matters because which
+claim this project's Supabase emits could not be confirmed from the code
+(the read-only live check offered at examine time was not taken up; the
+setting exists precisely so the operator can decide without a code change).
+
+**`PATCH /profiles/me` no longer accepts `email`.** It was writable with
+no verification while `deps.py` linked identities by matching email -- the
+two together let an account claim an address it had never proved. Nothing
+is lost: the frontend has never called that route for any field.
+
+Tests: `backend/tests/test_token_verification.py` (18) with **real signed
+tokens** -- an EC key pair standing in for the JWKS -- covering accepted
+Supabase and guest tokens, an HS256 token wearing a `kid` (routed to the
+asymmetric path and rejected, not fallen back), an expired Supabase token
+rejected once on its own path, expired / wrong audience / wrong issuer /
+unknown key / foreign signing key / no expiry, guest tokens with the wrong
+key, the wrong `type`, a foreign issuer, one minted before H5-A (still
+valid), the `none` algorithm, garbage, a JWKS outage answering 503, and a
+JWKS outage **not** affecting guest tokens -- a candidate's interview must
+not end because the key server blinked. `backend/tests/test_identity_link.py`
+(8): the invitation path still adopts, a verified address adopts even with
+history, an unproven or explicitly unverified address is refused and the
+profile is left untouched, both policy overrides, a guest token links
+nothing, a new address still gets its own profile.
+
+Full `pytest` **416 passed, 1 skipped** (from 390), `ruff check .` clean.
+
+Live (compose): backend rebuilt and ready. No token, garbage and a
+wrongly-signed HS256 token → 401. A guest token minted inside the
+container carries `iss: himma-guest` and authenticates (404 from the probe
+route, whose profile this check never created — the auth verdict is what
+was under test). A guest token with a foreign issuer → 401. A token with
+an unknown `kid`, which goes through a **real JWKS round trip to
+Supabase** → 401, not 503, confirming the two failure modes are genuinely
+separated against the real key server. Not checked live: a real Supabase
+user token (needs a login, which is the owner's to do) — the signature,
+audience and issuer paths are covered by the EC-key tests instead.
+
+## 24. H5-B — verify record (2026-09-23)
+
+Three things that each let one careless or hostile caller cost more than
+one request should.
+
+**Rate limiting** (`core/ratelimit.py`, new). A token bucket per (scope,
+caller) in this process's memory -- no Redis, per S9's reasoning. Applied
+to `GET /apply/{token}` (120/min), `POST /apply/{token}/register`
+(20/min), `POST /invitations/{token}/redeem` (20/min) and
+`POST /livekit/token` (30/min), all configurable. Refusals are 429 through
+the existing RFC7807 handler with a `Retry-After` header -- `AppError`
+gained optional `headers` for it -- and counted in
+`rate_limit_rejections_total{scope}`.
+
+The design decision worth keeping: **authenticated routes are keyed by the
+token's subject, not the address**. Everyone at an exhibition booth, in an
+office or behind a corporate NAT shares one IP, and an address-keyed limit
+would throttle a room of legitimate candidates as though they were one
+attacker. Only the two genuinely anonymous routes fall back to the
+address, which is also why their defaults are generous: they exist to stop
+a script, not a queue of visitors. Idle buckets are evicted once they have
+been untouched for longer than their own window (at which point they have
+refilled to full, so forgetting them changes nothing) -- without that, a
+process running for days would keep a bucket per address ever seen.
+
+A defect this introduced and the suite caught immediately: the first
+version of the dependency declared `token_data: dict | None = None` on the
+anonymous variant, and a parameter that is not a `Depends()` is a **body
+field** to FastAPI. Every guarded route's own body silently became an
+embedded field, so valid registrations answered 422. The factory now
+builds two distinct signatures, and `test_rate_limit.py` keeps a
+regression test for exactly that.
+
+**Recording start is now claimed, not looked at.** `recording_egress_id`
+was doing double duty as "the egress we started" and "have we started
+one", making the guard check-then-act: two `/livekit/token` calls in
+flight together -- a reconnect, a resume, a double-clicked Start -- could
+each see NULL and each start an egress. Two recordings billed, one id
+stored, and the other left running until LiveKit's own timeout because
+finalization only knows about the one it can see. Migration
+**`b6e1a94c37d2`** (additive) adds `recording_egress_started_at`, set by a
+conditional UPDATE whose `RETURNING` tells the caller whether it owns the
+start; everyone else returns. The claim is committed before the provider
+call, so no transaction is held across a start that can take ten seconds,
+and it is released on every path that ends without an egress id so a later
+reconnect can still record.
+
+**`ui_command` allow-list.** The shape check (`^[A-Z_]{1,64}$` from a
+`candidate-*` participant, H2-D) said a command looked like one; nothing
+said it *was* one. `ALLOWED_UI_COMMANDS` is built from
+`CandidateControlAction` plus the two submissions, the intro screen's
+readiness signal and the browser's six proctoring signals -- 20 in all, so
+a control added to the enum is accepted automatically and one removed from
+it stops being accepted. Anything else is dropped at the edge.
+
+Tests: `test_rate_limit.py` (17) -- rule parsing including six malformed
+forms that must raise rather than silently disable a limit, burst then
+refusal, exact refill arithmetic, no overflow past the limit, separate
+buckets per caller and scope, idle eviction, and through the real app: the
+429 with `Retry-After` and `X-Request-ID`, the disable switch, separate
+buckets per route, and the body-field regression. `test_egress_claim.py`
+(6) -- **five concurrent starts produce exactly one recording**, a later
+reconnect starts none, a raised provider error and an immediate provider
+rejection both release the claim so a retry works, unconfigured storage
+claims nothing. `test_adapter_guards.py` (+3) -- unknown-but-well-formed
+commands dropped, every allowed command dispatched, and the list checked
+against the enum. Full `pytest` **442 passed, 1 skipped** (from 416),
+vitest 34/34, `ruff check .` clean.
+
+Live (compose): backend and migrate rebuilt, `a3f7d05c1e94 ->
+b6e1a94c37d2` applied, `/ready` 200. Forty concurrent registrations
+against the real app: **20 answered, 20 refused with 429**, and
+`rate_limit_rejections_total{scope="public_register"} 20.0` on `/metrics`.
+A first sequential attempt of 24 requests produced no 429 at all, which
+was the limiter working correctly rather than failing -- each 403 round
+trip to the remote database took long enough for tokens to refill.
+
+**Found, not fixed (scope discipline).** Five of those forty concurrent
+requests returned **500**, from
+`asyncpg.exceptions.InternalServerError: (EMAXCONNSESSION) max clients
+reached in session mode - max clients are limited to pool_size: 15` --
+the **Supabase pooler's** ceiling, not this app's pool. Two things follow,
+neither of them H5-B's to settle. A burst the rate limit permits (20) can
+exceed the database's connection ceiling (15), so the two numbers should
+be chosen together for a given deployment -- relevant to U4 and to H6's
+capacity baseline. And a connection failure of that kind surfaces as an
+unhandled 500 rather than a 503; mapping it belongs with the error model,
+not here.
+
+## 25. H5-C — verify record (2026-09-24)
+
+Owner decisions (2026-09-24): fix the CV-deletion gap **inside** this
+phase; `npm audit` gates on production dependencies only; the agent goes
+non-root even though existing volumes must be recreated; `admin_audit_log`
+lands now.
+
+**The erasure gap, which was bigger than "wire up a delete".**
+`ResumeService.delete_object` shipped with the CV feature and had **no
+callers** — nothing in the system had ever deleted a CV from Supabase
+Storage. Deleting an interview session removes its rows and its recording
+and deliberately stops at the person, because a profile is shared with
+every other job they applied to. So there was no path at all that could
+honour "delete my data": the profile, the CVs and the recordings simply
+stayed. New `services/data_deletion.py` gives deletion two honest scopes —
+one interview's artifacts, or a person entirely — and
+`DELETE /api/v1/admin/candidates/{profile_id}` is the first route that
+erases a person: every recording, every CV object, then the profile row,
+which cascades to sessions, applications, invitations and resumes. Objects
+are deleted **before** the rows that name them, because a crash between
+the two should leave rows pointing at deleted objects (recoverable) rather
+than objects nothing points at (the failure that matters when someone asks
+to be erased). Storage remains best effort: an orphan is named in the
+audit entry rather than blocking the deletion, since refusing the row
+would leave an administrator unable to remove the person at all.
+
+**Audit trail.** Migration **`d2c58f31ae04`** (additive) adds
+`admin_audit_log` (actor, action, target type/id, details JSONB, request
+id). Written at five actions: publish, status change, job delete, session
+delete, candidate delete, plus the score override — staged on the
+request's own session so an entry and the action it records commit or roll
+back together. `actor_id` is a plain string, not a foreign key: the record
+must survive the account being removed, which is the point of an audit
+trail. Nothing updates or deletes these rows, and the purge leaves them
+alone: the record that data was deleted outlives the data.
+
+**Purge job**, a `purge_expired_data` kind in the H2-F queue. Deletes
+candidates whose *every* interview predates the threshold — someone who
+interviewed a year ago **and** last week is not expired. **Shipped
+disabled** (`DATA_PURGE_ENABLED=false`, `DATA_PURGE_AFTER_DAYS=0`) and it
+refuses to run under either, naming U1 in the refusal; `dry_run` is the
+default and reports without touching anything.
+
+**CORS is now explicit per environment.** The fail-closed check covered
+secrets but not origins, so a production deployment that forgot the
+setting booted happily on the shipped localhost list. Outside local/test
+the process now refuses an empty list, `*`, a localhost entry, or
+unparseable JSON.
+
+**Containers.** Both images run as uid 10001 with `/app` owned by that
+user; the backend carries a `HEALTHCHECK` on `/ready`. The agent creates
+and owns `AGENT_STATE_DIR`, and the Dockerfile says plainly that a named
+volume created by the old root image keeps root's ownership — the upgrade
+runbook now carries the one-off `docker volume rm` step. The agent gets
+**no** HEALTHCHECK on purpose: it is a LiveKit worker that binds no port,
+and a probe there could only test something that is not how it proves it
+is alive.
+
+**Dependency audits.** `pip-audit` on both lock files and
+`npm audit --omit=dev` gate CI; the full `npm audit` is reported without
+gating. Measured before wiring them: **zero** known vulnerabilities in
+backend, agent and frontend runtime dependencies; the only findings are
+two moderate dev-only advisories in `vitest`/`@vitest/mocker`, fixable
+solely by a breaking major bump — which is exactly why the gate is scoped
+to what ships.
+
+**Trimmed:** `blaze_face_short_range.tflite` (229 KB), dead by the code's
+own comment. The remaining ~35 MB under `frontend/public/mediapipe/` is
+three WASM variants MediaPipe selects between at runtime by browser
+capability; removing the wrong one breaks face detection on a browser we
+have not tested, so they stay, documented.
+
+**`docs/handover/security.md`** (new): trust boundaries, a threat-model
+table mapping each attack to what stops it and where, a data map naming
+every store of personal data and what deletes it — including that the
+Supabase Auth user is a separate system a full erasure must also cover —
+the PDPL/GDPR posture with storage limitation marked **not met** while U1
+is open, operational rules, and an OWASP API top-10 review done against
+this codebase. That review records two genuine open gaps rather than
+closing them quietly: a permitted burst (20) can still exceed the Supabase
+pooler's 15-connection ceiling (§24), and **`/docs` and `/openapi.json`
+are publicly reachable** — confirmed live, 200 for both, unauthenticated.
+
+Tests: `test_data_deletion.py` (7) — candidate deletion removes the CV
+object and the recordings and not merely the rows, the audit entry carries
+what was removed, storage failing does not block the deletion but is
+recorded as an orphan, 404 writes no audit row, **deleting one session
+leaves the person's CV alone**, publish/status-change are recorded, and a
+failed action leaves no record. `test_purge_and_cors.py` (12) — production
+refuses the development origins, `*`, an empty list and unparseable JSON;
+local keeps its defaults; the purge refuses while disabled and again
+without a threshold; a dry run deletes nothing; a real run removes the
+expired candidate, leaves the returning one and deletes the CV object; the
+purge records what it erased. `test_settings.py`'s production fixture
+gained the CORS entry, since "complete" now includes it. Full `pytest`
+**461 passed, 1 skipped** (from 442), `ruff check .` clean.
+
+Live (compose): both images rebuilt and confirmed running as
+`uid=10001(app)`, with the agent able to write `/var/lib/himma-agent`;
+migrations `b6e1a94c37d2 -> d2c58f31ae04` applied (the migrate image had to
+be rebuilt first — the same trap §15 recorded); `/ready` 200. `/docs` and
+`/openapi.json` checked and found public, which is how that entry in the
+OWASP table got there.
+
+## 26. H6-A — verify record (2026-09-24)
+
+Owner decisions (2026-09-24): delete `render.yaml` and `DEPLOYMENT.md`;
+add the runtime `/config.js` overlay; **HTTP baseline only** for capacity
+(H6-C), with the agent-concurrency half written up rather than guessed;
+split H6 into A/B/C.
+
+A finding from the examination that changed H6-C's scope before it
+started: the plan's load baseline was to drive "N agent sessions with the
+existing `simulator.py`". That file is an **interactive CLI text
+simulator** from Phase 3 -- `MockPersistence`, a real Groq provider,
+`pprint` output, and no LiveKit at all. It cannot drive a room. The
+HTTP half is measurable here; the agent half needs a staging LiveKit
+project, real audio and real spend, which is exactly the U4 question.
+
+**The deployable stack.** `compose.prod.yaml`: built images rather than
+bind mounts, `restart: unless-stopped` on every long-lived service,
+per-container log rotation (Docker's default json-file driver grows
+without bound -- twelve hours of request logs and agent metrics will fill
+a small disk), both published ports bound to **loopback** because TLS
+terminates in front, and no database service by default -- production
+points at a managed Postgres, with a `with-db` profile for a single host.
+uvicorn runs with `--proxy-headers` so the rate limiter sees the real
+client address rather than the proxy's.
+
+**One image, every environment.** `frontend/Dockerfile` builds the bundle
+with node and ships only static files behind nginx, unprivileged. Vite
+bakes `VITE_*` at build time, which normally forces an image per
+environment; instead the build uses placeholders and the container writes
+`/config.js` from its own environment at start-up, so the artefact tested
+in staging is the one that runs in production. That was cheap only because
+`config.ts` already read through `loadConfig(env)` with the environment as
+an argument -- the change is a `mergeEnv` in front of it, covered by four
+new tests, including that an *empty* injected value must not blank out a
+real one.
+
+**Two nginx traps, both found by checking rather than reading.** The first
+config declared `types { application/wasm wasm; }`, which **replaces** the
+base image's whole MIME map: `.wasm` was right and `index.html` came back
+as `application/octet-stream`. nginx has shipped that type since 1.21, so
+the block is simply gone. The second: `add_header` replaces rather than
+merges across levels, so the server-level security headers vanished from
+every response the moment a `location` set its own `Cache-Control` --
+which all of them do. The headers now live in `security-headers.conf`,
+included in each location. Both checks are written into `deploy.md` as
+commands with their expected output, because both failures are silent.
+
+Also fixed by trying it: `POSTGRES_PASSWORD: ${...:?required}` blocked
+`docker compose build` for the *managed-database* path, since compose
+interpolates the whole file before applying profiles. It now defaults to
+empty and lets Postgres refuse at the right moment.
+
+**Retired:** `render.yaml` (its own header already said "NOT USED") and
+`DEPLOYMENT.md` (already carried a superseded banner pointing here).
+`docs/deployment-guide.md` and `docs/deployment-readiness.md` keep their
+content -- they are the dated record of why Render was chosen and what it
+would have cost -- and gained banners saying so.
+
+Verified by running it, not by reading it: `docker compose -f
+compose.prod.yaml up -d` from a clean start brought up migrate (exit 0) ->
+backend (**healthy**) -> agent + web. `/ready` reported the database ok,
+`/healthz` served, a deep link returned **200 text/html**, the WASM
+returned **application/wasm**, **5** security headers were present on `/`,
+`/config.js` carried the injected values, the agent logged `registered
+worker` against the real LiveKit project, and `docker inspect` confirmed
+`unless-stopped` and `max-size=20m max-file=5` on the running containers.
+Zero `"level": "ERROR"` lines across the stack. `npm test` 38/38 with the
+four new config tests.
+
+**Disclosed:** bringing that stack up registered a **second** agent worker
+against the LiveKit project the v3 booth demo also uses, for roughly two
+minutes, breaking the one-agent-at-a-time rule this project documents. The
+stack was taken down immediately afterwards; the v3 containers were left
+running and untouched. Nothing else in this phase touches v3.
+
+**Not done and not claimable:** the plan's "stranger's test" -- a clean
+machine, the handover docs only, one interview completed. This ran on the
+machine that built it, and the interview check is the one owed since
+H2-C.
+
+## 27. H6-B — verify record (2026-09-25)
+
+Owner decisions (2026-09-25): **mermaid** for diagrams, **S1–S12 only** for
+ADRs, **write** the missing setting docstrings, **keep** the Phase-0
+baseline as history.
+
+The examination's finding, which is the reason this phase existed:
+`docs/architecture/system-context.md` named **Deepgram** for speech and
+**OpenAI GPT-4o** for reasoning, and described candidates configuring their
+own interviews. The providers are Groq, and interviews are authored by HR.
+Across all four architecture files -- 104 lines -- there was not one
+mention of `Job`, `InterviewDefinition` or any other B2B entity. Those
+documents were not thin, they were wrong, and someone provisioning this
+from them would have bought the wrong vendors. `docs/technical/data-model.md`
+was the same story in miniature: three tables that had never existed
+(`users`, `candidate_responses`, `code_submissions`) and fifteen missing.
+
+**Generated, not written.** `scripts/generate_docs.py` produces
+`docs/handover/env-matrix.md` (all 113 settings: type, default, what it is
+for, which are required and which are fail-closed) and
+`docs/technical/data-model.md` (20 tables with columns, nullability,
+defaults, foreign keys with their `ON DELETE`, indexes, and a lock marker
+on the ten holding personal data, cross-referenced to `security.md` §3).
+Settings documentation comes from the attribute docstrings via `ast` --
+pydantic does not expose them unless `use_attribute_docstrings` is enabled,
+and enabling that would change the OpenAPI schema of every model in the
+project. `backend/tests/test_docs.py` (7) fails when a checked-in file no
+longer matches the code, when a setting has no docstring, when a table is
+missing from the data model, when a personal-data marker disappears, or if
+someone "fixes" the Phase-0 baseline by regenerating it.
+
+That gate had a price: **29 of 113 settings had no docstring** (17 backend,
+12 agent) and each now says what it is for or what breaks without it --
+`LIVEKIT_URL`, every `R2_*`, the Groq model and voice names, the Azure
+fallbacks, both `LOG_LEVEL`s.
+
+**Rewritten from the code:** `system-context.md` (actors, the four
+processes, the real external services and what breaks without each),
+`system-architecture.md` (the repository as it stands -- the plan's §2
+target layout names `providers/jobs/`, `workers/`, `compose.yaml` and
+`storage/s3_compatible.py`, none of which exist; the code has
+`providers/queue/`, `services/tasks/`, `docker-compose.yml` and
+`storage/s3.py`), `voice-sequence.md` (apply -> interview -> finalize as
+three sequence diagrams; the old one described a route that does not exist
+and had the backend dispatching agent jobs, which LiveKit does), and
+`interview-state-machine.md` (ten phases, not the five it listed -- it was
+missing `BRIEFING` and `WAITING_ROOM`, the two that shape the B2B flow).
+
+**`docs/adr/`**: twelve ADRs, one per S-decision, each recording the
+context, the decision, the consequences and -- the part worth having --
+**how it actually turned out**, because several did not turn out as
+expected. S9 assumed an advisory lock and got `SKIP LOCKED`; S1 did not
+anticipate that Vite bakes config at build time; S6's inert email provider
+is what later forced H5-A to *remove* the profile email field rather than
+gate it behind verification; S10's legacy suites are what caught the
+invitation-redemption dependency in H5-A. `CURRENT_DECISIONS.md` stays the
+product decision log and is not duplicated.
+
+**`docs/handover/kubernetes.md`**: the compose-to-Kubernetes mapping, and
+four places it is not mechanical -- `migrate` must run exactly once, the
+agent has nothing a kubelet can probe (and inventing an endpoint for the
+probe's benefit would be worse than none), draining an agent takes as long
+as an interview so `terminationGracePeriodSeconds` has to exceed one, and
+rate limits multiply by replica count because they live in process memory.
+It says plainly what it does not contain: no manifests, no chart, no
+NetworkPolicy, no HPA, and no capacity numbers to size one from.
+
+Verified: the six mermaid diagrams were parsed with **mermaid's own
+parser** (11.x, under jsdom -- without a DOM it reports
+`DOMPurify.addHook is not a function`, which reads like a syntax error and
+is not one). That check found a real one: a `<br/>` inside a
+sequence-diagram `Note`, which mermaid rejects outright. All six parse
+clean. `test_docs.py` 7/7; full `pytest` **468 passed, 1 skipped**; vitest
+38/38; `ruff check .` clean.
+
+One thing worth recording because it nearly became churn: normalising the
+docs' line endings to LF touched 65 files, but `core.autocrlf=true` means
+the index already stores LF, so git sees no content change -- the commit is
+26 files, all of them this phase's.
+
+## 28. H6-C — verify record (2026-09-25)
+
+Owner decisions (2026-09-25): measure against the **disposable** database,
+**include** `POST /livekit/token`, **run it now** (the v3 demo stack was up
+on the same machine, which the numbers reflect).
+
+`scripts/load_baseline.py` drives the candidate path — public preview,
+registration, an authenticated session read, the room token — at rising
+concurrency and reports what the client observed. Two arrangements keep it
+about this system: `R2_*` unset, so `storage.configured` is false and no
+egress is started or billed; and the CV gate satisfied by seeding the
+resume row, because the real upload runs a Groq extraction and would make
+this a measurement of Groq. It refuses to run against a Supabase host, and
+deletes every profile, session and job it creates — 600 profiles and 600
+sessions were removed at the end of the full sweep.
+
+**The result is not a capacity number, and saying so is the finding.**
+Across concurrency 1 → 40, throughput stayed flat at roughly 6–12 req/s
+while latency rose in proportion, with **zero errors at every level**. Flat
+throughput plus rising latency is a serialised bottleneck, not a ceiling,
+so the question is where the time went — and the server's own histogram
+answers it: `GET /health` averaged **4.0 ms** inside the server, while
+every database route averaged 500–1100 ms (`register` 1083 ms,
+`/interviews/{id}` 967 ms, `/apply/{token}` 775 ms, `/livekit/token`
+523 ms). The framework costs 4 ms; the rest is waiting on a Postgres that
+lives across Docker Desktop's virtual network, ~28 ms per round trip at
+concurrency 1, several per registration, queued through a pool of 5 + 10
+once 40 requests contend.
+
+So `capacity.md` records the numbers and then says plainly which of them
+transfer: the ~4 ms framework overhead and the shape of the curve do, the
+absolute latencies and the 6–12 req/s do not, and a figure worth sizing a
+deployment from needs the generator on a separate host against a Linux
+deployment with the real database. The 390 ms p50 on `/health` (4 ms
+server-side) is the clearest evidence that the harness and the host, not
+the app, set that ceiling.
+
+**The ceiling that does transfer** is the one H5-B found by accident and
+this phase did not have to re-measure: the Supabase pooler refuses
+connections past 15 in session mode (`EMAXCONNSESSION`), which is lower
+than anything in the application, surfaces as an unhandled 500, and sits
+below the 20-request burst the rate limiter permits. All three facts are in
+`capacity.md` and `security.md` §7.
+
+**U4 stays unmeasured, with a procedure instead of a guess.** Interviews
+per agent worker cannot be produced from this repository — `simulator.py`
+is an interactive CLI text simulator with `MockPersistence` and no LiveKit.
+`capacity.md` lists what a real measurement needs (a staging LiveKit
+project that shares nothing live, clients publishing actual audio, a Groq
+budget estimated from one real interview's metrics lines) and the four
+signals to watch while adding sessions to one worker: STT/TTS latency
+climbing, `Lease renewal failed`, `sweep_finalized_total` rising, and RSS
+against `JOB_MEMORY_LIMIT_MB`.
+
+Two defects the run itself surfaced, both in the harness rather than the
+product: registrations returned 422 for every request until the generated
+addresses moved off `.invalid`, which `email-validator` rejects as a
+reserved TLD; and the first sweep reported nothing for the authenticated
+phase because of it. Both fixed before the numbers above were taken.
+
+Also added: `make load-baseline` and `make docs`, a line in
+`testing-strategy.md` marking the baseline a tool and not a gate, and
+`capacity.md` linked from the handover index with U4 restated as
+*unmeasured* rather than *undecided*.
+
+**This closes the hardening plan.** H0 through H6, twenty-eight verify
+records, 2026-09-21 to 2026-09-25.
+
+## 29. Postscript — what CI's first run found (2026-09-26)
+
+The branch was pushed on the owner's instruction (37 commits to a new
+`origin/master`; `main` untouched) and `ci.yml` executed for the first time.
+Images built, the frontend job passed, and the Python job **failed at
+`Install dependencies`** — before a single test ran.
+
+Reproduced in `python:3.13-slim` rather than guessed at:
+
+```
+ERROR: Cannot install anyio==4.14.2 and anyio==4.15.0 because these
+package versions have conflicting dependencies.
+```
+
+`backend/requirements.txt` and `agent/requirements.txt` were compiled
+independently (H1-B), and both install into **one** environment because the
+test suite imports both packages. Their shared transitive dependencies had
+drifted: **eleven** of them disagreed — `anyio`, `click`, `idna`,
+`livekit-api`, `livekit-protocol`, `protobuf`, `pydantic`, `pydantic-core`,
+`python-dotenv`, `types-protobuf`, `typing-inspection`. `pip install -r
+backend -r agent -r dev` was impossible, which means `make install` had been
+broken on any clean machine for weeks. Nobody noticed because every
+developer's virtualenv predated the drift and was only ever added to. A
+clean machine in the loop is the entire value of the gate, and it paid for
+itself on its first run.
+
+**What was *not* done.** Recompiling both locks properly on Linux (the
+deployment platform) resolves the conflicts — verified — but also bumps 50
+packages including **SQLAlchemy 2.0.52 → 2.1.0** and **livekit-agents 1.7.1
+→ 1.8.3**, the ORM and the voice SDK. That is a dependency-upgrade project
+with its own verification, not something to slip inside "make CI pass"
+(AGENTS.md §6). It is recorded here as available and deliberately deferred.
+
+**What was done**, surgically: the eleven conflicting pins in the backend
+lock were aligned to the agent's versions — the agent's because
+`livekit-agents` carries the tighter bounds, and every difference is a
+patch or minor bump with no framework jump. The exact CI install command
+then succeeded in a clean `python:3.13-slim` with SQLAlchemy still at
+2.0.52. `make lock` (and `dev.ps1 lock`) now compile the agent first and
+constrain the backend to its result, so the drift cannot recur silently,
+and `backend/tests/test_requirements.py` (5) fails on the *files* in
+milliseconds rather than after a two-minute install: no package pinned
+twice, every lock pinned exactly, every `.in` entry present in its lock.
+
+Also observed and left alone: the locks were compiled on Windows, so they
+carry `colorama` with no platform marker and omit `uvloop`. Harmless — both
+are optional — but it is why a Linux recompile is not a no-op, and it
+belongs with the deferred upgrade.
+
+Full `pytest` **473 passed, 1 skipped** on the aligned set; `ruff` clean.
+

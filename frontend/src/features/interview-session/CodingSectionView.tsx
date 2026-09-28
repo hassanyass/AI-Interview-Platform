@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Code2, Mic, Send, Timer, Volume2 } from "lucide-react";
-import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../types/realtime";
+import type { ActiveQuestion } from "../../types/realtime";
 
 /**
  * CodingSectionView — LeetCode/CoderPad-style split view for an ordered
@@ -21,7 +21,6 @@ import type { ActiveQuestion, AllowedControl, StateUpdatePayload } from "../../t
 interface CodingSectionViewProps {
   question: ActiveQuestion;
   isAgentSpeaking: boolean;
-  isMicrophoneEnabled: boolean;
   code: string;
   setCode: (code: string) => void;
   selectedLanguage: string;
@@ -30,19 +29,12 @@ interface CodingSectionViewProps {
   codingConfigConstraints?: string;
   codeStatus: string | null;
   onCodeSubmit: () => void;
-  allowedControls: AllowedControl[];
-  isCompleted: boolean;
-  onToggleMicrophone: () => void;
-  onSendControl: (control: string) => void;
-  backendState: StateUpdatePayload | null;
-  hasNextSection: boolean;
   formattedTime: string;
 }
 
 export function CodingSectionView({
   question,
   isAgentSpeaking,
-  isMicrophoneEnabled,
   code,
   setCode,
   selectedLanguage,
@@ -51,12 +43,6 @@ export function CodingSectionView({
   codingConfigConstraints,
   codeStatus,
   onCodeSubmit,
-  allowedControls,
-  isCompleted,
-  onToggleMicrophone,
-  onSendControl,
-  backendState,
-  hasNextSection,
   formattedTime,
 }: CodingSectionViewProps) {
   const { t } = useTranslation();

@@ -1,0 +1,11 @@
+# Agent worker (livekit-agents) top-level dependencies. Only what
+# agent/agent imports. Compile the pinned lockfile with:
+#   pip-compile agent/requirements.in -o agent/requirements.txt
+# (see Makefile `lock`). Do not edit requirements.txt by hand.
+livekit-agents[groq,silero,azure]
+livekit-api
+aiohttp                   # APIPersistence -> backend /internal/*
+groq
+pydantic
+pydantic-settings
+python-dotenv

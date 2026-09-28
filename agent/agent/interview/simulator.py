@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import uuid
 from pprint import pprint
@@ -75,11 +74,11 @@ async def run_simulator():
     # 4. Interactive Loop
     while controller.context.current_phase != InterviewPhase.COMPLETED:
         user_input = input("\nCandidate: ")
-        
+
         if user_input.strip().lower() in ["exit", "quit"]:
             print("[Simulator] Exiting early.")
             break
-            
+
         # Optional: commands to skip time for testing
         if user_input.startswith("/skip"):
             controller._total_duration_sec = 0 # Force expiration
@@ -87,11 +86,11 @@ async def run_simulator():
 
         print("[AI thinking...]")
         action = await controller.process_candidate_input(user_input)
-        
+
         print(f"\n--- Phase: {controller.context.current_phase.value} ---")
         print(f"Action Type: {action.action.value}")
         print(f"AI: {action.response}")
-        
+
         if action.evaluation:
             print("\n[Internal Evaluation Generated]")
             pprint(action.evaluation.model_dump(exclude_none=True))

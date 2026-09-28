@@ -20,8 +20,14 @@ class CandidateProfileCreate(CandidateProfileBase):
     pass
 
 class CandidateProfileUpdate(BaseModel):
+    # H5-A: `email` is deliberately absent. It used to be writable with no
+    # verification of the new address, while api/deps.py links a Supabase
+    # identity to an existing profile by matching email -- so the two
+    # together let an account claim an address it had never proved. No
+    # caller is lost: the frontend has never called PATCH /profiles/me for
+    # any field. Changing an address needs a verification round trip,
+    # which needs a real email provider (P1 in CURRENT_DECISIONS.md).
     full_name: Optional[str] = None
-    email: Optional[str] = None
     confirmed_level: Optional[str] = None
     # We can also allow other fields to be updated manually
     education: Optional[list] = None

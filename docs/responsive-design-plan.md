@@ -1,0 +1,498 @@
+# Responsive design — phased plan (2026-09-17)
+
+Goal: the platform works on phones, tablets and desktops at any width, in
+both LTR and RTL, without leaving half-fixed surfaces behind. This document
+is the *overall* plan. Each phase below is executed as its own task under
+the same discipline as `.claude/skills/transition-phase/SKILL.md`
+(Explore → Plan → wait for approval → Execute → Verify), one phase per
+approval, one commit per phase step. Nothing in this document is code.
+
+Status: **R0 + R1 + R2-A + R2-B built (2026-09-17), uncommitted by request. R2-C (job create) / R3 next, after examine + confirm.**
+
+---
+
+## 0. What was examined
+
+Every file under `frontend/src` (63 files, 12,484 lines) was read in full,
+plus `index.html`, `tailwind.config.js`, `index.css`, `App.css`,
+`vitest.config.ts`, `.claude/launch.json`. Four routes that render without a
+backend were also rendered live at 375×812 (phone) to confirm the reading:
+`/login`, `/dev/verbal-preview`, `/dev/sections-preview`,
+`/dev/start-preview`. The admin shell and results pages need a Supabase
+session and were audited from code only; the findings there are structural
+(fixed widths, no breakpoint classes) and do not depend on data.
+
+Tooling facts that shape the plan:
+- Tailwind v4 (`@import "tailwindcss"` + `@config`), default breakpoints
+  only: `sm` 640, `md` 768, `lg` 1024, `xl` 1280. No custom screens.
+- `animate-in / fade-in / slide-in-*` classes used in ~10 places are **not
+  emitted** (no animation plugin for v4 — already noted in `index.css`).
+  They are harmless no-ops; not a responsive issue, but they will show up in
+  every diff and must not be "fixed" as a drive-by.
+- `vitest` runs in a plain Node environment (one test, `lib/api.test.ts`).
+  There is no DOM/visual test harness. `puppeteer` is already a
+  devDependency (used by the ad-hoc `frontend/test_5c.cjs`).
+- `App.css` is Vite-template leftover and is imported nowhere. Left alone
+  (scope discipline); flagged here only.
+
+---
+
+## 1. Ground rules for every phase (the "no leftovers" guardrails)
+
+These are what stop this becoming the usual half-done responsive pass.
+
+1. **Fixed target matrix.** Every phase is verified at *all* of these, not
+   "on my laptop":
+
+   | Name | Width × height | Orientation | Notes |
+   |---|---|---|---|
+   | phone-s | 360 × 740 | portrait | smallest supported Android |
+   | phone | 375 × 812 | portrait | iPhone-class |
+   | phone-land | 812 × 375 | landscape | short viewport — the hard case for the interview |
+   | tablet | 768 × 1024 | portrait | iPad-class |
+   | tablet-land | 1024 × 768 | landscape | `lg` boundary exactly |
+   | laptop | 1280 × 800 | — | `xl` |
+   | desktop | 1440+ | — | existing design target |
+
+   Each in **LTR and RTL** (the LanguageToggle flips `dir` at runtime, so
+   every breakpoint has two layouts).
+
+2. **Definition of done per surface** (checked, not assumed):
+   - no horizontal page scroll (`document.documentElement.scrollWidth <=
+     innerWidth`) at every matrix entry;
+   - every action reachable on desktop is reachable on phone (nothing is
+     `hidden` below `sm` without a replacement);
+   - interactive targets ≥ 44 × 44 CSS px on touch widths (buttons,
+     icon-buttons, table row actions);
+   - text never truncates *information* (truncate is fine for titles with a
+     `title=`/tooltip, never for scores, statuses, emails in a list);
+   - no fixed pixel widths on containers below `lg` unless they are ≤ 320px
+     and inside a flex/grid that can wrap;
+   - vertical layouts use `100dvh`/`min-h-dvh`, not `100vh`/`h-screen`, on
+     anything that must fit a phone viewport (mobile browser chrome and the
+     on-screen keyboard change `vh`);
+   - safe-area insets (`env(safe-area-inset-*)`) respected on fixed/sticky
+     bars in the interview.
+3. **Scope discipline.** A phase touches only the files it lists. Anything
+   adjacent found on the way is added to §7 (parking lot), not fixed inline.
+4. **Frozen contracts untouched.** `InterviewerCharacter.tsx` (and its CSS)
+   is reusable as-is — it is not in scope of any phase. `BlobCharacter.tsx`
+   is a different file (the verbal view uses it) and *is* in scope, but only
+   its container/size selection, not its animation code. `agent/` and
+   `/internal/*` are not involved at all.
+5. **Test-file discipline.** No existing test file is deleted, moved or
+   overwritten (`frontend/test_5c.cjs`, `src/lib/api.test.ts`, the root
+   `test_phase*.py`).
+6. **Verification is evidence, not a sentence.** Each phase ends with the
+   screenshot matrix from the harness in Phase R0 attached to the PR/commit
+   and the checklist in §6 ticked per surface.
+7. **Naming.** No new entity names; the existing `Job`, `InterviewDefinition`,
+   `InterviewSection`, `InterviewQuestion`, `CandidateInterviewSession`
+   vocabulary is unchanged. New UI primitives get plain component names
+   (`Drawer`, `ResponsiveTable`, …) — no renaming of existing components.
+
+---
+
+## 2. Inventory — every surface, what breaks, severity
+
+Severity: **P0** = feature unusable/unreachable on that device; **P1** =
+broken layout (overflow, clipped, unreadable); **P2** = works but poor
+(cramped, tiny targets, wasted space).
+
+### 2.1 Shell & shared
+
+| Surface | File | Finding | Sev |
+|---|---|---|---|
+| Admin shell | `routes/admin/AdminLayout.tsx` | `<aside className="w-64">` + `h-screen` + `<main>` with `p-8` and a `h-24 px-8` header. No breakpoint classes at all. On 375px the content column is ~55px wide. On tablet-portrait it is 512px with 64px of padding. | **P0** phone, P1 tablet |
+| Language toggle | `components/ui/LanguageToggle.tsx` | Text label always shown ("العربية"/"English") — fine, but it competes for header space in the interview header on phone. | P2 |
+| `AppShell` | `components/layout/AppShell.tsx` | Has a `md:hidden` mobile nav already but is only used by `AdminResultView.tsx`, which is not routed from `App.tsx`. Dead path — leave it. | — |
+| `Container` | `components/layout/Container.tsx` | Unused. Leave it. | — |
+| Buttons | `components/ui/Button.tsx`, `IconButton.tsx` | `size="sm"` is `h-8` (32px) — below the 44px touch target; many icon-only buttons in editors are `p-1.5` on a 16px icon (~28px). | P2 (P1 where it is the only way to delete/edit) |
+| Modals | `ConfirmDeleteModal.tsx`, `PublishSetupModal.tsx` | `fixed inset-0 … p-4` + `max-w-md/lg` — OK on phone. `PublishSetupModal` uses a `sm:grid-cols-2` card pair — OK. Footer buttons don't stack on 360px (`flex justify-end gap-3`), `min-w-[140px]` confirm — tight but fits. | P2 |
+| Global | `index.html` | `viewport` meta present. No `viewport-fit=cover` (needed for safe-area insets on notched phones in fullscreen). | P2 |
+
+### 2.2 Admin — job management
+
+| Surface | File | Finding | Sev |
+|---|---|---|---|
+| Jobs list | `JobsListPage.tsx` | Header row `flex items-center justify-between` (title + "Create" button) — wraps badly < 400px. Each job card is `flex items-center justify-between` with a 3-button action group (`Results`, `Manage`, delete) that never wraps; meta row `gap-4` with 3 items. Overflows at phone widths. | P1 |
+| Job create | `JobCreatePage.tsx` | `grid grid-cols-3` for seniority/location/language with **no** `sm:` prefix → three ~90px inputs on a phone. Duration input `w-48` fixed. Cancel/Create footer OK. | P1 |
+| Job detail | `JobDetailPage.tsx` | Header: back button + title + meta on the left, **up to 5 action buttons** on the right (`Publish`/`Pause`/`Resume`/`Unpublish`, `View Results`, `Delete`), all `shrink-0` in a `flex` with no wrap. Overflows < ~900px — already cramped on tablet-portrait. | **P1** (P0 on phone: buttons pushed off-screen) |
+| Sections editor | `SectionsEditor.tsx` | Mostly good — `SetupRow` uses `sm:grid-cols-[220px_1fr]`, inputs `w-24`, flex-wrap on controls. Verified live at 366px: no overflow. Card header row: expand button + reorder/delete icon cluster (`p-1.5` targets). | P2 (targets) |
+| Question editor | `QuestionEditor.tsx` | Generate row is `flex-wrap` — OK. Question card: text column + a 3-icon action cluster (`ms-2 shrink-0`, 28px targets). Long `q.text` OK. MCQ option rows `flex` with `flex-1` input — OK. | P2 |
+| Criteria editor | `CriteriaEditor.tsx` | Header `flex items-center justify-between` with a long description paragraph + `Save Criteria` button `size="sm"` — description squeezes the button; no wrap. Grid is `md:grid-cols-2` — OK. Range sliders OK. | P1 (header) |
+| Candidate access | `CandidateAccess.tsx` | Header row (title+desc vs "Test interview" button) no wrap. Access-mode cards `sm:grid-cols-2` OK. Public link row already `flex-col sm:flex-row` — good. **Invitations `<table>`** (3 cols, `px-6 py-4`, email `max-w-[200px] truncate`) inside `lg:col-span-2` — at phone width the table has no `overflow-x-auto` wrapper; date column `text-right` is not RTL-aware (`text-end` needed). | P1 |
+| Invitation composer | `InvitationComposer.tsx` | Chip input `min-w-[160px]` — OK. Send button row OK. `pl-3 pr-1.5` physical (not logical) padding on chips → wrong in RTL. | P2 |
+| Publish modal | `PublishSetupModal.tsx` | Selection check `absolute top-4 right-4` (physical) → wrong corner in RTL. Same in `CandidateAccess`. | P2 (RTL) |
+
+### 2.3 Admin — results
+
+| Surface | File | Finding | Sev |
+|---|---|---|---|
+| Job results | `JobResultsPage.tsx` | Stat row is `grid-cols-1 lg:grid-cols-[2fr_1fr_1fr]` — OK. The facts card is `grid-cols-3 divide-x` — three numbers in 375px works. **Candidates table: 7 columns**, `px-6 py-4` cells, wrapped in `overflow-x-auto` so it scrolls sideways — usable but the *action* column (View Result / delete) is off-screen on phone; HR must scroll every row. `text-right` on the action header (physical). | P1 |
+| Candidate result | `CandidateResultPage.tsx` | Two-zone layout is already `flex-col lg:flex-row`, rail `w-full lg:w-[300px] lg:sticky` — the big structure is responsive. Remaining: header (`Back` + title + `Refresh`) no wrap; criteria rows use `w-40 sm:w-48 shrink-0` label + bar + `w-10` score → label truncates to ~40% of a phone row; `<pre>` for code is `overflow-auto` (OK); `<video max-h-[440px]>` fine; nested `grid sm:grid-cols-2` fine. Left-rail quick-nav (anchors) makes sense only when the rail is sticky (≥ lg); on phone it sits above the content as a long block before any evidence. | P1 (criteria rows), P2 (rail nav on phone) |
+
+### 2.4 Candidate entry (public)
+
+| Surface | File | Finding | Sev |
+|---|---|---|---|
+| Login | `pages/Auth.tsx` | `max-w-md`, `px-4`, 40px inputs — verified at 375px: no overflow. | OK (targets P2) |
+| Invite | `pages/InvitePage.tsx` | Header 64px, `max-w-lg` column, `text-3xl sm:text-4xl` — good. `h-screen` on the invalid-token state (use `min-h-dvh`). | P2 |
+| Apply | `pages/ApplyPage.tsx` | Same structure as Invite — good. | P2 |
+| CV upload | `features/candidate-entry/CvUploadStep.tsx` | Dropzone is a `<label>` wrapping the file input → tap works on touch (drag is desktop-only, fine). Two-button row already `flex-col sm:flex-row`. | OK |
+| Session CV gate | `pages/InterviewSession.tsx` (cvMissing branch) | `min-h-screen` centred card — fine; use `dvh`. | P2 |
+
+### 2.5 Interview — pre-flight
+
+| Surface | File | Finding | Sev |
+|---|---|---|---|
+| Intro | `features/interview-session/IntroScreen.tsx` | Grid `sm:grid-cols-[1fr_auto]` with the rules panel `sm:w-64` — at 640–767px the instructions column gets ~330px; OK. Consent/CTA row `flex-col sm:flex-row` — good. Start button `min-w-[220px] w-full sm:w-auto` — good. Sticky header OK. | P2 |
+| Device check | `DevicePreview.tsx` | Camera tile `aspect-video sm:aspect-auto sm:w-72 sm:min-h-[220px]` — on phones front cameras are portrait; `object-cover` in a 16:9 box crops the face heavily. Status pill `bottom-3 left-3` physical (RTL). "preview is live on the right" copy is wrong on phone (it is *above*) and in RTL. | P1 (phone camera crop), P2 (copy) |
+| Fullscreen gate | `IntroScreen` → `lib/fullscreen.ts`, `WaitingRoomScreen.tsx` | `document.documentElement.requestFullscreen` **is not available on iPhone/iPad Safari** (only `<video>` elements can go fullscreen there). The PR-B proctoring design (fullscreen required to start; 10s grace → termination on exit) therefore cannot run on iOS at all, and on Android Chrome the fullscreen exits whenever the keyboard/notification shade appears. This is a **product decision, not a CSS fix** — see §5. | **P0 on iOS — DECISION REQUIRED** |
+| Start sequence | `InterviewWorkspace.tsx` `StartSequenceView` | Verified at 375px: fine. `min-h-screen` → `dvh`. | OK |
+| Waiting room | `WaitingRoomScreen.tsx` | `text-4xl sm:text-5xl` heading, `px-10 py-4` CTA — fits. `min-h-[60vh]` inside a `100dvh` grid — OK. | OK |
+
+### 2.6 Interview — live workspace (highest risk)
+
+| Surface | File | Finding | Sev |
+|---|---|---|---|
+| Workspace header | `InterviewWorkspace.tsx` L669–756 | **`End Session` and `Fullscreen/Exit Fullscreen` buttons are `hidden sm:flex`** → on any phone (<640px) the candidate has *no way to end the session* and *no way to re-enter fullscreen* from the header. The camera on/off indicator and the live-connection status are also `hidden sm:flex`. The timer and LanguageToggle remain. | **P0** |
+| Controller bar | `InterviewController.tsx` | Bar is `flex-col sm:flex-row`: on phone it stacks *three rows* (Repeat/Hint, Mic, Skip/Skip background/End Section) under the `sticky bottom-0` wrapper — eats ~200px of a 812px viewport, ~50% of a landscape phone. `SecondaryButton` labels are `hidden sm:inline` → icon-only, no accessible label (`title` only), 40px targets. The `absolute -top-12` error toast overlaps the content above. | **P1** (P0 in landscape) |
+| Verbal view | `VerbalSectionView.tsx` | Verified at 375px: stepper wraps, blob centred, caption OK. Transcript toggle turns the main column into a *second* column only at `lg` (`lg:col-span-2`) — below `lg` the transcript `<aside min-h-[280px]>` renders *below* the interviewer in the same scroll, pushing the caption off-screen; the outer `<main>` only `lg:overflow-hidden`, so the page scrolls inside a `100dvh` box — acceptable but needs the header/controller to stay fixed (they do). Legacy technical-with-editor branch: `lg:grid-cols-[…]` split, textarea `min-h-[360px]` on top of a `max-h-[45vh]` problem pane — on a phone in landscape nothing fits. | P1 (transcript on phone), P2 |
+| Coding view | `CodingSectionView.tsx` | Split `lg:grid-cols-[0.9fr_1.1fr]` → stacked below `lg`: problem pane (`flex-1 overflow-y-auto`, no max-height when stacked) then editor `min-h-[360px]`. On tablet-portrait the problem pane takes what it needs and the editor is pushed below the fold; on a phone the user scrolls between problem and editor and the soft keyboard covers half the editor. Language `<select>` is 12px text. | P1 phone/tablet-portrait |
+| MCQ view | `McqSectionView.tsx` | `max-w-2xl` card, option buttons full-width `py-2.5` (~42px) — fine. Submit row `flex justify-between` with hint text — wraps OK. | OK (targets P2) |
+| Self-view PiP | `SelfViewVideo.tsx` | Fixed px sizes `160×112` / `320×256`, default bottom-right with `BOTTOM_MARGIN_PX=110` computed for the *desktop* controller height; on phone the controller is ~200px tall, so the PiP sits **on top of the Skip/End Section buttons**. Expanded 320px is 85% of a phone width. Drag is `touch-none` (good) but the expand toggle is 24px. | P1 |
+| Fullscreen grace overlay | `FullscreenGraceOverlay.tsx` | `absolute inset-0` inside the main wrapper, `max-w-sm w-full p-8` — fits phone. | OK |
+| TTS retry overlay | `TtsRetryOverlay.tsx` | `max-w-sm mx-4` — OK. | OK |
+| End dialogs | `EndInterviewDialog.tsx`, `EndSectionEarlyDialog.tsx` | `min-h-screen` on the backdrop grid (use `dvh`); buttons `flex-col-reverse sm:flex-row` — good. | P2 |
+| Ended / Terminated | `SessionEndedScreen.tsx`, `FullscreenTerminatedScreen.tsx` | `min-h-screen` → `dvh`; logo `hidden sm:flex` (acceptable, the role title remains). | P2 |
+| Face monitor | `useFaceDetectionMonitor.ts`, `headPose.ts` | Thresholds were tuned on desktop webcams (CURRENT_DECISIONS.md, head-pose section). A phone held in hand moves constantly; false `NO_FACE`/look-away flags likely. Not a layout issue — flagged in §5 as a decision, not touched by this plan. | decision |
+
+---
+
+## 3. Phases
+
+Each phase = one approval, its own Explore→Plan→Execute→Verify, one or more
+small commits. Order is chosen so that (a) the harness exists before any fix,
+(b) the P0s land early, (c) the riskiest surface (live interview) is done
+once the shared primitives are proven on lower-risk pages.
+
+### R0 — Harness & shared primitives (no visual change to the product)
+
+**Why first:** without a repeatable way to *see* every surface at every
+matrix entry, every later phase will be verified by eye on one screen and
+leave things behind.
+
+Deliverables:
+1. `frontend/scripts/responsive-shots.cjs` — puppeteer script (already a
+   devDependency) that opens a list of routes at every §1 matrix entry, in
+   LTR and RTL (`localStorage['preferred-lang']`), and writes
+   `frontend/.responsive/<route>__<viewport>__<dir>.png` plus a JSON report
+   of `scrollWidth > innerWidth` and any interactive element under 44px on
+   touch widths. Routes it can reach without a backend today: `/login`,
+   `/dev/*`. It reads `RESPONSIVE_ROUTES` env to add authenticated routes
+   when a dev login is available. `.responsive/` is git-ignored.
+2. Two more DEV-only harness routes, same pattern as the existing
+   `routes/dev/*` (registered under `import.meta.env.DEV` only):
+   - `/dev/admin-preview` — renders `AdminLayout` chrome around a mock
+     `JobsListPage`/`JobDetailPage` header so the shell can be viewed
+     without Supabase;
+   - `/dev/workspace-preview` — renders the *real* `InterviewWorkspace`
+     header + `InterviewController` + one section view with mock state
+     (the existing `VerbalPreview` copies the header instead of rendering
+     it, which is exactly why the `hidden sm:flex` P0 was never seen).
+3. Shared primitives (new files only, nothing existing refactored yet):
+   - `components/ui/Drawer.tsx` — off-canvas panel (used by R1 sidebar);
+   - `components/ui/ResponsiveTable.tsx` — renders `<table>` ≥ `md` and a
+     card list below, driven by a column config (used by R2/R3);
+   - `lib/useMediaQuery.ts` — for the *few* places where CSS cannot decide
+     (SelfView size/position, controller layout);
+   - `index.css`: add `--safe-*` custom properties from
+     `env(safe-area-inset-*)`, a `.touch-target` utility (min 44px), and
+     `viewport-fit=cover` in `index.html`.
+4. `docs/responsive-checklist.md` — the §6 checklist as a copy-paste
+   template for each phase's verify step.
+
+Files touched: new files above, `index.html`, `index.css`, `App.tsx` (dev
+routes only), `.gitignore`. Verify: script runs, produces the matrix for
+`/login` + `/dev/*`; `npm run typecheck`, `npm run lint`, `npm test` green.
+
+R0 as built deviates from the above in one way, by design: two pure JSX
+moves (`AdminLayout` → role gate + exported `AdminShell`; the workspace
+`<header>` → `WorkspaceHeader.tsx`) so the two new previews render the
+real chrome instead of copies. No behaviour or class changed.
+
+### R1 — Admin shell (P0)
+
+`AdminLayout.tsx`: sidebar becomes a `Drawer` below `lg` (hamburger in a
+compact header, `LanguageToggle` kept), persistent `w-64` at `lg+`.
+Content padding `p-4 sm:p-6 lg:p-8`; header `h-16 lg:h-24`. Root switches
+from `h-screen` to `h-dvh`. Keep the decorative SVG as-is.
+Verify at full matrix via `/dev/admin-preview` + real login. Depends on R0.
+
+### R2 — Admin job management pages (P1 cluster)
+
+`JobsListPage`, `JobCreatePage`, `JobDetailPage`, `CriteriaEditor`,
+`CandidateAccess`, `InvitationComposer`, `PublishSetupModal`,
+`ConfirmDeleteModal`, `SectionsEditor` (targets only), `QuestionEditor`
+(targets only).
+- Header action bars → `flex-wrap` with a consistent pattern: primary
+  action stays visible, secondary/destructive actions collapse into an
+  overflow menu below `md` (one new `components/ui/ActionMenu.tsx`).
+- `grid-cols-3` → `sm:grid-cols-3`; `w-48` → `w-full sm:w-48`.
+- Invitations table → `ResponsiveTable`.
+- All physical `left/right/pl/pr/text-right` in these files → logical
+  (`start/end/ps/pe/text-end`), since RTL is part of the matrix.
+- Icon-only actions get `min-h-11 min-w-11` on touch widths and an
+  `aria-label` (they currently have only `title`).
+Depends on R0, R1.
+
+### R3 — Admin results pages (P1 cluster)
+
+`JobResultsPage` (7-col table → `ResponsiveTable` with the action column
+pinned/first on cards), `CandidateResultPage` (header wrap, criteria row
+becomes two-line below `sm`: label on line 1, bar+score on line 2; rail
+quick-nav collapses to a horizontal chip row below `lg`). No data or API
+changes. Depends on R0, R1.
+
+### R4 — Candidate entry (small, mostly `dvh`/targets)
+
+`Auth`, `InvitePage`, `ApplyPage`, `CvUploadStep`, `InterviewSession`
+(cvMissing/loading/error branches only): `h-screen/min-h-screen` → `dvh`,
+inputs `h-11` on touch, button targets. Depends on R0.
+
+### R5 — Interview pre-flight (needs §5 decision D1 first)
+
+`IntroScreen`, `DevicePreview`, `WaitingRoomScreen`, `StartSequenceView`:
+portrait camera tile on phones (`aspect-[3/4]` below `sm`, keep 16:9
+above), logical positioning, copy that doesn't say "on the right", `dvh`.
+If D1 = "phones unsupported for the live interview", this phase *also* adds
+the capability gate on `IntroScreen`: detect missing
+`documentElement.requestFullscreen` (and optionally narrow width) and show
+a clear "open this on a laptop/desktop" screen instead of a Start button
+that can never work. Depends on R0, D1.
+
+### R6 — Live interview workspace (P0/P1 cluster; needs D1, D2)
+
+`InterviewWorkspace` header, `InterviewController`, `SelfViewVideo`,
+`VerbalSectionView`, `CodingSectionView`, `McqSectionView`, the two end
+dialogs, `SessionEndedScreen`, `FullscreenTerminatedScreen`,
+`TtsRetryOverlay`, `FullscreenGraceOverlay`.
+- Header: nothing action-bearing is hidden below `sm`; End Session and
+  Fullscreen move into a compact overflow (`ActionMenu`) on phone; status
+  indicators become icon-only rather than removed.
+- Controller: single row at every width — mic in the centre, two icon
+  buttons each side, `aria-label` on each, labels shown from `md`; bar
+  height fixed so the PiP margin can be computed from it; error toast moves
+  *inside* the bar rather than `absolute -top-12`.
+- Self-view: size and default position from `useMediaQuery`
+  (`120×90`/`240×180` below `sm`), margin computed from the actual
+  controller height (`ResizeObserver`), never over the controls.
+- Verbal: transcript on `< lg` becomes a bottom sheet (reuses `Drawer`)
+  instead of a stacked column, so the interviewer/caption stay in view.
+- Coding: below `lg` a two-tab layout (Problem / Code) instead of stacked
+  panes, so the editor always gets the full viewport; `min-h` derived from
+  `dvh` minus header/controller; `<select>` 14px. Whether phones get the
+  coding section at all is D2.
+- `min-h-screen` → `dvh` everywhere in this folder; safe-area padding on
+  the sticky controller.
+- `BlobCharacter`: only pass `size="small"` below `sm` (prop already
+  exists), no changes to its drawing code. `InterviewerCharacter.tsx`
+  untouched.
+Depends on R0, R5, D1, D2. This is the only phase that must be
+live-tested end-to-end with a real agent on at least one real phone and
+one real tablet, not just the harness.
+
+### R7 — RTL × responsive sweep, regression, docs
+
+Run the full harness in both directions on every route (with a dev login),
+fix anything that is a *responsive* regression (not new features), update
+`docs/PROJECT_STATUS.md`, and add the harness to `docs/technical/testing-strategy.md`.
+Optionally (ask first) codify the per-phase workflow as a
+`.claude/skills/responsive-phase/SKILL.md` mirroring `transition-phase`.
+
+---
+
+## 4. Per-phase template (what each phase's own plan must contain)
+
+```
+## Rn — <name>
+Explore: quoted current contents of every file to be touched (re-read live).
+Plan:    files touched; new components; classes/patterns replaced;
+         Frozen Contracts Confirmation (InterviewerCharacter.tsx, agent/, /internal/* — not touched);
+         decisions from §5 this phase relies on (by ID).
+Execute: after approval only. One commit per logical step.
+Verify:  harness matrix (all 7 viewports × LTR/RTL) attached;
+         §6 checklist ticked per surface;
+         npm run typecheck && npm run lint && npm test output pasted;
+         for R6: real-device notes (device, browser, what was exercised).
+Left over: anything discovered and NOT fixed, appended to §7.
+```
+
+---
+
+## 5. Decisions required from you before R5/R6 (not decided here)
+
+These are product decisions; per AGENTS.md §5 I am not picking defaults.
+
+- **D1 — Is the live interview supported on phones?**
+  Facts: iOS Safari cannot fullscreen the document, so PR-B's "fullscreen
+  required, 10s grace, terminate" is impossible on iPhone/iPad; on Android
+  Chrome fullscreen drops on every keyboard/notification, so a candidate
+  would be terminated for typing a coding answer. Options: (a) phones
+  unsupported for the *live* interview — entry pages/CV upload work on
+  phone, the intro screen gates with a clear message; tablets/laptops
+  supported; (b) supported, with fullscreen enforcement relaxed on devices
+  that cannot do it (this changes the proctoring contract — needs its own
+  decision in `CURRENT_DECISIONS.md` and likely an `InterviewEvent`
+  variant, backend involved); (c) supported for VERBAL/MCQ only. The layout
+  work in R6 is the same for (b)/(c); (a) makes R6 tablet-first.
+- **D2 — Coding section on touch devices.** A `<textarea>` code editor
+  with a soft keyboard is a poor experience; decide whether phones (and
+  tablets without keyboards) may take CODING sections or get a "use a
+  computer" gate for that section type.
+- **D3 — Minimum supported width.** Proposed: 360px (§1 matrix). Below
+  that, no guarantees.
+- **D4 — Admin on phone: full parity or read-mostly?** Authoring
+  (sections/questions editors) works but is cramped on phone; decide whether
+  phone admin is "review results + pause/resume" (lets R2 collapse editors
+  behind a "best on a larger screen" note) or full parity (R2 as written).
+- **D5 — Face-monitor thresholds on handheld devices** (only if D1 ≠ a):
+  the head-pose numbers in `CURRENT_DECISIONS.md` were confirmed on desktop
+  webcams; on a handheld phone they will over-flag. Out of this plan's scope
+  either way; listed so it is not silently inherited.
+
+---
+
+## 6. Acceptance checklist (copied into every phase's Verify)
+
+Per surface, per matrix entry, LTR and RTL:
+- [ ] no horizontal scroll (`scrollWidth <= innerWidth`)
+- [ ] every desktop action reachable (nothing `hidden` without replacement)
+- [ ] touch targets ≥ 44px on ≤ `md`
+- [ ] no clipped/overlapping text; no truncated *data* (only titles, with tooltip)
+- [ ] fixed/sticky bars don't cover content or each other; safe-area respected
+- [ ] `dvh` not `vh` for full-height layouts
+- [ ] logical properties only (`ps/pe/ms/me/start/end/text-start/text-end`)
+- [ ] focus order and `aria-label` present on icon-only controls
+- [ ] harness screenshots attached; typecheck/lint/test green
+
+---
+
+## 7. Parking lot (found during the audit, deliberately NOT in scope)
+
+- `document.documentElement.dir` is set only inside `LanguageToggle`'s
+  effect, so a hard load of a page without the toggle (`/login`, every
+  admin page) with `preferred-lang=ar` renders Arabic text in an LTR
+  layout. `i18n.ts` should set `dir` at init. (Found while building the
+  harness, which sets `dir` itself to compensate.)
+- Hard-coded English in the live workspace chrome: "Fullscreen"/"Exit
+  Fullscreen"/"End Session" (`WorkspaceHeader`), "Repeat"/"Hint"/"Skip"/
+  "End Section"/"Listening"/"Muted" and the tooltips (`InterviewController`)
+  — visible in every RTL harness shot. i18n, not layout.
+- R6 input from the harness: at 812×375 (phone landscape) header + stepper
+  + controller leave ~60px for the interviewer. Recorded here so R6's plan
+  starts from the measurement, not a guess.
+
+- `frontend/src/App.css` is Vite-template CSS, imported nowhere.
+- `AppShell.tsx`, `Container.tsx`, `AdminResultView.tsx` are unreferenced
+  by the router.
+- `animate-in / fade-in / slide-in-*` utilities are no-ops under Tailwind
+  v4 here (already documented in `index.css`).
+- `CandidateAccess.handleTestDrive` opens `/interview/${id}` (singular);
+  the route is `/interviews/:id`. Looks like a real bug, unrelated to
+  responsiveness.
+- `QuestionEditor`/`SectionsEditor` use `window.confirm` for deletes while
+  the rest of the admin uses `ConfirmDeleteModal`.
+- `JobResultsPage` "Back to Job" / `CandidateResultPage` "Back to Results"
+  are the only two places with `rtl:rotate-180` on `ArrowLeft`; the same
+  icon in `JobCreatePage`/`JobDetailPage` is not mirrored.
+
+---
+
+## 8. R0 — verify record (2026-09-17)
+
+Built: `scripts/responsive-shots.cjs` (+ `npm run responsive`),
+`/dev/admin-preview`, `/dev/workspace-preview`, `Drawer`, `ResponsiveTable`,
+`useMediaQuery`, safe-area vars + `touch-target` utility, `viewport-fit=cover`,
+`docs/responsive-checklist.md`, `frontend/.responsive/` git-ignored.
+
+Harness, full matrix (6 routes × 7 viewports × LTR/RTL = 84 shots):
+`overflow: 0  errors: 0`. It reproduces the audit: `/dev/workspace-preview`
+reports `hiddenControls` = Fullscreen + End Session at phone widths;
+`/dev/admin-preview` reports `innerScroll` (the `w-64` sidebar's hidden
+overflow) and "Create new job" past the viewport. `npm run typecheck`
+clean; `npx oxlint src` adds no warnings in R0 files; `npm test` 3/3.
+
+Commit note: the working tree carried unrelated uncommitted edits before
+R0 started (section-view prop cleanup, `CriteriaEditor`/`JobResultsPage`/
+`QuestionEditor` fixes, `test_phase*.py`). `HEAD` alone does not typecheck
+and `WorkspacePreview` uses the cleaned-up section-view props, so R0 is
+staged on top of that work, not committed separately.
+
+## 9. R1 — verify record (2026-09-17)
+
+Changed: `routes/admin/AdminLayout.tsx` (`AdminShell`): sidebar markup is
+one `SidebarPanel`, rendered in a persistent `hidden lg:flex w-64` aside
+and, below `lg`, inside R0's `Drawer side="start"` opened from a 44×44
+menu button in a compact `h-16` header (wordmark + `LanguageToggle`);
+header `h-24` and `p-8` well kept at `lg+`, `p-4 sm:p-6` below; root
+`h-screen` → `h-dvh`. Drawer closes on route change, ESC, overlay; focus
+returns to the menu button. Two i18n keys added (`adminLayout.openMenu`,
+`adminLayout.menu`).
+
+Checked live (`/dev/admin-preview`): 375 LTR and RTL (drawer from the
+logical start edge — right in RTL — no code branch), 1024 (sidebar
+persistent, header 96) vs 1023 (drawer mode, header 64, button 44×44).
+Harness on the route, 14 shots: `overflow: 0, errors: 0`; the remaining
+`innerScroll` is the page content (job-card action group at phone; the
+job-detail action bar, 916px in a 768px well, at tablet) — R2's scope.
+`npm run typecheck` clean; oxlint clean on the touched files; `npm test` 3/3.
+
+## 10. R2-A — verify record (2026-09-17, from manual feedback)
+
+Feedback (user, phone-width browser): login OK; admin nav OK; jobs list
+"label/time/name noisy"; job page "Delete off screen, Publish too far up".
+Decision: Unpublish + Delete in an overflow menu at every width.
+
+Changed: new `routes/admin/JobSummary.tsx` (`JobStatusBadge`, `JobMetaRow`,
+`JobCard`, `JobHeader`) used by `JobsListPage` and `JobDetailPage`; new
+`components/ui/ActionMenu.tsx`. One identity anatomy on both pages: title
+wraps freely; status pill first on a wrapping meta row with `nowrap` chips
+(no more "30 / min"). List card stacks actions under the identity below
+`md` (Results/Manage share the width, 44px; delete icon-only with
+`aria-label`). Job page: identity block + a `role="toolbar"` action bar —
+primary (Publish/Pause/Resume) + View results + ⋯ (Unpublish, Delete) —
+pinned to the viewport bottom below `lg` (page gets `pb-24`), static
+beside the identity at `lg+`. Hard-coded English labels replaced with
+i18n keys (`jobDetail.*`, `jobsList.results/deleteJob`, `jobStatus.*`).
+`/dev/admin-preview` now renders the real `JobCard`/`JobHeader`.
+
+Checked: harness `/dev/admin-preview` 14 shots — `overflow: 0`, no inner
+scrollers left; menu opens upward from the pinned bar (real
+pointerdown/up/click sequence), closes on outside tap and ESC; 1280 shows
+the bar static beside the identity. Leftover for R7: `LanguageToggle` is
+40px tall on touch widths (shared component); buttons are 40px from `lg`
+(1024) by design.
+
+## 11. R2-B — verify record (2026-09-17)
+
+Scope confirmed by the user incl. Criteria i18n. Changed: `CandidateAccess`
+(stacked block header, 44px Test-interview button, invitations `<table>`
+→ `ResponsiveTable`, `end-4` check marks, labelled open-in-new-tab);
+`InvitationComposer` (chip `ps/pe`); `CriteriaEditor` (stacked header, 44px
+save, every string moved to `criteriaEditor.*` EN+AR); `SectionsEditor`
+(stacked header; card row is two lines — title/expand + 44px labelled
+↑↓🗑 cluster, summary on its own line; 40px/16px inputs on phone);
+`QuestionEditor` (no side-rail indent below `sm`; all inputs 40px/16px on
+phone; ○/✕/✎/↻/🗑 are 44px with `aria-label`; form buttons 44px on phone);
+`PublishSetupModal`/`ConfirmDeleteModal` (stacked 44px footer, labelled
+close, `end-4`). New key `questionEditor.generateCount`,
+`candidateAccess.openInNewTab`.
+
+Checked: `/dev/sections-preview` at 375 with the MCQ manual-add form open —
+zero sub-44px controls left (inputs are 42px, inside 44px rows); harness
+28 shots (`sections-preview` + `admin-preview`): `overflow: 0, errors: 0`,
+no inner scrollers. `Criteria` and `Candidate Access` need a signed-in
+job — left to the manual pass. typecheck clean; oxlint: only the
+pre-existing `err2` warning; tests 3/3. All three services confirmed up.

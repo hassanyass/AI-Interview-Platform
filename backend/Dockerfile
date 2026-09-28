@@ -30,4 +30,26 @@ COPY . .
 # of plan, and (matching preDeployCommand's original fail-closed behavior)
 # a failed migration makes `&&` fail so the container never starts serving
 # with a stale/mismatched schema.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# H2-B: migrations no longer run on every container start -- N replicas
+# would race on the same migration. The normal path is the one-shot
+# `migrate` service (docker-compose.yml) or `alembic upgrade head` in the
+# deploy pipeline. RUN_MIGRATIONS_ON_START=true restores the old behaviour
+# for a single-instance deploy that has no pre-deploy hook (fails closed:
+# a failed migration still stops the container from serving).
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# H5-C: not root. Nothing here writes to disk -- logs go to stdout and
+# migrations only touch the database -- so an unprivileged user needs no
+# writable paths, and a process that never needs root should not have it.
+RUN useradd --create-home --uid 10001 app && chown -R app:app /app
+USER app
+
+# The image says how to check itself, so an orchestrator that is not this
+# repo's compose file still knows. /ready reports the database too (H2-B);
+# /health would only say the process is alive.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os,sys,urllib.request; sys.exit(0 if urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('PORT','8000')}/ready\", timeout=4).status == 200 else 1)"
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

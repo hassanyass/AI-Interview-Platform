@@ -1,14 +1,16 @@
 # Local Demo Setup — Exact Current Commands
 
-Written for a clean VS Code terminal (PowerShell). Every command below matches what this project's own files/scripts actually contain as of 2026-09-02 — not remembered/assumed defaults. Start the three layers **in this order** (backend → agent → frontend) in **three separate terminal tabs**, since all three need to keep running simultaneously.
+Written for a clean VS Code terminal (PowerShell). Every command below matches what this project's own files/scripts actually contain as of 2026-09-21 (repo `C:\Users\hassa\Desktop\Himma_v2`; backend port **8001**, frontend port **5174** — see `.claude/launch.json` and `frontend/vite.config.ts`) — not remembered/assumed defaults. Start the three layers **in this order** (backend → agent → frontend) in **three separate terminal tabs**, since all three need to keep running simultaneously.
+
+Alternative: `docker compose --profile app up --build` runs all three layers in containers from the root `.env` (see `README.md`).
 
 ## Before you start anything
 
-**⚠️ DB credential check, specific to right now**: the Supabase database password was mid-rotation as of this writing. Before running the backend or agent, confirm with whoever is doing the rotation that it's finished, and that `.env` (repo root) and `agent\.env`'s `DATABASE_URL` both already reflect the **new** password. Starting the backend against a stale password will fail immediately and loudly (a Postgres auth error on startup) — better to confirm first than debug it live.
+**DB credential check**: `.env` (repo root) must carry the current Supabase `DATABASE_URL`; the agent does not use the database. Starting the backend against a stale password fails immediately and loudly (a Postgres auth error on startup). The test suites never use this URL — `conftest.py` points them at the disposable `postgres-test` container.
 
-**Env files this project actually reads** (confirmed from `backend/backend/core/config.py` and `agent/agent/main.py` directly):
+**Env files this project actually reads** (confirmed from `backend/backend/core/config.py` and `agent/agent/main.py` directly; `backend/.env.example`, `agent/.env.example` and `frontend/.env.example` list every variable per service):
 - Backend loads `../.env` (repo root) then `backend/.env` if present — today only the root `.env` exists.
-- Agent loads its own `agent/.env` (mirrors most of the root file).
+- Agent loads the root `.env` first (override=True), then `agent/.env` to fill gaps (`agent/agent/main.py` entrypoint).
 - Frontend reads `frontend/.env` (Vite env vars, `VITE_*` only).
 
 **Minimum required variables, confirmed by reading the actual code that checks for them (not just what's listed in `.env.example`):**
@@ -25,39 +27,39 @@ Open `.env`, `agent\.env`, and `frontend\.env` now and confirm none of these are
 ## 1. Backend (FastAPI) — start first
 
 ```powershell
-cd C:\Users\hassa\Documents\AI-Interview-Platform\backend
-..\.venv\Scripts\uvicorn.exe backend.main:app --reload --port 8000
+cd C:\Users\hassa\Desktop\Himma_v2\backend
+..\.venv\Scripts\uvicorn.exe backend.main:app --reload --port 8001
 ```
 
 This is the real module path (`backend.main:app`, i.e. `backend/backend/main.py` — this project has a nested `backend/backend/` package layout, not a top-level `app/`). Do not use `uvicorn app.main:app` — that module does not exist in this repo (a real, previously-shipped bug in `backend/Dockerfile` made exactly this mistake, fixed 2026-09-02).
 
 **What a healthy startup looks like:**
 ```
-INFO:     Will watch for changes in these directories: ['C:\\Users\\hassa\\Documents\\AI-Interview-Platform\\backend']
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Will watch for changes in these directories: ['C:\\Users\\hassa\\Desktop\\Himma_v2\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
 INFO:     Started reloader process [xxxxx] using WatchFiles
 INFO:     Started server process [xxxxx]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
-**A known, harmless line you may also see** — `Failed to initialize Supabase client: Invalid...` from `resume_service.py`. This is a documented, non-blocking startup warning (`docs/PROJECT_STATUS.md`'s "Known non-blocking debt") — it does **not** affect admin/RBAC endpoints. Don't mistake it for a real failure, but also don't ignore *other* errors around it.
+**Gone since 2026-09-15:** the old `Failed to initialize Supabase client: Invalid...` startup warning from `resume_service.py`. CV upload now talks to Supabase Storage over REST directly (Background-subsection plan, step 0), so that line no longer appears — if you *do* see it, you are running an older build.
 
-**Real failure signs, not to ignore:** any `pydantic.ValidationError` mentioning a missing field (means one of the hard-required vars above is actually missing/empty), or a Postgres/`asyncpg` connection error (check `DATABASE_URL` — especially relevant right now given the in-progress password rotation above).
+**Real failure signs, not to ignore:** any `pydantic.ValidationError` mentioning a missing field (means one of the hard-required vars above is actually missing/empty), or a Postgres/`asyncpg` connection error (check `DATABASE_URL`).
 
-**Quick verify it's actually serving:** open `http://127.0.0.1:8000/docs` in a browser — a real FastAPI Swagger UI should load.
+**Quick verify it's actually serving:** open `http://127.0.0.1:8001/docs` in a browser — a real FastAPI Swagger UI should load.
 
 ---
 
 ## 2. Agent worker (LiveKit) — start second
 
 ```powershell
-cd C:\Users\hassa\Documents\AI-Interview-Platform\agent
-C:\Users\hassa\AppData\Local\Programs\Python\Python313\python.exe -m agent.main dev
+cd C:\Users\hassa\Desktop\Himma_v2\agent
+..\.venv\Scripts\python.exe -m agent.main dev
 ```
 
 **Use `dev`, not `start`, for local demo work.** `start` is the production subcommand (used in `agent/start.sh` for a deployed container); `dev` is the local-development mode with readable console log formatting — both were directly confirmed this session by reading the installed `livekit-agents` CLI source (`start`/`dev`/`console`/`download-files` are the real, distinct subcommands; running with no subcommand at all just prints help and exits without starting anything — a real bug that existed in `agent/start.sh` until it was fixed 2026-09-02).
 
-**A local quirk worth knowing, not a bug**: this repo has two separate Python installs with `livekit-agents` present — the project's own `.venv`, and the system-wide `Python313` install shown above. Both currently report the same version (`1.7.1`), and the system install is the one that has actually been used and proven working, repeatedly, this whole project. If you'd rather use the repo's own `.venv` instead (`..\.venv\Scripts\python.exe -m agent.main dev`), it should work identically today — just be aware these are two independent installs that could silently drift apart later if only one is ever updated.
+Use the repo's own `.venv` (created per `README.md`, with `agent/requirements.txt` installed). A system-wide `Python313` install on this machine also carries `livekit-agents`; do not mix the two — the `.venv` is what the lockfiles describe.
 
 **What a healthy startup looks like** (real log lines, seen live and repeatedly this session):
 ```
@@ -80,7 +82,7 @@ The two `WARNING` lines are expected noise from `dev` mode itself — not errors
 ## 3. Frontend (Vite/React) — start last
 
 ```powershell
-cd C:\Users\hassa\Documents\AI-Interview-Platform\frontend
+cd C:\Users\hassa\Desktop\Himma_v2\frontend
 npm run dev
 ```
 
@@ -90,10 +92,10 @@ npm run dev
 ```
   VITE v_._._  ready in ___ ms
 
-  ➜  Local:   http://127.0.0.1:5173/
+  ➜  Local:   http://127.0.0.1:5174/
   ➜  Network: use --host to expose
 ```
-Note it's `127.0.0.1`, not `localhost` — `frontend/vite.config.ts` explicitly sets `server: { host: '127.0.0.1' }`. Open that exact URL.
+Note it's `127.0.0.1`, not `localhost` — `frontend/vite.config.ts` explicitly sets `server: { host: '127.0.0.1', port: 5174 }`. Open that exact URL.
 
 **Quick verify it's actually the current code, not a stale cached build**: open the browser console (F12) — there should be no red errors on initial load, and the page should show the real Himma/e& login screen, not a blank page or a raw error boundary. If you get a blank white page, check this terminal for a Vite/esbuild compile error before assuming it's a backend problem.
 
@@ -103,7 +105,7 @@ Note it's `127.0.0.1`, not `localhost` — `frontend/vite.config.ts` explicitly 
 
 1. Backend (`uvicorn`) — wait for `Application startup complete.`
 2. Agent (`python -m agent.main dev`) — wait for `registered worker`
-3. Frontend (`npm run dev`) — wait for the `Local: http://127.0.0.1:5173/` line, then open it
+3. Frontend (`npm run dev`) — wait for the `Local: http://127.0.0.1:5174/` line, then open it
 
 **End-to-end proof all three are actually wired together correctly** (not just "each one's log looked fine individually"): open the frontend, log in as admin, open a published job's public link or send yourself an invite, and actually start one interview session through to the agent greeting you out loud. That's the only check that exercises all three processes talking to each other for real — matching this project's own established standard of "a live browser + live agent-worker run," not just clean-looking logs in isolation.
 

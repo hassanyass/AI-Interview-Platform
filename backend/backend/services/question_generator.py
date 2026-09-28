@@ -5,12 +5,12 @@ Uses the official Groq Python SDK, reading GROQ_API_KEY and GROQ_MODEL
 from the existing backend.core.config.settings.  This is a completely new
 code path; it does NOT import from or depend on agent/agent/* in any way.
 """
-import asyncio
 import json
 import logging
 from typing import List, Optional
 
-from groq import Groq
+from backend.providers.factory import get_llm
+from backend.providers.llm.base import LLMProvider
 
 from backend.core.config import settings
 
@@ -135,20 +135,16 @@ async def generate_questions(
     section_type: str,
     section_config: Optional[dict],
     num_questions: int = 5,
+    llm: LLMProvider | None = None,
 ) -> List[dict]:
-    """Call Groq to generate draft interview questions.
+    """Call the LLM provider to generate draft interview questions.
 
     Returns a list of dicts each containing title, competency, text,
     eval_criteria, and config.  Raises on network / parse errors — callers
     should handle gracefully.
     """
-    api_key = settings.GROQ_API_KEY
-    model = settings.GROQ_MODEL or "llama-3.3-70b-versatile"
-
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not configured in backend settings")
-
-    client = Groq(api_key=api_key)
+    llm = llm or get_llm()
+    model = settings.GROQ_MODEL
 
     user_prompt = _build_user_prompt(
         job_title=job_title,
@@ -164,30 +160,21 @@ async def generate_questions(
         num_questions=num_questions,
     )
 
-    logger.info("[QuestionGen] Calling Groq model=%s questions=%d section=%s",
+    logger.info("[QuestionGen] Calling LLM model=%s questions=%d section=%s",
                 model, num_questions, section_type)
 
-    def _call():
-        return client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPTS.get(section_type, _SYSTEM_PROMPTS["VERBAL"])},
-                {"role": "user", "content": user_prompt},
-            ],
-            model=model,
-            temperature=0.7,
-            max_tokens=4096,
-            response_format={"type": "json_object"},
-        )
-
-    # Off the event loop -- the sync Groq SDK's HTTP call was blocking the
-    # whole ASGI event loop for its full duration (confirmed 2026-09-03:
-    # this surfaced in production as a hung request that the platform's own
-    # health checking dropped mid-flight, which the browser then reports as
-    # a misleading CORS error since no response headers ever arrive). Same
-    # fix as evaluation_generator.py already applies to its own Groq call.
-    chat_completion = await asyncio.to_thread(_call)
-
-    raw = chat_completion.choices[0].message.content
+    # The provider is async end-to-end; the request never blocks the ASGI
+    # event loop (the production hang the old sync-SDK-in-a-thread wrapper
+    # existed to avoid -- confirmed 2026-09-03 -- cannot recur here).
+    raw = await llm.complete_json(
+        [
+            {"role": "system", "content": _SYSTEM_PROMPTS.get(section_type, _SYSTEM_PROMPTS["VERBAL"])},
+            {"role": "user", "content": user_prompt},
+        ],
+        model=model,
+        temperature=0.7,
+        max_tokens=4096,
+    )
     parsed = json.loads(raw)
 
     # The model may wrap the array in an object like {"questions": [...]}.

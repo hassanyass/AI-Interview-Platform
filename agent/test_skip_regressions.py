@@ -9,6 +9,7 @@ from agent.interview.models import (
     InterviewPhase,
     InterviewRuntimeContext,
     OrderedSectionProgress,
+    QuestionOutcome,
 )
 from agent.interview.persistence import MockPersistence
 from agent.interview.questions import QUESTION_BANK
@@ -255,19 +256,27 @@ def _b2b_controller_with_active_verbal_section(phase: InterviewPhase = Interview
     return InterviewController(object(), MockPersistence(), context)
 
 
-def test_skip_question_is_noop_when_core_section_active():
+def test_skip_question_skips_the_active_core_question():
+    """Policy history: written for Issue 6 ("core questions can never be
+    skipped live"), reversed on 2026-08-27 (SKIP_QUESTION genuinely skips
+    the current core question) and, for the intro phases, on 2026-09-16
+    (Skip on the greeting hops straight to the first question -- live
+    finding). The test now pins the CURRENT policy; the old assertions were
+    stale since the first reversal."""
     async def scenario():
         controller = _b2b_controller_with_active_verbal_section()
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
         assert action is not None
+        assert action.action == ActionEnum.TRANSITION
         assert action.should_transition is False
-        assert action.response == SYSTEM_MESSAGES["en"]["core_section_no_skip"]
-        # Nothing about the core section or phase moved.
-        assert controller.context.current_phase == InterviewPhase.BACKGROUND
-        assert controller.context.sections["VERBAL"].completed is False
-        assert controller.context.sections["VERBAL"].current_index == 0
+        assert action.response == SYSTEM_MESSAGES["en"]["skip_question"]
+        # The helper's section has ONE question: skipping it ends the only
+        # section, so the interview moves to CLOSING (no waiting room).
+        assert controller.context.current_phase == InterviewPhase.CLOSING
+        assert controller.context.sections["VERBAL"].completed is True
+        assert controller.context.question_records[-1].outcome == QuestionOutcome.SKIPPED
 
     asyncio.run(scenario())
 
@@ -285,12 +294,14 @@ def test_skip_question_is_noop_when_core_section_pending_during_briefing():
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
+        # 2026-09-16: Skip on the greeting = "get me to the questions".
         assert action is not None
         assert action.should_transition is False
-        assert action.response == SYSTEM_MESSAGES["en"]["core_section_no_skip"]
+        assert action.response == SYSTEM_MESSAGES["en"]["skip_intro"]
         # Must NOT have cascaded into WELCOME/BACKGROUND/TECHNICAL_INTRO.
-        assert controller.context.current_phase == InterviewPhase.BRIEFING
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
         assert controller.context.sections["VERBAL"].completed is False
+        assert controller.context.sections["VERBAL"].current_index == 0  # nothing skipped, only the intro
 
     asyncio.run(scenario())
 
@@ -301,8 +312,8 @@ def test_skip_question_is_noop_when_core_section_pending_during_welcome():
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
-        assert action.response == SYSTEM_MESSAGES["en"]["core_section_no_skip"]
-        assert controller.context.current_phase == InterviewPhase.WELCOME
+        assert action.response == SYSTEM_MESSAGES["en"]["skip_intro"]  # 2026-09-16: hop, not a rejection
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
         assert controller.context.sections["VERBAL"].completed is False
 
     asyncio.run(scenario())
@@ -333,7 +344,7 @@ def test_skip_question_arabic_message_when_core_section_active():
 
         action = await controller._handle_candidate_control(CandidateControlAction.SKIP_QUESTION)
 
-        assert action.response == SYSTEM_MESSAGES["ar"]["core_section_no_skip"]
+        assert action.response == SYSTEM_MESSAGES["ar"]["skip_question"]  # real skip, localised
 
     asyncio.run(scenario())
 
@@ -1362,18 +1373,27 @@ def test_repeated_ask_past_first_turn_is_capped_like_a_follow_up():
         # The first ASK is legitimate (posing the one real question). Every
         # one after it is the LLM repeating the exact observed bug -- with
         # the fix, none of those get to stay ASK: they're reclassified to
-        # FOLLOW_UP and, once the cap is hit, downgraded to ACKNOWLEDGE.
-        # Before this fix, `actions` would have been six ASKs in a row.
+        # FOLLOW_UP. Before this fix, `actions` would have been six ASKs.
         assert actions[0] == ActionEnum.ASK
         assert ActionEnum.ASK not in actions[1:]
-        assert actions[-1] == ActionEnum.ACKNOWLEDGE
 
-        # Only the one real question exists -- no phantom extra questions
-        # were ever advanced into or recorded.
+        # Updated 2026-09-14 (docs/verbal-section-flow-plan.md, A1 -- the
+        # approved change this test originally froze the OLD behaviour of):
+        # hitting the cap no longer parks the interview on an ACKNOWLEDGE
+        # loop. The third reclassified ASK (cap 2 already used) is turned
+        # into a controller-driven TRANSITION that advances the ordered
+        # walk. Since this section has only one question, that means the
+        # section completes and the interview moves to CLOSING -- still
+        # with exactly ONE real question ever asked/recorded, which is the
+        # original bug's actual invariant ("no phantom extra questions").
+        assert actions[3] == ActionEnum.TRANSITION
         core_section = context.sections["VERBAL"]
-        assert core_section.current_index == 0
-        assert core_section.current_question.id == "iq-1"
-        assert controller.context.question_records == []
+        assert core_section.completed is True
+        assert core_section.current_index == 1
+        records = controller.context.question_records
+        assert [r.question_id for r in records] == ["iq-1"]
+        assert records[0].followups_used == 2
+        assert controller.context.current_phase in (InterviewPhase.CLOSING, InterviewPhase.COMPLETED)
 
     asyncio.run(scenario())
 
@@ -2883,5 +2903,709 @@ def test_9i_full_mcq_interview_walk_with_submission_and_evaluation():
         assert final_result["completed"] == 1
         assert final_result["evaluation"]["recommendation"] == "Hire"
         assert final_result["question_records"][0]["question_id"] == "iq-mcq-full"
+
+    asyncio.run(scenario())
+
+
+# ─── Verbal-flow orchestration (docs/verbal-section-flow-plan.md, A1) ──────────
+# Reproduced bug: once the max-2 follow-up cap was hit, an over-cap FOLLOW_UP
+# (or a drifted ASK) was downgraded to ACKNOWLEDGE and the flow never advanced
+# to the next HR-approved question unless the LLM volunteered TRANSITION.
+
+from agent.interview.models import ActionEnum, StructuredAction
+
+
+def _verbal_controller(num_questions: int, extra_sections: bool = False) -> InterviewController:
+    """B2B controller with one VERBAL section of N HR-approved questions,
+    optionally followed by an MCQ section (so exhausting VERBAL should land
+    in WAITING_ROOM rather than CLOSING)."""
+    context = make_controller(InterviewPhase.BACKGROUND).context
+    context.time_remaining_seconds = 1200  # comfortably "normal" tier: cap = 2
+    questions = [
+        Question(
+            id=f"core-q{i}", title=f"Core Q{i}", problem_statement=f"HR question number {i}?",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        for i in range(1, num_questions + 1)
+    ]
+    context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=questions)
+    if extra_sections:
+        mcq = Question(
+            id="core-mcq1", title="MCQ 1", problem_statement="Pick one.",
+            difficulty="mid", competency="knowledge",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["MCQ"] = OrderedSectionProgress(section_type="MCQ", questions=[mcq])
+    return InterviewController(object(), MockPersistence(), context)
+
+
+def _script_llm(controller: InterviewController, *actions: ActionEnum) -> None:
+    script = [StructuredAction(action=a, response=f"llm said ({a.value})", reason="scripted") for a in actions]
+    controller._generate_next_action = AsyncMock(side_effect=script)
+
+
+async def _drive(controller: InterviewController, *inputs):
+    last = None
+    for text in inputs:
+        last = await controller.process_candidate_input(text)
+    return last
+
+
+def test_followup_cap_forces_advance_to_next_core_question_verbatim():
+    """T1: cap reached => the controller itself moves on, speaking the next
+    HR question verbatim, and the new question is marked asked."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=3)
+        section = controller.context.sections["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "answer 1", "answer 2")
+        assert controller.context.followups_used == 2
+        assert section.current_index == 0
+
+        forced = await controller.process_candidate_input("answer 3")  # would be follow-up 3
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.should_transition is True
+        # The LLM's would-be extra follow-up is NOT what gets spoken.
+        assert "llm said" not in forced.response
+        assert SYSTEM_MESSAGES["en"]["core_followups_exhausted_next"] in forced.response
+        assert forced.response.endswith("HR question number 2?")
+        # Bookkeeping went through the existing advance path.
+        assert section.current_index == 1
+        assert section.current_question_asked is True
+        assert controller.context.followups_used == 0
+        assert controller.context.question_records[-1].question_id == "core-q1"
+        assert controller.context.question_records[-1].followups_used == 2
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+def test_followup_cap_on_last_question_bridges_only_and_enters_waiting_room():
+    """T2: cap reached on the section's LAST question => bridge only (no
+    question text); the existing section-boundary branching takes over
+    (WAITING_ROOM, because another section remains)."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=1, extra_sections=True)
+        section = controller.context.sections["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "a1", "a2")
+
+        forced = await controller.process_candidate_input("a3")
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response == SYSTEM_MESSAGES["en"]["core_followups_exhausted_last"]
+        assert section.completed is True
+        assert controller.context.current_phase == InterviewPhase.WAITING_ROOM
+
+    asyncio.run(scenario())
+
+
+def test_followup_cap_on_last_question_of_only_section_enters_closing():
+    """T2b: same, but no further section => CLOSING."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=1)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "a1", "a2")
+
+        forced = await controller.process_candidate_input("a3")
+
+        assert forced.response == SYSTEM_MESSAGES["en"]["core_followups_exhausted_last"]
+        assert controller.context.current_phase == InterviewPhase.CLOSING
+
+    asyncio.run(scenario())
+
+
+def test_drifted_ask_past_first_turn_at_cap_also_forces_advance():
+    """T3: the 2026-09-03 reclassification (ASK past the first turn ==
+    FOLLOW_UP) now feeds the same forced advance -- a model inventing "a new
+    question of its own" at the cap can no longer stall the flow."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        section = controller.context.sections["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.ASK)
+        await _drive(controller, None, "a1", "a2")
+
+        forced = await controller.process_candidate_input("a3")
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response.endswith("HR question number 2?")
+        assert section.current_index == 1
+
+    asyncio.run(scenario())
+
+
+def test_legacy_flow_still_downgrades_over_cap_followup_to_acknowledge():
+    """Guard: the legacy (non-core) BACKGROUND flow keeps its old behaviour
+    -- A1 is scoped to the ordered VERBAL core flow only."""
+    async def scenario():
+        controller = make_controller(InterviewPhase.BACKGROUND)
+        controller.context.background_progress.limits.max_followups_per_question = 1
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        await _drive(controller, None, "a1")
+
+        over_cap = await controller.process_candidate_input("a2")
+
+        assert over_cap.action == ActionEnum.ACKNOWLEDGE
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+# ─── Verbal-flow orchestration (docs/verbal-section-flow-plan.md, B1-B3) ───────
+# Each committed FOLLOW_UP on an ordered VERBAL core question grants extra time.
+
+from agent.interview.controller import VERBAL_FOLLOWUP_TIME_BONUS_SECONDS as BONUS
+
+
+def test_each_followup_grants_exactly_the_bonus_and_only_followups_do():
+    """T4: FOLLOW_UP adds exactly the bonus to remaining; ASK adds nothing;
+    the cap bounds it to two grants per question (the third attempt is the
+    forced advance, which grants nothing)."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+        base = controller.get_remaining_time()
+
+        await controller.process_candidate_input(None)           # ASK: no grant
+        assert controller.get_remaining_time() == base
+        assert controller.context.followup_time_bonus_seconds_total == 0
+
+        await controller.process_candidate_input("a1")           # follow-up 1
+        assert controller.get_remaining_time() == base + BONUS
+        await controller.process_candidate_input("a2")           # follow-up 2
+        assert controller.get_remaining_time() == base + 2 * BONUS
+        assert controller.context.followup_time_bonus_seconds_total == 2 * BONUS
+
+        await controller.process_candidate_input("a3")           # cap -> forced advance, no grant
+        assert controller.get_remaining_time() == base + 2 * BONUS
+        assert controller.context.followup_time_bonus_seconds_total == 2 * BONUS
+
+    asyncio.run(scenario())
+
+
+def test_mcq_core_questions_never_grant_time():
+    """T4b: MCQ/CODING have a 0 follow-up cap by decision -- a FOLLOW_UP
+    there is downgraded before it can ever reach the grant."""
+    async def scenario():
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        context.time_remaining_seconds = 1200
+        mcq = Question(
+            id="core-mcq1", title="MCQ 1", problem_statement="Pick one.",
+            difficulty="mid", competency="knowledge",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["MCQ"] = OrderedSectionProgress(section_type="MCQ", questions=[mcq])
+        controller = InterviewController(object(), MockPersistence(), context)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP)
+        base = controller.get_remaining_time()
+
+        await controller.process_candidate_input(None)
+        await controller.process_candidate_input("a1")
+
+        assert controller.get_remaining_time() == base
+        assert controller.context.followup_time_bonus_seconds_total == 0
+
+    asyncio.run(scenario())
+
+
+def test_ui_state_reports_the_grant_once_and_keeps_the_running_total():
+    """T5: time_bonus_granted_seconds appears on the first state update after
+    a grant and is null after that; time_bonus_total_seconds accumulates."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+
+        await controller.process_candidate_input(None)
+        state = controller.generate_ui_state()
+        assert state["time_bonus_granted_seconds"] is None
+        assert state["time_bonus_total_seconds"] == 0
+
+        await controller.process_candidate_input("a1")
+        first = controller.generate_ui_state()
+        second = controller.generate_ui_state()
+        assert first["time_bonus_granted_seconds"] == BONUS
+        assert second["time_bonus_granted_seconds"] is None      # consumed exactly once
+        assert second["time_bonus_total_seconds"] == BONUS
+
+        await controller.process_candidate_input("a2")
+        assert controller.generate_ui_state()["time_bonus_granted_seconds"] == BONUS
+        assert controller.generate_ui_state()["time_bonus_total_seconds"] == 2 * BONUS
+
+    asyncio.run(scenario())
+
+
+def test_grant_survives_resume_via_time_remaining_only():
+    """T6: the checkpoint carries the EXTENDED time_remaining_seconds (the
+    only thing a reconnect reseeds the clock from) and no new bonus field
+    (the /internal/* checkpoint contract is untouched); a controller built
+    from that context starts with the extended clock."""
+    async def scenario():
+        persistence = MockPersistence()
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        context.time_remaining_seconds = 1200
+        q1 = Question(
+            id="core-q1", title="Core Q1", problem_statement="HR question number 1?",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=[q1, q1.model_copy(update={"id": "core-q2"})])
+        controller = InterviewController(object(), persistence, context)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP)
+        await controller.process_candidate_input(None)
+        await controller.process_candidate_input("a1")
+
+        saved = persistence.storage[context.session_id]
+        assert saved["time_remaining_seconds"] == 1200 + BONUS
+        assert "followup_time_bonus_seconds_total" not in saved
+        assert "time_bonus_total_seconds" not in saved
+
+        # Resume: a fresh controller seeds its clock from the context's
+        # time_remaining_seconds, exactly as __init__ does in production.
+        resumed = InterviewController(object(), MockPersistence(), context)
+        assert resumed.get_remaining_time() == 1200 + BONUS
+
+    asyncio.run(scenario())
+
+
+# ─── Verbal-flow orchestration (docs/verbal-section-flow-plan.md, A3) ──────────
+# The first turn of a VERBAL core question must contain the HR question verbatim.
+
+def test_first_turn_paraphrase_is_replaced_with_verbatim_question():
+    """T7: the model paraphrased the HR question -> spoken text becomes the
+    localised lead-in + the exact question text."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        controller._generate_next_action = AsyncMock(return_value=StructuredAction(
+            action=ActionEnum.ASK,
+            response="So, to kick things off, could you walk me through your background a bit?",
+            reason="scripted paraphrase",
+        ))
+
+        first = await controller.process_candidate_input(None)
+
+        assert first.action == ActionEnum.ASK
+        assert first.response == f"{SYSTEM_MESSAGES['en']['core_question_lead_in']} HR question number 1?"
+        assert controller.context.sections["VERBAL"].current_question_asked is True
+
+    asyncio.run(scenario())
+
+
+def test_first_turn_compliant_text_is_kept_untouched():
+    """T7b: the model included the question verbatim (any casing) -> its own
+    natural lead-in is preserved exactly."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        spoken = "Great to meet you. Let's start: hr QUESTION number 1? Take your time."
+        controller._generate_next_action = AsyncMock(return_value=StructuredAction(
+            action=ActionEnum.ASK, response=spoken, reason="scripted compliant",
+        ))
+
+        first = await controller.process_candidate_input(None)
+
+        assert first.response == spoken
+
+    asyncio.run(scenario())
+
+
+def test_verbatim_guarantee_does_not_touch_subsequent_turns_or_other_sections():
+    """T7c: only the FIRST turn of a VERBAL core question is guarded -- a
+    follow-up turn's text is left alone, and an MCQ section's ASK is not
+    rewritten (MCQ has its own prompt/flow)."""
+    async def scenario():
+        controller = _verbal_controller(num_questions=2)
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP)
+        await controller.process_candidate_input(None)
+        follow = await controller.process_candidate_input("a1")
+        assert follow.response == "llm said (FOLLOW_UP)"
+
+        context = make_controller(InterviewPhase.BACKGROUND).context
+        context.time_remaining_seconds = 1200
+        mcq = Question(
+            id="core-mcq1", title="MCQ 1", problem_statement="Pick one.",
+            difficulty="mid", competency="knowledge",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        context.sections["MCQ"] = OrderedSectionProgress(section_type="MCQ", questions=[mcq])
+        mcq_controller = InterviewController(object(), MockPersistence(), context)
+        _script_llm(mcq_controller, ActionEnum.ASK)
+        first = await mcq_controller.process_candidate_input(None)
+        assert first.response == "llm said (ASK)"
+
+    asyncio.run(scenario())
+
+
+# ─── Intro handshake fix (2026-09-15, verbal-flow plan addendum) ──────────────
+# Live finding: a session sat in BRIEFING for 18 state updates / 12 ASKs and
+# never reached the ordered core questions -- BRIEFING -> WELCOME had exactly
+# one path (the LLM emitting TRANSITION) while BRIEFING_PROMPT orders "MUST
+# use action=ASK (NOT TRANSITION)" on every turn. A prompt-obeying model never
+# started the interview.
+
+def _kickoff_controller(num_questions: int = 2) -> InterviewController:
+    """B2B controller starting from CREATED (the real kick-off path), with an
+    HR-approved VERBAL section."""
+    context = make_controller(InterviewPhase.CREATED).context
+    context.time_remaining_seconds = 1200
+    context.sections["VERBAL"] = OrderedSectionProgress(section_type="VERBAL", questions=[
+        Question(
+            id=f"core-q{i}", title=f"Core Q{i}", problem_statement=f"HR question number {i}?",
+            difficulty="mid", competency="communication",
+            expected_concepts=[], hints=[], follow_up_topics=[], time_budget_minutes=0,
+            coding_required=False, source="HR_APPROVED",
+        )
+        for i in range(1, num_questions + 1)
+    ])
+    return InterviewController(object(), MockPersistence(), context)
+
+
+def _obedient_llm(controller: InterviewController):
+    """An LLM that does exactly what each phase's prompt tells it: ASK in
+    BRIEFING (never TRANSITION), TRANSITION in WELCOME, ASK for a core
+    question's first turn. This is the model behaviour that stalled live."""
+    def generate(*_a, **_k):
+        phase = controller.context.current_phase
+        if phase == InterviewPhase.BRIEFING:
+            return StructuredAction(action=ActionEnum.ASK, response="Hi, I'm the interviewer. Ready to begin?", reason="prompt: ASK")
+        if phase == InterviewPhase.WELCOME:
+            return StructuredAction(action=ActionEnum.TRANSITION, response="Great, let's begin.", reason="prompt: TRANSITION", should_transition=True)
+        return StructuredAction(action=ActionEnum.ASK, response="(llm core turn)", reason="")
+    controller._generate_next_action = AsyncMock(side_effect=generate)
+
+
+def test_prompt_obeying_llm_reaches_first_hr_question_on_the_reply_turn():
+    """T8: greeting, candidate replies, and by that SAME reply turn the
+    interview is in BACKGROUND with HR question 1 spoken verbatim as part of
+    the 'let's begin' utterance (no extra candidate input needed)."""
+    async def scenario():
+        controller = _kickoff_controller()
+        section = controller.context.sections["VERBAL"]
+        _obedient_llm(controller)
+        controller.start_interview()
+
+        greeting = await controller.process_candidate_input(None)
+        assert greeting.action == ActionEnum.ASK
+        assert controller.context.current_phase == InterviewPhase.BRIEFING
+
+        reply = await controller.process_candidate_input("Hi there, yes, I'm Rick.")
+
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+        assert reply.action == ActionEnum.TRANSITION
+        assert reply.response.startswith("Great, let's begin.")
+        assert reply.response.endswith("HR question number 1?")
+        assert section.current_index == 0
+        assert section.current_question_asked is True
+
+    asyncio.run(scenario())
+
+
+def test_welcome_turn_without_transition_is_forced_into_the_interview():
+    """T9: a model that acknowledges in WELCOME without TRANSITION is forced
+    forward, keeping its own acknowledgement text plus Q1 verbatim."""
+    async def scenario():
+        controller = _kickoff_controller()
+        controller.start_interview()
+        controller._generate_next_action = AsyncMock(side_effect=[
+            StructuredAction(action=ActionEnum.ASK, response="Hello! Ready?", reason=""),
+            StructuredAction(action=ActionEnum.ACKNOWLEDGE, response="Nice to meet you, Rick.", reason="no transition"),
+        ])
+        await controller.process_candidate_input(None)
+
+        reply = await controller.process_candidate_input("I'm Rick.")
+
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+        assert reply.action == ActionEnum.TRANSITION
+        assert reply.response == "Nice to meet you, Rick. HR question number 1?"
+
+    asyncio.run(scenario())
+
+
+def test_briefing_does_not_advance_before_the_greeting_or_without_a_reply():
+    """T10a: the hop needs BOTH a delivered greeting and real candidate
+    input -- a silent/empty turn re-runs the greeting rather than skipping
+    ahead, and nothing moves before the greeting has gone out."""
+    async def scenario():
+        controller = _kickoff_controller()
+        _obedient_llm(controller)
+        controller.start_interview()
+        assert controller._briefing_greeted is False
+
+        await controller.process_candidate_input(None)     # greeting
+        assert controller._briefing_greeted is True
+        await controller.process_candidate_input(None)     # silence: no reply yet
+        assert controller.context.current_phase == InterviewPhase.BRIEFING
+
+        await controller.process_candidate_input("Hi.")     # real reply -> hop
+        assert controller.context.current_phase == InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+def test_end_interview_said_during_the_greeting_is_still_handled_in_briefing():
+    """T10b: the hop sits after control-intent detection, so a candidate who
+    ends the interview in response to the greeting is handled there -- not
+    hopped into WELCOME first."""
+    async def scenario():
+        controller = _kickoff_controller()
+        _obedient_llm(controller)
+        controller.start_interview()
+        await controller.process_candidate_input(None)
+
+        ended = await controller.process_candidate_input("I want to end the interview.")
+
+        assert ended.detected_candidate_control == CandidateControlAction.END_INTERVIEW or ended.action == ActionEnum.END \
+            or controller.context.current_phase in (InterviewPhase.CLOSING, InterviewPhase.COMPLETED)
+        assert controller.context.current_phase != InterviewPhase.BACKGROUND
+
+    asyncio.run(scenario())
+
+
+def test_briefing_structure_line_describes_real_sections():
+    """The greeting prompt describes the job's actual sections when they
+    exist, and keeps the legacy line otherwise."""
+    with_sections = _kickoff_controller(num_questions=3)
+    line = with_sections._briefing_structure_line()
+    assert "spoken discussion (3 questions)" in line
+    assert "technical problem" not in line
+
+    legacy = make_controller(InterviewPhase.CREATED)
+    assert "background discussion" in legacy._briefing_structure_line()
+
+
+def test_full_walk_from_kickoff_obedient_llm_exercises_cap_and_time_grant():
+    """End-to-end from CREATED with the prompt-obeying model: greeting ->
+    reply -> Q1 verbatim -> two follow-ups (each granting time) -> cap ->
+    forced advance to Q2 verbatim. The complete approved flow in one run."""
+    async def scenario():
+        controller = _kickoff_controller(num_questions=2)
+        section = controller.context.sections["VERBAL"]
+        _obedient_llm(controller)
+        controller.start_interview()
+        base = controller.get_remaining_time()
+
+        await controller.process_candidate_input(None)
+        await controller.process_candidate_input("Hi, I'm Rick.")           # -> BACKGROUND, Q1 asked
+        await controller.process_candidate_input("I have experience.")     # ASK -> reclassified FOLLOW_UP 1
+        await controller.process_candidate_input("I built a CV system.")   # FOLLOW_UP 2
+        assert controller.context.followups_used == 2
+        assert controller.get_remaining_time() == base + 2 * BONUS
+
+        forced = await controller.process_candidate_input("I used car datasets.")
+
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response.endswith("HR question number 2?")
+        assert section.current_index == 1
+        assert controller.context.question_records[-1].question_id == "core-q1"
+
+    asyncio.run(scenario())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Verbal Background subsection, step 1 (docs/verbal-background-subsection-plan
+# .md §7): HR flag -> contract field -> agent generation + ordering + tags.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _bg_load_payload(include_background=True, count=3, budget=5):
+    return {
+        "role": "Backend Engineer", "level": "mid",
+        "sections": [{
+            "section_type": "VERBAL", "time_budget_minutes": 20,
+            "include_background": include_background,
+            "background_question_count": count,
+            "background_time_budget_minutes": budget,
+            "questions": [
+                {"id": "hr-1", "order_index": 0, "title": "HR one", "text": "Tell me about ownership.", "competency": "ownership"},
+                {"id": "hr-2", "order_index": 1, "title": "HR two", "text": "Describe a conflict.", "competency": "conflict"},
+            ],
+        }],
+    }
+
+
+def _bg_profile():
+    return {
+        "full_name": "Cand", "professional_title": "Senior ML Engineer", "years_of_experience": 8,
+        "skills": ["Python", "PyTorch"], "frameworks": ["FastAPI"], "projects": ["RAG support assistant"],
+    }
+
+
+class _BGStructuredLLM:
+    """Records the prompt and returns a canned BackgroundQuestionSet."""
+    def __init__(self, drafts, fail=False):
+        self.drafts, self.fail, self.calls = drafts, fail, []
+
+    async def generate_structured(self, system_prompt, messages, response_model):
+        self.calls.append((system_prompt, messages, response_model))
+        if self.fail:
+            raise RuntimeError("groq down")
+        return response_model(questions=self.drafts)
+
+
+def test_bg_build_core_sections_forwards_hr_settings_and_defaults_off():
+    from agent.main import build_core_sections
+    built = build_core_sections(_bg_load_payload(count=4, budget=6))
+    verbal = built["VERBAL"]
+    assert verbal.include_background is True
+    assert verbal.background_question_count == 4
+    assert verbal.background_time_budget_minutes == 6
+
+    # Pre-feature payload: no keys at all -> off, exactly as before.
+    legacy = _bg_load_payload()
+    for key in ("include_background", "background_question_count", "background_time_budget_minutes"):
+        legacy["sections"][0].pop(key)
+    verbal = build_core_sections(legacy)["VERBAL"]
+    assert verbal.include_background is False
+    assert verbal.background_question_count is None
+    assert verbal.background_questions == []
+
+
+@pytest.mark.asyncio
+async def test_bg_generator_maps_drafts_to_tagged_questions():
+    from agent.interview.background_generator import (
+        generate_background_questions, BackgroundQuestionDraft, BackgroundEvalBands,
+    )
+    drafts = [
+        BackgroundQuestionDraft(title="Recent role", competency="Recent Role", text="What did you own as Senior ML Engineer?",
+                                eval_criteria=BackgroundEvalBands(excellent="e", good="g", adequate="a", poor="p")),
+        BackgroundQuestionDraft(title="PyTorch", competency="pytorch_usage", text="How did you use PyTorch?"),
+        BackgroundQuestionDraft(title="blank", competency="x", text="   "),  # unusable -> dropped
+        BackgroundQuestionDraft(title="RAG", competency="project rag", text="Walk me through the RAG assistant."),
+    ]
+    llm = _BGStructuredLLM(drafts)
+    questions = await generate_background_questions(
+        llm=llm, role="Backend Engineer", level="mid", language="en",
+        job_description="Build APIs", candidate_profile=_bg_profile(), count=3,
+    )
+    assert [q.title for q in questions] == ["Recent role", "PyTorch", "RAG"]
+    assert all(q.source == "BACKGROUND" for q in questions)
+    assert [q.competency for q in questions] == ["background:recent_role", "background:pytorch_usage", "background:project_rag"]
+    assert all(q.id.startswith("bg-") for q in questions)
+    assert questions[0].eval_criteria == {"excellent": "e", "good": "g", "adequate": "a", "poor": "p"}
+    assert questions[0].coding_required is False and questions[0].difficulty == "mid"
+    # The prompt is grounded in the profile and asks for the requested count.
+    system_prompt = llm.calls[0][0]
+    assert "Senior ML Engineer" in system_prompt and "exactly 3 short questions" in system_prompt
+
+
+@pytest.mark.asyncio
+async def test_bg_generator_respects_count_cap_and_never_raises():
+    from agent.interview.background_generator import generate_background_questions, BackgroundQuestionDraft
+    drafts = [BackgroundQuestionDraft(title=f"q{i}", competency=f"c{i}", text=f"text {i}") for i in range(5)]
+    got = await generate_background_questions(
+        llm=_BGStructuredLLM(drafts), role="r", level="junior", language="en",
+        job_description=None, candidate_profile=_bg_profile(), count=2,
+    )
+    assert len(got) == 2
+
+    # Model failure -> [] (background silently skipped), not an exception.
+    got = await generate_background_questions(
+        llm=_BGStructuredLLM(drafts, fail=True), role="r", level="junior", language="en",
+        job_description=None, candidate_profile=_bg_profile(), count=3,
+    )
+    assert got == []
+
+
+@pytest.mark.asyncio
+async def test_bg_generator_skips_ungroundable_profile_without_calling_llm():
+    from agent.interview.background_generator import generate_background_questions
+    llm = _BGStructuredLLM([])
+    got = await generate_background_questions(
+        llm=llm, role="r", level="mid", language="en", job_description=None,
+        candidate_profile={"full_name": "Only A Name", "email": "x@y", "skills": []}, count=3,
+    )
+    assert got == [] and llm.calls == []
+
+
+def test_bg_attach_prepends_tagged_questions_and_is_idempotent():
+    from agent.main import build_core_sections, attach_background_questions
+    from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
+    built = build_core_sections(_bg_load_payload())
+    bg = [draft_to_question(BackgroundQuestionDraft(title=f"bg{i}", competency=f"t{i}", text=f"bg text {i}"), "mid", i) for i in range(2)]
+
+    assert attach_background_questions(built, bg) == 2
+    verbal = built["VERBAL"]
+    assert [q.source for q in verbal.questions] == ["BACKGROUND", "BACKGROUND", "HR_APPROVED", "HR_APPROVED"]
+    assert verbal.current_index == 0 and verbal.current_question.source == "BACKGROUND"
+    assert verbal.total_questions == 4 and len(verbal.background_questions) == 2
+
+    # Second call: nothing changes (guards a double bootstrap).
+    assert attach_background_questions(built, bg) == 0
+    assert verbal.total_questions == 4
+    # Empty list / no VERBAL section: no-ops.
+    assert attach_background_questions(built, []) == 0
+    assert attach_background_questions({}, bg) == 0
+
+
+def test_bg_checkpoint_round_trip_restores_same_questions_and_pointer():
+    """Resume must not regenerate: the checkpoint carries the generated
+    questions, and rebuilding from it keeps current_index meaningful."""
+    from agent.main import build_core_sections, attach_background_questions, restore_background_questions
+    from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
+
+    async def scenario():
+        built = build_core_sections(_bg_load_payload())
+        bg = [draft_to_question(BackgroundQuestionDraft(title=f"bg{i}", competency=f"t{i}", text=f"bg text {i}"), "mid", i) for i in range(3)]
+        attach_background_questions(built, bg)
+        built["VERBAL"].current_index = 2  # mid-background
+
+        controller = make_controller(InterviewPhase.BACKGROUND)
+        controller.context.sections = built
+        await controller.persistence.save_checkpoint(controller.context)
+        checkpoint = controller.persistence.storage[controller.context.session_id]
+        snap = checkpoint["section_progress"]["verbal"]
+        assert snap["current_index"] == 2
+        assert [q["id"] for q in snap["background_questions"]] == [q.id for q in bg]
+
+        # Fresh /load rebuild (HR questions only) + restore from checkpoint,
+        # in the order entrypoint() does it.
+        rebuilt = build_core_sections(_bg_load_payload())
+        restored = restore_background_questions(checkpoint)
+        assert attach_background_questions(rebuilt, restored) == 3
+        rebuilt["VERBAL"].current_index = snap["current_index"]
+        assert rebuilt["VERBAL"].current_question.id == bg[2].id
+        assert [q.id for q in rebuilt["VERBAL"].questions] == [q.id for q in bg] + ["hr-1", "hr-2"]
+
+        # Pre-feature checkpoint: nothing to restore, no crash.
+        assert restore_background_questions({"section_progress": {"verbal": {"current_index": 1}}}) == []
+        assert restore_background_questions({}) == []
+
+    asyncio.run(scenario())
+
+
+def test_bg_questions_walk_first_as_ordinary_core_questions():
+    """Through the controller: a background question is asked verbatim
+    first, and the forced advance carries the walk into the HR questions
+    after it. Step 3 added the background-specific edges this walk now
+    reflects: the cap is ONE follow-up during the background, and the
+    boundary is spoken with the Background -> Discussion bridge."""
+    from agent.main import build_core_sections, attach_background_questions
+    from agent.interview.background_generator import draft_to_question, BackgroundQuestionDraft
+
+    async def scenario():
+        built = build_core_sections(_bg_load_payload())
+        bg = [draft_to_question(BackgroundQuestionDraft(title="Recent role", competency="recent_role",
+                                                        text="What did you own as Senior ML Engineer?"), "mid", 0)]
+        attach_background_questions(built, bg)
+        controller = make_controller(InterviewPhase.BACKGROUND)
+        controller.context.time_remaining_seconds = 1200
+        controller.context.sections = built
+        section = built["VERBAL"]
+        _script_llm(controller, ActionEnum.ASK, ActionEnum.FOLLOW_UP, ActionEnum.FOLLOW_UP)
+
+        first = await controller.process_candidate_input(None)
+        assert first.response.endswith("What did you own as Senior ML Engineer?")
+        assert section.current_question.source == "BACKGROUND"
+
+        await _drive(controller, "I owned the ML platform.")  # the one allowed follow-up
+        forced = await controller.process_candidate_input("Also the deployment pipeline.")
+        assert forced.action == ActionEnum.TRANSITION
+        assert forced.response == f"{SYSTEM_MESSAGES['en']['background_to_discussion']} Tell me about ownership."
+        assert section.current_question.id == "hr-1" and section.current_index == 1
+        assert controller.context.question_records[-1].question_id == bg[0].id
 
     asyncio.run(scenario())

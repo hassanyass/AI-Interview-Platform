@@ -63,7 +63,8 @@ export function decomposeHeadPose(matrix: { rows: number; columns: number; data:
   }
   const d = matrix.data;
   // Column-major 4x4 -> mathematical R[row][col] = d[col*4 + row].
-  const m11 = d[0], m21 = d[1], m31 = d[2];
+  // (m21 = d[1] and m31 = d[2] are not needed by the XYZ extraction below.)
+  const m11 = d[0];
   const m12 = d[4], m22 = d[5], m32 = d[6];
   const m13 = d[8], m23 = d[9], m33 = d[10];
 

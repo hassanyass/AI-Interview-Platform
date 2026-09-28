@@ -1,107 +1,268 @@
-aiofiles==25.1.0
 aiohappyeyeballs==2.7.1
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp
 aiohttp==3.14.3
+    # via
+    #   -c backend/requirements.txt
+    #   livekit-api
 aiosignal==1.4.0
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp
 alembic==1.19.1
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 annotated-doc==0.0.5
+    # via
+    #   -c backend/requirements.txt
+    #   fastapi
 annotated-types==0.8.0
-anyio==4.14.2
+    # via
+    #   -c backend/requirements.txt
+    #   pydantic
+anyio==4.15.0
+    # via
+    #   -c backend/requirements.txt
+    #   groq
+    #   httpx
+    #   starlette
+    #   watchfiles
 asyncpg==0.31.0
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 attrs==26.1.0
-av==18.0.0
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp
 boto3==1.43.85
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 botocore==1.43.85
+    # via
+    #   -c backend/requirements.txt
+    #   boto3
+    #   s3transfer
 certifi==2026.7.22
+    # via
+    #   -c backend/requirements.txt
+    #   httpcore
+    #   httpx
 cffi==2.1.1
-charset-normalizer==3.4.9
-click==8.4.2
+    # via
+    #   -c backend/requirements.txt
+    #   cryptography
+click==8.5.0
+    # via
+    #   -c backend/requirements.txt
+    #   uvicorn
 colorama==0.4.6
+    # via
+    #   -c backend/requirements.txt
+    #   click
 cryptography==50.0.0
-deprecation==2.1.0
+    # via
+    #   -c backend/requirements.txt
+    #   pyjwt
 distro==1.9.0
-docstring_parser==0.18.0
-eval_type_backport==0.4.0
+    # via
+    #   -c backend/requirements.txt
+    #   groq
+dnspython==2.8.0
+    # via
+    #   -c backend/requirements.txt
+    #   email-validator
+email-validator==2.3.0
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 fastapi==0.141.1
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 frozenlist==1.8.0
-googleapis-common-protos==1.75.1
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp
+    #   aiosignal
 greenlet==3.5.5
+    # via
+    #   -c backend/requirements.txt
+    #   sqlalchemy
 groq==1.7.0
-grpcio==1.83.0
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 h11==0.16.0
-h2==4.4.1
-hpack==4.2.0
+    # via
+    #   -c backend/requirements.txt
+    #   httpcore
+    #   uvicorn
 httpcore==1.0.9
-httpcore2==2.10.0
+    # via
+    #   -c backend/requirements.txt
+    #   httpx
+httptools==0.8.0
+    # via
+    #   -c backend/requirements.txt
+    #   uvicorn
 httpx==0.28.1
-httpx2==2.10.0
-hyperframe==6.1.0
-idna==3.18
-iniconfig==2.3.0
-jiter==0.16.0
-json_repair==0.60.1
-livekit==1.1.14
-livekit-agents==1.6.9
-livekit-api==1.2.0
-livekit-blingfire==1.1.0
-livekit-local-inference==0.2.6
-livekit-protocol==1.1.22
-Mako==1.4.1
-markdown-it-py==4.2.0
-MarkupSafe==3.0.3
-mdurl==0.1.2
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+    #   groq
+idna==3.19
+    # via
+    #   -c backend/requirements.txt
+    #   anyio
+    #   email-validator
+    #   httpx
+    #   yarl
+jmespath==1.1.0
+    # via
+    #   -c backend/requirements.txt
+    #   boto3
+    #   botocore
+livekit-api==1.2.1
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+livekit-protocol==1.1.26
+    # via
+    #   -c backend/requirements.txt
+    #   livekit-api
+mako==1.4.1
+    # via
+    #   -c backend/requirements.txt
+    #   alembic
+markupsafe==3.0.3
+    # via
+    #   -c backend/requirements.txt
+    #   mako
 multidict==6.7.1
-nest-asyncio==1.6.0
-numpy==2.5.2
-openai==3.0.0
-opentelemetry-api==1.44.0
-opentelemetry-exporter-otlp==1.44.0
-opentelemetry-exporter-otlp-proto-common==1.44.0
-opentelemetry-exporter-otlp-proto-grpc==1.44.0
-opentelemetry-exporter-otlp-proto-http==1.44.0
-opentelemetry-proto==1.44.0
-opentelemetry-sdk==1.44.0
-opentelemetry-semantic-conventions==0.65b0
-packaging==26.3
-pluggy==1.6.0
-postgrest==2.31.0
-prometheus_client==0.26.0
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp
+    #   yarl
+prometheus-client==0.26.0
+    # via -r backend/requirements.in
 propcache==0.5.2
-protobuf==7.35.1
-psutil==7.2.2
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp
+    #   yarl
+protobuf==7.36.1
+    # via
+    #   -c backend/requirements.txt
+    #   livekit-api
+    #   livekit-protocol
 pycparser==3.0
-pydantic==2.13.4
+    # via
+    #   -c backend/requirements.txt
+    #   cffi
+pydantic==2.13.5
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+    #   fastapi
+    #   groq
+    #   pydantic-settings
+pydantic-core==2.46.5
+    # via
+    #   -c backend/requirements.txt
+    #   pydantic
 pydantic-settings==2.15.0
-pydantic_core==2.46.4
-Pygments==2.20.0
-PyJWT==2.13.0
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+pyjwt==2.13.0
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+    #   livekit-api
 pymupdf==1.28.2
-pytest==9.1.1
-python-dotenv==1.2.2
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+python-dateutil==2.9.0.post0
+    # via
+    #   -c backend/requirements.txt
+    #   botocore
+python-dotenv==1.2.3
+    # via
+    #   -c backend/requirements.txt
+    #   pydantic-settings
+    #   uvicorn
 python-multipart==0.0.32
-PyYAML==6.0.3
-realtime==2.31.0
-requests==2.34.2
-rich==15.0.0
-shellingham==1.5.4
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+pyyaml==6.0.3
+    # via
+    #   -c backend/requirements.txt
+    #   uvicorn
+s3transfer==0.19.2
+    # via
+    #   -c backend/requirements.txt
+    #   boto3
+six==1.17.0
+    # via
+    #   -c backend/requirements.txt
+    #   python-dateutil
 sniffio==1.3.1
-sounddevice==0.5.5
-SQLAlchemy==2.0.52
+    # via
+    #   -c backend/requirements.txt
+    #   groq
+sqlalchemy==2.0.52
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
+    #   alembic
 starlette==1.6.0
-storage3==2.31.0
-StrEnum==0.4.15
-supabase==2.31.0
-supabase-auth==2.31.0
-supabase-functions==2.31.0
-tqdm==4.70.0
-truststore==0.10.4
-typer==0.27.1
-types-protobuf==7.34.1.20260518
-typing-inspection==0.4.3
-typing_extensions==4.16.0
+    # via
+    #   -c backend/requirements.txt
+    #   fastapi
+types-protobuf==7.35.1.20260827
+    # via
+    #   -c backend/requirements.txt
+    #   livekit-api
+    #   livekit-protocol
+typing-extensions==4.16.0
+    # via
+    #   -c backend/requirements.txt
+    #   alembic
+    #   fastapi
+    #   groq
+    #   pydantic
+    #   pydantic-core
+    #   sqlalchemy
+    #   typing-inspection
+typing-inspection==0.4.4
+    # via
+    #   -c backend/requirements.txt
+    #   fastapi
+    #   pydantic
+    #   pydantic-settings
 urllib3==2.7.0
+    # via
+    #   -c backend/requirements.txt
+    #   botocore
 uvicorn==0.52.1
+    # via
+    #   -c backend/requirements.txt
+    #   -r backend/requirements.in
 watchfiles==1.2.0
+    # via
+    #   -c backend/requirements.txt
+    #   uvicorn
 websockets==15.0.1
+    # via
+    #   -c backend/requirements.txt
+    #   uvicorn
 yarl==1.24.5
-
-email-validator
+    # via
+    #   -c backend/requirements.txt
+    #   aiohttp

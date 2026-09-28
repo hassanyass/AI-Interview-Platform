@@ -1,3 +1,11 @@
+> **Historical snapshot — do not update (H6-B).** This records the schema as it
+> stood at the start of Phase 0: 7 tables, before any B2B entity existed. The
+> models now declare 20. The current schema is
+> [`docs/technical/data-model.md`](technical/data-model.md), generated from the
+> models by `scripts/generate_docs.py`. A test
+> (`backend/tests/test_docs.py`) keeps this file from being regenerated, because
+> where the schema started is worth knowing.
+
 # Baseline Schema Snapshot
 
 This document captures the exact schema and endpoints at the start of Phase 0, before any new B2B tables (Jobs, InterviewDefinitions, etc.) are introduced, as read directly from the SQLAlchemy models and FastAPI routers.

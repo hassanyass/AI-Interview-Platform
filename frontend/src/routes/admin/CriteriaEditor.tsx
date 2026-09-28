@@ -52,7 +52,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
       setCriteria(data);
       setLocalState(stateMapFrom(data));
     } catch (err: any) {
-      setError(err.message || "Failed to load criteria");
+      setError(err.message || t('criteriaEditor.failedToLoad'));
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +103,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
         await onRefresh();
       }
     } catch (err: any) {
-      setError(err.message || "Failed to save criteria");
+      setError(err.message || t('criteriaEditor.failedToSave'));
     } finally {
       setIsSaving(false);
     }
@@ -112,8 +112,8 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
   if (isLoading) {
     return (
       <Card className="border-border shadow-sm">
-        <div className="bg-muted/50 p-4 border-b border-border flex items-center justify-between">
-          <h3 className="font-semibold flex items-center gap-2">Assessment Criteria</h3>
+        <div className="bg-muted/50 p-4 border-b border-border">
+          <h3 className="font-semibold text-lg text-foreground">{t('criteriaEditor.title')}</h3>
         </div>
         <CardContent className="p-6">
           <div className="flex items-center justify-center p-4">
@@ -132,22 +132,21 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
 
   return (
     <Card className="border-border shadow-sm mt-6">
-      <div className="bg-muted/50 p-4 border-b border-border flex items-center justify-between">
-        <div className="flex flex-col">
-          <h3 className="font-semibold text-lg text-foreground">Assessment Criteria</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure the behavioral dimensions the AI will evaluate, and how much each counts toward the criteria-weighted score.
-          </p>
+      {/* R2-B: block header stacks below sm (button full-width, 44px); the
+          long description no longer squeezes a 32px button into the corner. */}
+      <div className="bg-muted/50 p-4 border-b border-border flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="font-semibold text-lg text-foreground">{t('criteriaEditor.title')}</h3>
+          <p className="text-sm text-muted-foreground mt-1">{t('criteriaEditor.description')}</p>
         </div>
         {isDraft && (
           <Button
             onClick={handleSave}
             disabled={isSaving || !hasChanges}
-            size="sm"
-            className="flex items-center gap-2"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 sm:h-9 sm:w-auto sm:shrink-0"
           >
             {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Save Criteria
+            {t('criteriaEditor.save')}
           </Button>
         )}
       </div>
@@ -161,7 +160,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
 
         {saveSuccess && !hasChanges && (
           <div className="p-3 bg-green-500/10 border-b border-green-500/20 text-green-600 text-sm flex items-center justify-center">
-            Criteria saved successfully.
+            {t('criteriaEditor.saved')}
           </div>
         )}
 
@@ -178,7 +177,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
                   } ${isEnabled ? 'border-primary/50 bg-primary/5' : 'border-border bg-card'}`}
                 >
                   <div
-                    className={`flex items-start gap-3 ${isDraft ? 'cursor-pointer' : ''}`}
+                    className={`flex min-h-11 items-start gap-3 ${isDraft ? 'cursor-pointer' : ''}`}
                     onClick={() => handleToggle(criterion.key)}
                   >
                     <div className="mt-0.5 text-primary shrink-0">
@@ -209,7 +208,7 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
                       onClick={(e) => e.stopPropagation()}
                     >
                       <label htmlFor={`weight-${criterion.key}`} className="text-xs font-medium text-muted-foreground shrink-0">
-                        Weight
+                        {t('criteriaEditor.weight')}
                       </label>
                       <input
                         id={`weight-${criterion.key}`}
@@ -234,14 +233,14 @@ export default function CriteriaEditor({ jobId, status, onRefresh }: CriteriaEdi
 
           {behavioralCriteria.length === 0 && (
             <div className="text-center p-8 text-muted-foreground border rounded-lg border-dashed">
-              No behavioral criteria found.
+              {t('criteriaEditor.none')}
             </div>
           )}
 
           {otherCriteria.length > 0 && (
             <div className="mt-8">
               <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Content-Specific Criteria (Auto-managed)
+                {t('criteriaEditor.autoManaged')}
               </h4>
               <div className="flex flex-wrap gap-2">
                 {otherCriteria.map(c => (

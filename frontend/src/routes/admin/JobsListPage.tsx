@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminClient, type Job } from "../../api/adminClient";
-import { Plus, Clock, MapPin, Briefcase, Trash2 } from "lucide-react";
+import { Plus, Briefcase } from "lucide-react";
 import { Card, CardContent } from "../../components/ui/Card";
-import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { JobCard } from "./JobSummary";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
 import { useTranslation } from "react-i18next";
 
@@ -37,7 +37,8 @@ export default function JobsListPage() {
       setJobs((prev) => prev.filter((j) => j.id !== jobToDelete));
       setJobToDelete(null);
     } catch (err: any) {
-      alert(err.message || "Failed to delete job");
+      setJobToDelete(null);
+      setError(err.message || t('jobsList.deleteFailed'));
     }
   };
 
@@ -47,17 +48,17 @@ export default function JobsListPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">{t('jobsList.title')}</h1>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{t('jobsList.title')}</h1>
           <p className="text-muted-foreground mt-1">{t('jobsList.desc')}</p>
         </div>
-          <Link to="/admin/jobs/new">
-            <Button className="inline-flex items-center gap-2">
-              <Plus className="h-5 w-5" />
-              <span>{t('jobsList.createNewJob')}</span>
-            </Button>
-          </Link>
+        <Link to="/admin/jobs/new" className="sm:shrink-0">
+          <Button className="inline-flex h-11 w-full items-center justify-center gap-2 sm:w-auto lg:h-10">
+            <Plus className="h-5 w-5" />
+            <span>{t('jobsList.createNewJob')}</span>
+          </Button>
+        </Link>
       </div>
 
       {error && (
@@ -79,54 +80,7 @@ export default function JobsListPage() {
       ) : (
         <div className="grid gap-4">
           {jobs.map((job) => (
-            <Card key={job.id} className="hover:border-primary/50 transition-colors group">
-              <CardContent className="p-6 flex items-center justify-between m-0 pb-6 pt-6">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-xl font-semibold">{job.title}</h3>
-                    <Badge variant={job.status === "PUBLISHED" ? "success" : "warning"}>
-                      {job.status}
-                    </Badge>
-                  </div>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  {job.location && (
-                    <div className="flex items-center gap-1">
-                      <MapPin className="h-4 w-4" />
-                      <span>{job.location}</span>
-                    </div>
-                  )}
-                  {job.seniority && (
-                    <div className="flex items-center gap-1">
-                      <Briefcase className="h-4 w-4" />
-                      <span>{job.seniority}</span>
-                    </div>
-                  )}
-                  {job.definition && (
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      <span>{job.definition.duration_minutes} {t('jobsList.min')}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-                  <div className="flex items-center gap-2">
-                    <Link to={`/admin/jobs/${job.id}/results`}>
-                      <Button variant="outline" className="px-5">Results</Button>
-                    </Link>
-                    <Link to={`/admin/jobs/${job.id}`}>
-                      <Button variant="secondary" className="px-5">{t('jobsList.manage')}</Button>
-                    </Link>
-                    <Button 
-                      variant="outline" 
-                      className="px-3 border-red-200 text-red-500 hover:bg-red-50"
-                      onClick={() => setJobToDelete(job.id)}
-                      title="Delete Job"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-              </CardContent>
-            </Card>
+            <JobCard key={job.id} job={job} onDelete={setJobToDelete} />
           ))}
         </div>
       )}

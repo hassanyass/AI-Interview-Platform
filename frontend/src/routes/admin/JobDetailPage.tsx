@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { adminClient, type JobDetail } from "../../api/adminClient";
-import { ArrowLeft, MapPin, Briefcase, Clock, AlertCircle, Rocket, Loader2, Users, Trash2, Pause, Play, RotateCcw } from "lucide-react";
+import { ArrowLeft, AlertCircle } from "lucide-react";
 import SectionsEditor from "./SectionsEditor";
 import CriteriaEditor from "./CriteriaEditor";
 import CandidateAccess from "./CandidateAccess";
 import PublishSetupModal from "./PublishSetupModal";
 import ConfirmDeleteModal from "./ConfirmDeleteModal";
-import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
+import { JobHeader } from "./JobSummary";
 import { useTranslation } from "react-i18next";
 
 export default function JobDetailPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // H2-E: JobCreatePage hands over a one-time notice (e.g. "duration not set") instead of alert().
+  const notice: string | undefined = (location.state as { notice?: string } | null)?.notice;
   const [job, setJob] = useState<JobDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,7 +45,7 @@ export default function JobDetailPage() {
       const data = await adminClient.getJob(id);
       setJob(data);
     } catch (err: any) {
-      if (err.message?.includes("404") || err.status === 404) {
+      if (err.status === 404) {
         setIsNotFound(true);
       } else {
         setError(err.message || t('jobDetail.failedToLoad'));
@@ -144,107 +147,23 @@ export default function JobDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <Link to="/admin/jobs">
-            <Button variant="outline" className="p-2 h-10 w-10">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{job.title}</h1>
-            <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-              <Badge variant={job.status === "PUBLISHED" ? "success" : "warning"}>
-                {job.status}
-              </Badge>
-              {job.location && (
-                <div className="flex items-center gap-1">
-                  <MapPin className="h-4 w-4" />
-                  <span>{job.location}</span>
-                </div>
-              )}
-              {job.seniority && (
-                <div className="flex items-center gap-1">
-                  <Briefcase className="h-4 w-4" />
-                  <span>{job.seniority}</span>
-                </div>
-              )}
-              {job.definition && (
-                <div className="flex items-center gap-1">
-                  <Clock className="h-4 w-4" />
-                  <span>{job.definition.duration_minutes} {t('jobDetail.min')}</span>
-                </div>
-              )}
-            </div>
-          </div>
+    <div className="space-y-6 pb-24 lg:pb-0">
+      {notice && (
+        <div role="status" className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span>{notice}</span>
         </div>
-
-        <div className="flex items-center gap-2">
-          {job.status === "DRAFT" && (
-            <Button
-              onClick={handlePublishClick}
-              disabled={isPublishing}
-              className="inline-flex items-center gap-2 shrink-0"
-            >
-              {isPublishing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Rocket className="h-4 w-4" />
-              )}
-              <span>{t('jobDetail.publish')}</span>
-            </Button>
-          )}
-
-          {job.status === "PUBLISHED" && (
-            <Button
-              onClick={() => handleStatusChange("PAUSED")}
-              variant="outline"
-              className="inline-flex items-center gap-2 shrink-0 border-orange-200 text-orange-600 hover:bg-orange-50"
-            >
-              <Pause className="h-4 w-4" />
-              <span>Pause Job</span>
-            </Button>
-          )}
-
-          {job.status === "PAUSED" && (
-            <Button
-              onClick={() => handleStatusChange("PUBLISHED")}
-              className="inline-flex items-center gap-2 shrink-0"
-            >
-              <Play className="h-4 w-4" />
-              <span>Resume Job</span>
-            </Button>
-          )}
-
-          {(job.status === "PUBLISHED" || job.status === "PAUSED") && (
-            <Button
-              onClick={() => handleStatusChange("DRAFT")}
-              variant="outline"
-              className="inline-flex items-center gap-2 shrink-0 border-muted-foreground/20"
-            >
-              <RotateCcw className="h-4 w-4" />
-              <span>Unpublish</span>
-            </Button>
-          )}
-
-          <Link to={`/admin/jobs/${job.id}/results`}>
-            <Button variant="outline" className="inline-flex items-center gap-2 shrink-0 border-primary/20 hover:bg-primary/5">
-              <Users className="h-4 w-4" />
-              <span>View Results</span>
-            </Button>
-          </Link>
-
-          <Button
-            onClick={() => setIsDeleteDialogOpen(true)}
-            variant="outline"
-            className="inline-flex items-center gap-2 shrink-0 border-red-200 text-red-500 hover:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span>Delete</span>
-          </Button>
-        </div>
-      </div>
+      )}
+      {/* R2-A: identity + action bar (JobSummary.tsx). Below lg the bar is
+          pinned to the viewport bottom, hence the pb-24 on this page so
+          the last editor is never hidden behind it. */}
+      <JobHeader
+        job={job}
+        isPublishing={isPublishing}
+        onPublish={handlePublishClick}
+        onStatusChange={handleStatusChange}
+        onDelete={() => setIsDeleteDialogOpen(true)}
+      />
 
       {publishError && (
         <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-md text-sm">

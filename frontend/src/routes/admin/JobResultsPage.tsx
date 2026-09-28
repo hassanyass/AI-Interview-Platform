@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { adminClient, type JobResultsResponse } from "../../api/adminClient";
-import { ArrowLeft, ShieldAlert, RefreshCw } from "lucide-react";
+import { ArrowLeft, ShieldAlert, RefreshCw, Trash2 } from "lucide-react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/Card";
 import { AiCoreIcon } from "../../components/ui/AiCoreIcon";
-import { useTranslation } from "react-i18next";
+import ConfirmDeleteModal from "./ConfirmDeleteModal";
 
 /**
  * Design pass (2026-09-03, e& brand-alignment audit): the previous stat
@@ -34,12 +34,16 @@ function recommendationTone(recommendation: string | undefined): { text: string;
 }
 
 export default function JobResultsPage() {
-  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [results, setResults] = useState<JobResultsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
+  // Candidate deletion (2026-09-14): which session the confirm modal is
+  // currently asking about; null = closed. Scoped to the SESSION (this
+  // job's result row), not the person -- see the backend endpoint's
+  // docstring for why the CandidateProfile is deliberately left intact.
+  const [pendingDelete, setPendingDelete] = useState<{ sessionId: string; name: string } | null>(null);
 
   const fetchResults = async (isManualRefresh = false) => {
     if (!id) return;
@@ -60,6 +64,18 @@ export default function JobResultsPage() {
   useEffect(() => {
     fetchResults();
   }, [id]);
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await adminClient.deleteInterviewSession(pendingDelete.sessionId);
+      setPendingDelete(null);
+      await fetchResults(true);
+    } catch (err: any) {
+      setPendingDelete(null);
+      setError(err.message || "Failed to delete candidate");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -260,15 +276,32 @@ export default function JobResultsPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {cand.status === "COMPLETED" || cand.status === "TERMINATED" ? (
-                          <Link to={`/admin/jobs/${id}/results/${cand.session_id}`}>
-                            <Button size="sm" variant="outline">
-                              View Result
-                            </Button>
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground text-xs italic">Pending</span>
-                        )}
+                        <div className="inline-flex items-center justify-end gap-2">
+                          {cand.status === "COMPLETED" || cand.status === "TERMINATED" ? (
+                            <Link to={`/admin/jobs/${id}/results/${cand.session_id}`}>
+                              <Button size="sm" variant="outline">
+                                View Result
+                              </Button>
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground text-xs italic">Pending</span>
+                          )}
+                          {/* Icon-only, quiet by default, red on hover -- a
+                              destructive action shouldn't compete visually
+                              with "View Result" on every row (e& guide
+                              Section 7: hierarchy, not equal-weight
+                              buttons). Confirmation modal guards the
+                              actual delete. */}
+                          <button
+                            type="button"
+                            onClick={() => setPendingDelete({ sessionId: cand.session_id, name: cand.candidate_name || "this candidate" })}
+                            aria-label={`Delete ${cand.candidate_name || "candidate"}`}
+                            title="Delete candidate"
+                            className="p-2 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     );
@@ -279,6 +312,15 @@ export default function JobResultsPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteModal
+        isOpen={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Candidate"
+        description={`Remove ${pendingDelete?.name ?? "this candidate"} from this job's results? This permanently deletes their interview transcript, evaluation, scores, and recording. It cannot be undone.`}
+        confirmLabel="Delete Candidate"
+      />
     </div>
   );
 }

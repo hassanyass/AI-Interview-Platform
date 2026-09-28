@@ -6,3 +6,5 @@ from backend.models.interview import (
     InterviewSession, InterviewConfiguration,
     InterviewMessage, InterviewEvent, InterviewCheckpoint
 )
+from backend.models.audit import AdminAuditLog
+from backend.models.task import Task

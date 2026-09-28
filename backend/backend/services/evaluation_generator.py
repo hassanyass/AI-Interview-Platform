@@ -24,12 +24,11 @@ AssessmentCriterion, via api/endpoints/admin.py's regenerate_evaluation)
 instead of the agent's live in-memory context, since this always runs
 after the interview has already ended.
 """
-import asyncio
 import json
 import logging
-from typing import Optional
 
-from groq import Groq
+from backend.providers.factory import get_llm
+from backend.providers.llm.base import LLMProvider
 
 from backend.core.config import settings
 from backend.schemas.persistence import CriterionScoreSubmit
@@ -52,6 +51,9 @@ Return a single JSON object with exactly these keys:
 
 `question_eval_criteria` maps question_id -> the HR-authored grading rubric for that specific question (VERBAL: excellent/good/adequate/poor bands; CODING: time_complexity/space_complexity/edge_cases/rubric, score technical_submission against these with PARTIAL CREDIT for a right approach that's incomplete or imperfect, never a binary pass/fail; MCQ: question_records already carries the deterministic right/wrong result). Feed what you learn from it into overall_score/summary/detailed_overview, not into a criterion_scores entry, unless a "content"-kind criterion in `criteria` explicitly names that exact question.
 
+CV & EXPERIENCE ALIGNMENT (the `cv_alignment` criterion, when present in `criteria`):
+The evidence may include `candidate_profile` -- the structured profile parsed from the candidate's CV (title, years, skills, languages, frameworks, projects, education). `question_records` entries with "subsection": "BACKGROUND" are the CV-grounded opening questions (their text is in the record itself). Score `cv_alignment` ONLY from what the candidate actually said about that experience: does their account substantiate the CV (specific, first-person, consistent), and is that experience relevant to the role? Flag concrete gaps -- a claimed technology or project the candidate could not discuss, or contradictions with the CV -- as improvements. A candidate who skipped the background or gave no verifiable account gets a null score with "no evidence" stated plainly, never a low score. Without `candidate_profile` (no CV), leave the score null.
+
 This session may have ended early (a TERMINATED/incomplete interview, not every question necessarily reached) -- evaluate honestly from whatever evidence exists. A short or partial transcript is not itself an error; reflect it in evidence_sufficiency rather than inventing scores to fill the gap.
 
 Return ONLY the JSON object, no markdown fences, no commentary.
@@ -67,8 +69,10 @@ async def generate_evaluation(
     technical_submission: dict,
     question_eval_criteria: dict,
     criteria: list,
+    candidate_profile: dict | None = None,
+    llm: LLMProvider | None = None,
 ) -> dict:
-    """Call Groq to produce a structured evaluation from the given
+    """Call the LLM provider to produce a structured evaluation from the given
     evidence. Returns a dict with overall_score/recommendation/
     evidence_sufficiency/summary/detailed_overview/criterion_scores (the
     last as a list of CriterionScoreSubmit instances, ready for
@@ -76,15 +80,15 @@ async def generate_evaluation(
     parse errors -- this is an HR-triggered, on-demand action, so the
     caller should surface a real error rather than swallow it the way a
     live interview's degrade-gracefully paths must."""
-    api_key = settings.GROQ_API_KEY
-    model = settings.GROQ_MODEL or "llama-3.3-70b-versatile"
-    if not api_key:
-        raise RuntimeError("GROQ_API_KEY is not configured in backend settings")
-
-    client = Groq(api_key=api_key)
+    llm = llm or get_llm()
+    model = settings.GROQ_MODEL
     evidence = {
         "role": role,
         "level": level,
+        # Verbal Background subsection (plan §2 "Evaluation"): the parsed
+        # CV, the reference the spoken account is checked against for the
+        # cv_alignment criterion. {} for a session without one.
+        "candidate_profile": candidate_profile or {},
         "technical_submission": technical_submission,
         "question_records": question_records,
         "question_eval_criteria": question_eval_criteria,
@@ -93,28 +97,21 @@ async def generate_evaluation(
     }
 
     logger.info(
-        "[EvaluationGen] Calling Groq model=%s transcript_turns=%d criteria=%d",
+        "[EvaluationGen] Calling LLM model=%s transcript_turns=%d criteria=%d",
         model, len(transcript), len(criteria),
     )
 
-    def _call():
-        return client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": EVALUATOR_SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(evidence, ensure_ascii=False)},
-            ],
-            model=model,
-            temperature=0.3,
-            max_tokens=4096,
-            response_format={"type": "json_object"},
-        )
-
-    # Off the event loop -- unlike question_generator.py's admin-authoring
-    # call (a single, infrequent action against a short prompt), this can
-    # run over a full transcript and must not freeze the backend for
-    # every other request while it's in flight.
-    chat_completion = await asyncio.to_thread(_call)
-    raw = chat_completion.choices[0].message.content
+    # Async provider: a full-transcript evaluation never freezes the
+    # backend for every other request while it is in flight.
+    raw = await llm.complete_json(
+        [
+            {"role": "system", "content": EVALUATOR_SYSTEM_PROMPT},
+            {"role": "user", "content": json.dumps(evidence, ensure_ascii=False)},
+        ],
+        model=model,
+        temperature=0.3,
+        max_tokens=4096,
+    )
     parsed = json.loads(raw)
 
     criterion_scores = [

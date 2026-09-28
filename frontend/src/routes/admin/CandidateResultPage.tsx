@@ -243,7 +243,7 @@ export default function CandidateResultPage() {
     return (
       <div className="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-md flex flex-col gap-4 items-start">
         <p>{error || "An unexpected error occurred."}</p>
-        <Button variant="outline" onClick={fetchResult}>Retry</Button>
+        <Button variant="outline" onClick={() => fetchResult()}>Retry</Button>
       </div>
     );
   }
@@ -711,21 +711,38 @@ export default function CandidateResultPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {/* Verbal Background subsection: when the session opened with
+                      CV-grounded background questions, group the rows under
+                      Background / Discussion so HR reads the warm-up apart from
+                      the assessed questions. Numbering restarts per group. */}
                   {result.question_records.map((record, idx) => {
+                    const hasBackground = result.question_records.some((r) => r.subsection === "BACKGROUND");
+                    const isBackground = record.subsection === "BACKGROUND";
+                    const prev = idx > 0 ? result.question_records[idx - 1] : null;
+                    const groupStart = hasBackground && (idx === 0 || (prev?.subsection === "BACKGROUND") !== isBackground);
+                    const groupIndex = hasBackground
+                      ? result.question_records.slice(0, idx + 1).filter((r) => (r.subsection === "BACKGROUND") === isBackground).length
+                      : (record.order_index ?? idx) + 1;
                     const style = OUTCOME_STYLE[record.outcome] || OUTCOME_STYLE.NOT_ATTEMPTED;
                     const OutcomeIcon = style.icon;
                     const isExpanded = expandedQuestionId === record.question_id;
                     const hasDetail = Boolean(record.text) || record.hints_used > 0 || record.followups_used > 0 || record.clarifications_used > 0;
                     return (
-                      <Card key={record.question_id || idx} className="border-border shadow-sm overflow-hidden bg-background">
+                      <div key={record.question_id || idx} className="space-y-2">
+                      {groupStart && (
+                        <p className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          {isBackground ? "Background (from the candidate's CV)" : "Discussion questions"}
+                        </p>
+                      )}
+                      <Card className="border-border shadow-sm overflow-hidden bg-background">
                         <button
                           type="button"
                           onClick={() => hasDetail && setExpandedQuestionId(isExpanded ? null : record.question_id)}
                           aria-expanded={isExpanded}
                           className={`w-full flex items-center gap-4 p-4 text-start transition-colors ${hasDetail ? "hover:bg-muted/30 cursor-pointer" : "cursor-default"}`}
                         >
-                          <div className="flex-shrink-0 h-9 w-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground">
-                            {String((record.order_index ?? idx) + 1).padStart(2, "0")}
+                          <div className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center text-sm font-semibold ${isBackground ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                            {String(groupIndex).padStart(2, "0")}
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="font-medium text-foreground truncate">{record.title || `Question ${idx + 1}`}</p>
@@ -762,6 +779,7 @@ export default function CandidateResultPage() {
                           </div>
                         </Collapsible>
                       </Card>
+                      </div>
                     );
                   })}
                 </div>

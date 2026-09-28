@@ -6,12 +6,13 @@ import {
   registerApplicant,
   type PublicApplyContext,
 } from "../services/api/publicApply";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/Card";
+import { Card, CardContent } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { LanguageToggle } from "../components/ui/LanguageToggle";
 import { useTranslation } from "react-i18next";
+import { CvUploadStep } from "../features/candidate-entry/CvUploadStep";
 
-type Step = "loading" | "invalid" | "form" | "registering";
+type Step = "loading" | "invalid" | "form" | "registering" | "cv";
 
 export default function ApplyPage() {
   const { t } = useTranslation();
@@ -25,6 +26,7 @@ export default function ApplyPage() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -45,7 +47,11 @@ export default function ApplyPage() {
     try {
       const result = await registerApplicant(token, { name, email });
       setGuestSession(result.access_token, result.session.id);
-      navigate(`/interviews/${result.session.id}`);
+      // Background subsection step 2 (ruling Q2): register -> mandatory CV
+      // -> Start. The guest token just stored authorises the upload; the
+      // interview page's Start is refused by the backend until the CV is in.
+      setSessionId(result.session.id);
+      setStep("cv");
     } catch (err: any) {
       setError(err.message || t('apply.failedToRegister'));
       setStep("form");
@@ -123,6 +129,12 @@ export default function ApplyPage() {
                 </p>
               </div>
             )}
+            {/* B5 (docs/verbal-section-flow-plan.md): follow-ups can extend
+                the clock, so the estimate above is a floor -- say so before
+                the first "+2:00" lands mid-interview. */}
+            {context?.duration_minutes && (
+              <p className="text-xs text-muted-foreground mt-2">{t('invite.followupBonusNote')}</p>
+            )}
           </div>
 
           <Card className="shadow-xl shadow-black/5 border-muted/60">
@@ -133,7 +145,12 @@ export default function ApplyPage() {
                 </div>
               )}
 
-              {step === "registering" ? (
+              {step === "cv" && sessionId ? (
+                <CvUploadStep
+                  sessionId={sessionId}
+                  onContinue={() => navigate(`/interviews/${sessionId}`)}
+                />
+              ) : step === "registering" ? (
                 <div className="flex flex-col items-center justify-center py-8 space-y-4 animate-in fade-in zoom-in-95 duration-500">
                   <div className="h-8 w-8 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
                   <p className="text-sm font-medium text-muted-foreground">{t('invite.starting')}</p>
@@ -164,9 +181,9 @@ export default function ApplyPage() {
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </div>
-                  {/* CV upload deliberately deferred — see docs/CURRENT_DECISIONS.md /
-                      Sub-phase 6C's resume_id: Optional field, added later once the
-                      upload-sequencing question is resolved. */}
+                  {/* The CV step follows registration (CvUploadStep) -- the
+                      upload-sequencing question is resolved: register ->
+                      mandatory upload -> Start (verbal-background-subsection-plan.md §11). */}
                   <Button
                     type="submit"
                     className="w-full"

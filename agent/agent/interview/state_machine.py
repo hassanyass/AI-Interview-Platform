@@ -115,6 +115,10 @@ VALID_CANDIDATE_CONTROLS_PER_PHASE = {
         # when the active question has no predefined hints (VERBAL/MCQ
         # never populate Question.hints), so this isn't gated by type here.
         CandidateControlAction.REQUEST_HINT,
+        # Verbal Background subsection: valid in this phase; the controller
+        # only ADVERTISES it (generate_ui_state) and honours it while a
+        # source="BACKGROUND" question is current.
+        CandidateControlAction.SKIP_BACKGROUND,
     ],
     # WR-B: PROCEED_TO_NEXT_SECTION is the only way out besides the
     # auto-timeout (which doesn't go through this candidate-control

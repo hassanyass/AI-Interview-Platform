@@ -1,0 +1,45 @@
+# Python linting (H4-A). Deliberately a small rule set, and deliberately
+# not a formatter: this codebase has never been linted, and a reformat
+# would bury every future diff under whitespace churn.
+#
+# Rules: pyflakes (F) -- unused imports/variables, redefinitions, undefined
+# names -- plus E4 (import placement) and E9 (syntax/IO errors). That is
+# the set that catches real defects. E7 (semicolons, lambda assignment,
+# ambiguous names) is deliberately out: it is style, and the only hits
+# were in test files this plan is otherwise not rewriting.
+# The P0 this plan opened with (`admin.py` importing a non-existent module
+# and using an undefined `func`) is exactly an F821, which this catches.
+#
+# Widening the set is a later call, not a silent one: every rule added
+# here must come with the fixes it demands.
+
+target-version = "py313"
+line-length = 120
+
+exclude = [
+    # Frozen contract (AGENTS.md §2): may not be edited outside an approved
+    # sub-phase, so the linter may not demand edits to it either.
+    "agent/agent/interview/controller.py",
+    # Legacy suites moved unchanged in H0 (plan decision S10) and the
+    # agent's pre-existing root tests/scratch scripts, which H4 says to
+    # leave untouched. They are regression coverage, not code under
+    # development; AGENTS.md §7 governs edits to them.
+    "tests/legacy",
+    "agent/test_skip_regressions.py",
+    "agent/test_background_subsection.py",
+    "agent/auto_test.py",
+    "agent/skip_scratch.py",
+    # Generated / vendored
+    ".venv",
+    "frontend",
+]
+
+[lint]
+select = ["E4", "E9", "F"]
+
+[lint.per-file-ignores]
+# Imports whose only job is the import: registering every model with the
+# SQLAlchemy mapper before Alembic reads the metadata.
+"backend/backend/db/base.py" = ["F401"]
+# Alembic's generated scaffolding imports a fixed preamble per revision.
+"backend/alembic/versions/*.py" = ["F401"]

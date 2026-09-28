@@ -13,7 +13,6 @@ JWT required either (that's the whole point: this endpoint MINTS the
 guest JWT, it doesn't consume one).
 """
 import logging
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +20,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from backend.db.session import get_db
+from backend.core.config import settings
+from backend.core.ratelimit import rate_limit
 from backend.models.interview import InterviewDefinition, InterviewSession
 from backend.schemas.public_apply import (
     PublicApplyContext,
@@ -31,7 +32,6 @@ from backend.schemas.public_invitations import RedeemedSessionInfo
 from backend.services.candidate_profile_service import get_or_create_candidate_profile
 from backend.services.job_application_service import get_or_create_job_application
 from backend.services.guest_jwt_service import mint_guest_jwt
-from backend.api.endpoints.livekit import generate_livekit_token, TokenRequest
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,13 @@ async def _get_public_definition_or_403(db: AsyncSession, token: str) -> Intervi
     return definition
 
 
-@router.get("/{token}", response_model=PublicApplyContext)
+@router.get(
+    "/{token}",
+    response_model=PublicApplyContext,
+    # H5-B: anonymous and keyed by IP -- see core/ratelimit.py on why
+    # the default is generous (a booth shares one address).
+    dependencies=[Depends(rate_limit("apply_preview", lambda: settings.RATE_LIMIT_APPLY_PREVIEW))],
+)
 async def get_apply_context(token: str, db: AsyncSession = Depends(get_db)):
     definition = await _get_public_definition_or_403(db, token)
     job = definition.job
@@ -67,7 +73,14 @@ async def get_apply_context(token: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/{token}/register", response_model=PublicRegisterResponse)
+@router.post(
+    "/{token}/register",
+    response_model=PublicRegisterResponse,
+    # H5-B: the most expensive anonymous call in the system -- every
+    # one creates a profile, an application, an interview session and a
+    # guest token, deliberately without idempotency.
+    dependencies=[Depends(rate_limit("public_register", lambda: settings.RATE_LIMIT_PUBLIC_REGISTER))],
+)
 async def register_public_applicant(
     token: str,
     payload: PublicRegisterRequest,
@@ -82,13 +95,23 @@ async def register_public_applicant(
     # step to protect independently). Reading job.title/seniority/language
     # is safe throughout since nothing commits before the final commit
     # below.
-    profile = await get_or_create_candidate_profile(db, email=email, full_name=payload.name)
+    # update_name: the name typed on THIS form is what the interviewer
+    # greets the candidate by, even for an email we have seen before.
+    profile = await get_or_create_candidate_profile(db, email=email, full_name=payload.name, update_name=True)
     application = await get_or_create_job_application(
         db,
         job_id=job.id,
         candidate_profile_id=profile.id,
         resume_id=payload.resume_id,
     )
+    # No accounts for public applicants (2026-09-16): every registration is a
+    # fresh start. A returning email keeps its contact record (the profile
+    # row is unique per email, and HR reaches out through it) but nothing
+    # from an earlier visit is carried into this interview -- the name is
+    # the one just typed (update_name above) and the CV must be uploaded
+    # again for this session, so the previous application's resume link is
+    # dropped here. The legacy resume_id in the payload still wins if sent.
+    application.resume_id = payload.resume_id
 
     access_token = mint_guest_jwt(str(profile.id), email)
 
@@ -110,10 +133,11 @@ async def register_public_applicant(
     db.add(session)
     await db.flush()
 
-    token_response = await generate_livekit_token(
-        TokenRequest(session_id=str(session.id)), db, str(profile.id)
-    )
-
+    # Background subsection step 2 (ruling Q2): the room token is NOT minted
+    # here any more. The candidate uploads a CV against this session next
+    # (POST /interviews/{id}/cv, authorised by access_token below), and the
+    # intro screen's Start requests the token from livekit.py, which is
+    # where the CV gate lives.
     await db.commit()
     await db.refresh(session)
 
@@ -126,6 +150,4 @@ async def register_public_applicant(
             status=session.status,
             created_at=session.created_at,
         ),
-        livekit_token=token_response.token,
-        livekit_url=token_response.url,
     )

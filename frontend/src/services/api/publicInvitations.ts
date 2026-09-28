@@ -20,8 +20,9 @@ export interface RedeemedSessionInfo {
 
 export interface RedeemResponse {
   session: RedeemedSessionInfo;
-  livekit_token: string;
-  livekit_url: string;
+  // Background subsection step 2: no longer minted at redeem.
+  livekit_token?: string | null;
+  livekit_url?: string | null;
 }
 
 export async function getInvitationContext(token: string): Promise<InvitationPublicContext> {

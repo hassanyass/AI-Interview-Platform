@@ -116,7 +116,7 @@ export default function InvitationComposer({ definitionId }: { definitionId: str
             {recipients.map((email) => (
               <span
                 key={email}
-                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 text-secondary text-sm font-medium pl-3 pr-1.5 py-1"
+                className="inline-flex items-center gap-1.5 rounded-full bg-secondary/10 text-secondary text-sm font-medium ps-3 pe-1.5 py-1"
               >
                 {email}
                 <button

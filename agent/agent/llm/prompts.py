@@ -30,7 +30,43 @@ SYSTEM_MESSAGES = {
         # request and redirect back to the current question rather than a
         # raw rejection, per the rebrand's error-friendly-messaging standard.
         "core_section_no_skip": "This question's part of the interview, so let's stick with it — go ahead and share your answer whenever you're ready.",
-        "core_move_to_technical_unavailable": "This interview follows a set structure, so there's no separate technical section to jump to — let's continue with the current question."
+        "core_move_to_technical_unavailable": "This interview follows a set structure, so there's no separate technical section to jump to — let's continue with the current question.",
+        # Verbal-flow orchestration (docs/verbal-section-flow-plan.md, A1):
+        # spoken by the CONTROLLER, not the LLM, when the follow-up cap is
+        # reached -- the next HR question is appended verbatim after "_next".
+        "core_followups_exhausted_next": "Thank you. Let's move on to the next question.",
+        "core_followups_exhausted_last": "Thank you, that covers this question.",
+        # A3: spoken before the verbatim HR question when the model paraphrased
+        # it on the first turn. Neutral on purpose -- valid for any position.
+        "core_question_lead_in": "Here's your question.",
+        # Skip pressed on the greeting: hop straight into the questions.
+        "skip_intro": "Sure, let's get straight to the questions.",
+        # Verbal Background subsection (docs/verbal-background-subsection-plan.md
+        # §2 "Live flow"): spoken by the CONTROLLER at the Background ->
+        # Discussion boundary, however it is crossed; the first discussion
+        # question is appended verbatim after each of these.
+        "background_to_discussion": "Thanks, that gives me a good picture of your background. Now let's move on to the discussion questions.",
+        "background_skipped": "Sure, we'll skip the rest of the background and go straight to the discussion questions.",
+        "background_time_up": "Thanks, that gives me a good picture. Let's move on to the discussion questions.",
+        # H2-C (docs/production-hardening-plan.md): controller fallbacks and
+        # forced transitions that used to be hard-coded English in
+        # controller.py and reached Arabic candidates as English.
+        "already_completed": "The interview has already been completed.",
+        "time_up_wrap": "We are out of time for today's interview. Let me wrap things up.",
+        "llm_fallback": "I'm sorry, I didn't quite catch that. Could you repeat?",
+        "im_ready_ack": "Great. Walk me through how you would approach this problem.",
+        "forced_wrap_up": "Alright, in the interest of time, let's wrap things up.",
+        "forced_next_question": "Alright, in the interest of time, let's move on to the next question.",
+        "forced_to_technical": "Anyway, let's move on to the technical portion of our interview.",
+        "forced_wrap_question": "Alright, in the interest of time, let's wrap up this question and move on.",
+        "forced_next_part": "Let's move on to the next part.",
+        # H2-C: a spoken control phrase that would change the interview
+        # irreversibly is confirmed on the next turn (voice_intents.py).
+        "confirm_end_interview": "It sounds like you'd like to end the interview. Say yes to confirm, or just keep going.",
+        "confirm_skip_question": "Do you want to skip this question? Say yes to confirm, or just keep going.",
+        "confirm_change_question": "Do you want a different question? Say yes to confirm, or just keep going.",
+        "confirm_move_to_technical": "Do you want to move to the technical part now? Say yes to confirm, or just keep going.",
+        "confirm_skip_section": "Do you want to skip the rest of this section? Say yes to confirm, or just keep going."
     },
     "ar": {
         "end_interview": "شكرًا لوقتك اليوم. بننهي المقابلة هنا وبنتواصل معك قريبًا. طاب يومك!",
@@ -43,7 +79,29 @@ SYSTEM_MESSAGES = {
         "submit_mcq": "تمام، سجّلت إجابتك. خلّنا نكمل.",
         "no_hints": "للأسف ما عندي تلميح إضافي لهذا السؤال. حاول تحله باللي تناقشنا فيه.",
         "core_section_no_skip": "هذا السؤال جزء من المقابلة، فخلّنا نكمل فيه — خذ وقتك وجاوب متى ما جهزت.",
-        "core_move_to_technical_unavailable": "المقابلة عندها ترتيب محدد، ما فيه قسم تقني منفصل نقفز له — خلّنا نكمل بالسؤال الحالي."
+        "core_move_to_technical_unavailable": "المقابلة عندها ترتيب محدد، ما فيه قسم تقني منفصل نقفز له — خلّنا نكمل بالسؤال الحالي.",
+        "core_followups_exhausted_next": "شكراً لك. خلّنا ننتقل للسؤال التالي.",
+        "core_followups_exhausted_last": "شكراً لك، هذا يكفي لهذا السؤال.",
+        "core_question_lead_in": "إليك سؤالك.",
+        "skip_intro": "تمام، خلّنا ننتقل مباشرة للأسئلة.",
+        "background_to_discussion": "شكراً لك، صارت عندي صورة واضحة عن خلفيتك. خلّنا ننتقل الآن لأسئلة النقاش.",
+        "background_skipped": "تمام، بنتخطى باقي أسئلة الخلفية وننتقل مباشرة لأسئلة النقاش.",
+        "background_time_up": "شكراً لك، صارت عندي صورة واضحة. خلّنا ننتقل لأسئلة النقاش.",
+        # H2-C: see the matching English entries.
+        "already_completed": "المقابلة انتهت خلاص.",
+        "time_up_wrap": "خلص وقت المقابلة لليوم. خلّني أختم معك.",
+        "llm_fallback": "عذراً، ما فهمت عليك زين. ممكن تعيد؟",
+        "im_ready_ack": "ممتاز. خذني خطوة بخطوة، كيف بتحل هذي المسألة؟",
+        "forced_wrap_up": "طيب، عشان الوقت، خلّنا نختم.",
+        "forced_next_question": "طيب، عشان الوقت، ننتقل للسؤال اللي بعده.",
+        "forced_to_technical": "على العموم، خلّنا ننتقل للجزء التقني من المقابلة.",
+        "forced_wrap_question": "طيب، عشان الوقت، خلّنا نختم هذا السؤال وننتقل.",
+        "forced_next_part": "خلّنا ننتقل للجزء اللي بعده.",
+        "confirm_end_interview": "يبدو إنك تبي تنهي المقابلة. قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_skip_question": "تبي تتخطى هذا السؤال؟ قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_change_question": "تبي سؤال ثاني؟ قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_move_to_technical": "تبي ننتقل للجزء التقني الحين؟ قل نعم للتأكيد، أو كمّل عادي.",
+        "confirm_skip_section": "تبي تتخطى باقي هذا القسم؟ قل نعم للتأكيد، أو كمّل عادي."
     }
 }
 # ─── Core Interviewer Identity ────────────────────────────────────────────────
@@ -92,7 +150,7 @@ You are greeting the candidate for the first time. In ONE concise response:
 3. Briefly state what this interview is for — naturally mention the {role} role — so the
    candidate knows what they're here for. One natural phrase, not a list of profile
    fields and not the raw job description.
-4. Briefly mention the structure: background discussion → technical problem → coding.
+4. {structure_line}
 5. Mention the approximate duration: {duration_minutes} minutes.
 6. Ask if they are ready to begin.
 
@@ -199,8 +257,11 @@ SUBSEQUENT TURNS (candidate has answered):
   action=ASK is ONLY for the very first turn of a question, above. A
   deep-dive on the same competency is still a follow-up, not "another
   question," no matter how different the phrasing feels.
-- Once satisfied, or once no follow-ups remain, use action=TRANSITION to
-  move to the next question.
+- Once satisfied, use action=TRANSITION to move to the next question.
+- When {followups_used} reaches {max_followups}, the system moves on to the
+  next question AUTOMATICALLY -- do not keep probing, and never invent a
+  new question of your own. Every HR-approved question will be asked in
+  order; your job on this one is finished.
 
 Candidate Profile:
 {profile}
@@ -211,6 +272,48 @@ Job description:
 TIME REMAINING: {time_remaining} seconds
 CANDIDATE CONTROL: The candidate may request: {candidate_controls}
 Allowed actions: {allowed_actions}
+""".strip()
+
+
+# ─── Background question generation (verbal Background subsection) ───────────
+# docs/verbal-background-subsection-plan.md §1/§2. Runs ONCE at session
+# bootstrap (main.py), not live: turns the parsed CV profile into N short,
+# per-candidate questions that are prepended to the VERBAL core-question
+# list tagged source="BACKGROUND". From then on CORE_QUESTION_PROMPT above
+# governs them exactly like an HR-approved question.
+
+BACKGROUND_GENERATION_PROMPT = """
+You are preparing the opening "background" conversation of a structured job
+interview. You will write exactly {count} short questions, each grounded in a
+specific fact from the candidate's CV profile below, that let the interviewer
+verify and understand the candidate's real experience before the assessed
+discussion questions begin.
+
+Cover these angles, in this order, one question each (merge if count is smaller,
+add a second project/technology question if count is larger):
+1. Their current or most recent role: what they actually owned and did day to day.
+2. A technology, tool or framework the CV says they used: how and for what.
+3. One project from the CV in depth: their personal contribution, a decision
+   they made, and the outcome.
+
+Rules:
+- Every question must name the concrete role, technology or project it is
+  about, taken verbatim from the profile. Never invent experience that is not
+  in the profile, and never ask for private information.
+- Prefer what is most relevant to the target role and job description.
+- Open, conversational, answerable in about a minute; no trick questions, no
+  coding, no hypotheticals.
+- Write the question text in the interview language ({language}).
+- competency is a short snake_case topic label for the angle (e.g.
+  "recent_role", "python_usage", "project_rag_assistant").
+- eval_criteria gives one sentence per band describing what an excellent /
+  good / adequate / poor answer looks like for THIS question, judged on
+  specificity, ownership and consistency with the CV.
+
+Target role: {role}
+Seniority: {level}
+Job description (optional): {job_description}
+Candidate CV profile: {candidate_profile}
 """.strip()
 
 
@@ -471,6 +574,16 @@ question -- judge it holistically across everything the candidate said. If `crit
 a job with nothing configured), produce an empty criterion_scores list -- still fill in overall_score, recommendation,
 evidence_sufficiency, summary, and detailed_overview from the transcript/question_records/technical_submission as
 before; an empty criterion_scores list is not an error.
+
+CV & EXPERIENCE ALIGNMENT (the `cv_alignment` criterion, when present in `criteria`):
+The evidence may include `candidate_profile` -- the structured profile parsed from the candidate's CV (title, years,
+skills, languages, frameworks, projects, education). `question_records` entries with "subsection": "BACKGROUND" are
+the CV-grounded opening questions (their text is carried in the record itself). Score `cv_alignment` ONLY from what
+the candidate actually said about that experience: does their account substantiate the CV (specific, first-person,
+consistent), and is that experience relevant to the role? Flag concrete gaps -- a claimed technology or project the
+candidate could not discuss, or contradictions with the CV -- as improvements. A candidate who skipped the background
+or gave no verifiable account gets a null score with "no evidence" stated plainly, never a low score. Without
+`candidate_profile` (no CV), leave the score null.
 
 GRADED, PARTIAL-CREDIT-AWARE SCORING (per-question rubric):
 The evidence includes `question_eval_criteria`, a map of question_id -> the HR-authored grading rubric for that

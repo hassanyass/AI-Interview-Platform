@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocalParticipant, useRoomContext, useTracks } from "@livekit/components-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocalParticipant, useRoomContext, useTracks, useConnectionState, useRemoteParticipants } from "@livekit/components-react";
+import { ConnectionState } from "livekit-client";
 import { Track, type RemoteAudioTrack } from "livekit-client";
-import { Loader2, Timer, LogOut, Video, VideoOff, Maximize2, Minimize2 } from "lucide-react";
+import { Loader2, CheckCircle2, RefreshCw } from "lucide-react";
 import { InterviewRealtimeService } from "../../services/livekit/InterviewRealtimeService";
 import { useInterviewStore } from "../../stores/InterviewContext";
 import type { InterviewSessionResponse } from "../../types/api";
-import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { useTranslation } from "react-i18next";
 import { WaitingRoomScreen } from "./WaitingRoomScreen";
 import { VerbalSectionView } from "./VerbalSectionView";
@@ -19,21 +19,48 @@ import { EndInterviewDialog } from "./EndInterviewDialog";
 import { isFullscreenActive, requestFullscreen } from "../../lib/fullscreen";
 import { terminateInterview } from "../../services/api/interviews";
 import { useFaceDetectionMonitor } from "./useFaceDetectionMonitor";
+import { SelfViewVideo } from "./SelfViewVideo";
+import { WorkspaceHeader } from "./WorkspaceHeader";
 
-const AgentConnectingScreen = () => {
+/**
+ * Start sequence (docs/interview-start-ux-plan.md, step 3). The previous
+ * loader advanced on fixed timers (0.8 s / 2.2 s) that had nothing to do
+ * with what was happening, then sat at 80 % for the 10-15 s the agent
+ * actually needs (room connect, /load, CV-grounded question generation,
+ * the legacy TECH-GEN call, the greeting). This one is staged on real
+ * signals -- room connection state, the agent participant appearing, the
+ * first state_update -- with copy that says what is being prepared and
+ * that waiting is expected, a rotating reassurance line, a "taking longer"
+ * note after 20 s and a reload action after 60 s.
+ */
+const START_STAGES = ["connecting", "joining", "preparing", "starting"] as const;
+type StartStage = typeof START_STAGES[number];
+const STAGE_PROGRESS: Record<StartStage, number> = { connecting: 15, joining: 40, preparing: 70, starting: 100 };
+
+export function useStartStage(hasState: boolean): StartStage {
+  const connectionState = useConnectionState();
+  const remotes = useRemoteParticipants();
+  // The agent joins as a remote participant; the candidate is the only
+  // local one. Any remote participant means the interviewer is in the room.
+  const agentPresent = remotes.length > 0;
+  if (hasState) return "starting";
+  if (connectionState !== ConnectionState.Connected) return "connecting";
+  if (!agentPresent) return "joining";
+  return "preparing";
+}
+
+export function StartSequenceView({ stage, hasCv, elapsedSeconds }: { stage: StartStage; hasCv: boolean; elapsedSeconds: number }) {
   const { t } = useTranslation();
-  const [progress, setProgress] = useState(15);
-  const [status, setStatus] = useState(t('workspace.connecting'));
-
-  useEffect(() => {
-    const timer1 = setTimeout(() => { setProgress(45); setStatus(t('workspace.initializing')); }, 800);
-    const timer2 = setTimeout(() => { setProgress(80); setStatus(t('workspace.preparing')); }, 2200);
-    return () => { clearTimeout(timer1); clearTimeout(timer2); };
-  }, []);
+  const tips = [t('workspace.start.tip1'), t('workspace.start.tip2'), t('workspace.start.tip3')];
+  const tip = tips[Math.floor(elapsedSeconds / 4) % tips.length];
+  const slow = elapsedSeconds >= 20;
+  const stuck = elapsedSeconds >= 60;
+  const label = stage === "preparing"
+    ? (hasCv ? t('workspace.start.preparingCv') : t('workspace.start.preparing'))
+    : t(`workspace.start.${stage}`);
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-background text-foreground">
-      {/* Skeleton Header matching the actual workspace header */}
       <header className="border-b bg-card">
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
@@ -42,28 +69,59 @@ const AgentConnectingScreen = () => {
             </div>
             <div className="min-w-0 ms-4 ps-4 border-s">
               <p className="truncate text-sm font-semibold text-foreground">{t('workspace.session')}</p>
-              <p className="text-xs text-muted-foreground">{t('workspace.connectingShort')}</p>
+              <p className="text-xs text-muted-foreground">{t('workspace.start.header')}</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Centered Progress Card */}
       <main className="flex-1 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm rounded-xl border bg-card p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-foreground mb-1">{t('workspace.starting')}</h2>
-          <p className="text-sm text-muted-foreground mb-6">{status}</p>
+        <div className="w-full max-w-md rounded-2xl border bg-card p-6 shadow-sm sm:p-8" role="status" aria-live="polite">
+          <h2 className="text-lg font-semibold text-foreground">{t('workspace.start.title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('workspace.start.subtitle')}</p>
 
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-700 ease-out"
-              style={{ width: `${progress}%` }}
-            />
+          <ol className="mt-6 space-y-3">
+            {START_STAGES.map((name, i) => {
+              const current = START_STAGES.indexOf(stage);
+              const done = i < current;
+              const active = i === current;
+              const text = name === "preparing" ? (hasCv ? t('workspace.start.preparingCv') : t('workspace.start.preparing')) : t(`workspace.start.${name}`);
+              return (
+                <li key={name} className={`flex items-center gap-3 text-sm ${active ? "text-foreground font-medium" : done ? "text-muted-foreground" : "text-muted-foreground/60"}`}>
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${done ? "bg-success/15 text-success" : active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground/60"}`}>
+                    {done ? <CheckCircle2 className="h-4 w-4" /> : active ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className="text-[11px] font-bold">{i + 1}</span>}
+                  </span>
+                  <span>{text}</span>
+                </li>
+              );
+            })}
+          </ol>
+
+          <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-primary transition-all duration-700 ease-out" style={{ width: `${STAGE_PROGRESS[stage]}%` }} />
           </div>
+          <p className="sr-only">{label}</p>
+
+          <p className="mt-4 text-xs text-muted-foreground">{stuck ? t('workspace.start.stuck') : slow ? t('workspace.start.slow') : tip}</p>
+          {stuck && (
+            <button type="button" onClick={() => window.location.reload()} className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted">
+              <RefreshCw className="h-3.5 w-3.5" /> {t('workspace.start.reload')}
+            </button>
+          )}
         </div>
       </main>
     </div>
   );
+}
+
+const AgentConnectingScreen = ({ hasCv }: { hasCv: boolean }) => {
+  const stage = useStartStage(false);
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setElapsed((v) => v + 1), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return <StartSequenceView stage={stage} hasCv={hasCv} elapsedSeconds={elapsed} />;
 };
 
 const ReportLoadingState = () => {
@@ -473,6 +531,48 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
     };
   }, []);
 
+  /**
+   * Camera/mic hardware release (2026-09-14). Real bug this fixes: the
+   * camera's physical indicator light stayed ON after a session ended or
+   * was terminated. Two gaps caused it --
+   *   1. The fullscreen-termination path disabled only the MICROPHONE
+   *      (see the FULLSCREEN_EXITED handler above), never the camera, and
+   *      relied entirely on <LiveKitRoom> unmounting to release it.
+   *   2. Natural agent-driven completion never disabled either one --
+   *      same reliance on the room's own teardown.
+   * setCameraEnabled(false) alone also isn't a hardware guarantee: it
+   * unpublishes/mutes, but whether the underlying MediaStreamTrack is
+   * actually stopped depends on library defaults that shouldn't be
+   * trusted for what is, in effect, a privacy promise to the candidate.
+   * So: explicitly stop() every local track on ANY terminal state, and
+   * again on unmount as a backstop. stop() on an already-stopped track is
+   * a no-op, so the overlap between the two is harmless.
+   */
+  const releaseLocalMedia = useCallback(() => {
+    const localParticipant = room?.localParticipant;
+    if (!localParticipant) return;
+    localParticipant.setCameraEnabled(false).catch(() => {});
+    localParticipant.setMicrophoneEnabled(false).catch(() => {});
+    localParticipant.trackPublications.forEach((publication) => {
+      // Both layers: LiveKit's own track teardown, and the raw
+      // MediaStreamTrack underneath it -- the latter is what actually
+      // turns the camera light off.
+      publication.track?.stop();
+      publication.track?.mediaStreamTrack?.stop();
+    });
+  }, [room]);
+
+  useEffect(() => {
+    if (!isCompleted && !isFullscreenBlocked) return;
+    releaseLocalMedia();
+  }, [isCompleted, isFullscreenBlocked, releaseLocalMedia]);
+
+  useEffect(() => {
+    return () => {
+      releaseLocalMedia();
+    };
+  }, [releaseLocalMedia]);
+
   // Audit fix (2026-08-27): client-side Web Speech API fallback. Fires only
   // on ttsStatus.status === "gave_up" — the point voice_adapter.py has
   // definitively failed to speak this turn server-side (TTS provider outage,
@@ -561,82 +661,29 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
   }
 
   if (!state?.phase) {
-    return <AgentConnectingScreen />;
+    return <AgentConnectingScreen hasCv={Boolean(session.resume_id)} />;
   }
 
   return (
     <div className="h-[100dvh] flex flex-col w-full bg-background text-foreground overflow-hidden">
-      <header className="border-b bg-white">
-        <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex items-center gap-2 font-bold text-xl tracking-tight text-primary hidden sm:flex">
-              <span dir="ltr" className="inline-block">e&</span> <span className="text-muted-foreground font-normal">|</span> هِمّة
-            </div>
-            <div className="min-w-0 sm:ms-4 sm:ps-4 sm:border-s">
-              <p className="truncate text-sm font-semibold text-foreground">{session.role || t('workspace.session')}</p>
-              <p className="text-xs text-muted-foreground">
-                {sectionProgressLabel ? sectionProgressLabel : phaseLabel}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-muted-foreground sm:gap-6">
-            <LanguageToggle />
-            {/* PR-C: transparency indicator, same principle as PR-B's grace
-                banner — the candidate should always be able to see at a
-                glance whether their camera is actually on, not just have
-                consented to it once at Start. Shown whenever the session
-                isn't over; distinguishes "recording" from "camera denied/
-                unavailable, proceeding audio-only" (per CURRENT_DECISIONS.md's
-                graceful-degradation decision) rather than hiding that gap. */}
-            {!isCompleted && (
-              <span className="hidden items-center gap-1.5 sm:flex" title={isCameraEnabled ? t('workspace.cameraOn') : t('workspace.cameraOff')}>
-                {isCameraEnabled ? (
-                  <Video className="h-3.5 w-3.5 text-success" />
-                ) : (
-                  <VideoOff className="h-3.5 w-3.5 text-muted-foreground" />
-                )}
-              </span>
-            )}
-            <span className="hidden items-center gap-2 sm:flex">
-              <span className={`h-2 w-2 rounded-full ${isCompleted ? "bg-muted-foreground" : state?.phase === "WAITING_ROOM" ? "bg-blue-400" : "bg-success"}`} />
-              {isCompleted ? t('workspace.sessionEnded') : state?.phase === "WAITING_ROOM" ? t('workspace.phase.waitingRoom') : t('workspace.liveConnection')}
-            </span>
-            {/* Show timer always except during WAITING_ROOM (clock is paused). */}
-            {state?.phase !== "WAITING_ROOM" && (
-              <span className="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-1.5 font-semibold tabular-nums text-foreground">
-                <Timer className="h-3.5 w-3.5 text-muted-foreground" />
-                {formatTime(displaySeconds)}
-              </span>
-            )}
-            
-            <button
-                onClick={async () => {
-                  if (isFullscreenNow) {
-                    await document.exitFullscreen?.();
-                  } else {
-                    await requestFullscreen();
-                  }
-                }}
-                className="hidden sm:flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-semibold text-foreground/80 transition hover:bg-muted"
-                title={isFullscreenNow ? "Exit fullscreen" : "Enter fullscreen"}
-              >
-                {isFullscreenNow
-                  ? <><Minimize2 className="h-3.5 w-3.5" />Exit Fullscreen</>
-                  : <><Maximize2 className="h-3.5 w-3.5" />Fullscreen</>
-                }
-              </button>
-            
-            <button
-              onClick={() => setIsEndDialogOpen(true)}
-              disabled={isCompleted || isEndingSession}
-              className="hidden sm:flex items-center gap-1.5 rounded-md bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
-            >
-              {isEndingSession ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
-              End Session
-            </button>
-          </div>
-        </div>
-      </header>
+      <WorkspaceHeader
+        role={session.role}
+        subtitle={sectionProgressLabel ? sectionProgressLabel : phaseLabel}
+        isCompleted={isCompleted}
+        isCameraEnabled={isCameraEnabled}
+        isWaitingRoom={state?.phase === "WAITING_ROOM"}
+        formattedTime={formatTime(displaySeconds)}
+        isFullscreenNow={isFullscreenNow}
+        onToggleFullscreen={async () => {
+          if (isFullscreenNow) {
+            await document.exitFullscreen?.();
+          } else {
+            await requestFullscreen();
+          }
+        }}
+        isEndingSession={isEndingSession}
+        onEndSession={() => setIsEndDialogOpen(true)}
+      />
 
       {/* Audit fix (2026-08-27): relative wrapper around main + the sticky
           controller bar, purely so TtsRetryOverlay (an absolute inset-0
@@ -662,7 +709,6 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
             <CodingSectionView
               question={question}
               isAgentSpeaking={isAgentSpeaking}
-              isMicrophoneEnabled={isMicrophoneEnabled}
               code={code}
               setCode={setCode}
               selectedLanguage={selectedLanguage}
@@ -671,12 +717,6 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
               codingConfigConstraints={codingConfigConstraints}
               codeStatus={codeStatus}
               onCodeSubmit={handleCodeSubmit}
-              allowedControls={state?.allowed_controls || []}
-              isCompleted={isCompleted}
-              onToggleMicrophone={() => room.localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
-              onSendControl={handleControl}
-              backendState={state}
-              hasNextSection={hasNextSection}
               formattedTime={formatTime(displaySeconds)}
             />
           ) : (
@@ -687,19 +727,12 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
             <McqSectionView
               question={question}
               isAgentSpeaking={isAgentSpeaking}
-              isMicrophoneEnabled={isMicrophoneEnabled}
               mcqOptions={mcqOptions}
               selectedOptionIds={selectedOptionIds}
               onToggleOption={toggleMcqOption}
               mcqIsMultiSelect={mcqIsMultiSelect}
               mcqSubmitted={mcqSubmitted}
               onMcqSubmit={handleMcqSubmit}
-              allowedControls={state?.allowed_controls || []}
-              isCompleted={isCompleted}
-              onToggleMicrophone={() => room.localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
-              onSendControl={handleControl}
-              backendState={state}
-              hasNextSection={hasNextSection}
               formattedTime={formatTime(displaySeconds)}
             />
           ) : (
@@ -707,10 +740,10 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
           )
         ) : (
           <VerbalSectionView
+            formattedTime={formatTime(displaySeconds)}
             question={question}
             isCompleted={isCompleted}
             isAgentSpeaking={isAgentSpeaking}
-            isMicrophoneEnabled={isMicrophoneEnabled}
             isTechnical={isTechnical}
             hasEditor={hasEditor}
             characterState={characterState}
@@ -723,13 +756,8 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
             codingConfigConstraints={codingConfigConstraints}
             codeStatus={codeStatus}
             onCodeSubmit={handleCodeSubmit}
-            currentSectionType={state?.sections_progress?.current_section_type}
             ReportLoadingState={ReportLoadingState}
-            allowedControls={state?.allowed_controls || []}
-            onToggleMicrophone={() => room.localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled)}
-            onSendControl={handleControl}
             backendState={state}
-            hasNextSection={hasNextSection}
             visibleTranscripts={visibleTranscripts}
             transcriptRef={transcriptRef}
           />
@@ -756,6 +784,14 @@ export function InterviewWorkspace({ session, onCompleted, onFullscreenTerminate
 
       <TtsRetryOverlay ttsStatus={ttsStatus} />
       <FullscreenGraceOverlay secondsRemaining={fullscreenGraceSeconds} isBlocked={isFullscreenBlocked} />
+      {/* Self-view (2026-09-14): candidate's own camera, so they can see
+          themselves "like a real meeting" rather than just trust the
+          header's on/off indicator above. Same already-published local
+          camera track as useFaceDetectionMonitor (line 427-428) -- no
+          second getUserMedia call. Preview only, by explicit product
+          decision: no camera toggle here, camera stays on for the whole
+          interview exactly as PR-C already designed it. */}
+      <SelfViewVideo cameraTrack={localCameraTrack} />
       </div>
 
       <EndInterviewDialog

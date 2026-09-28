@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError, model_validator
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
@@ -6,6 +6,11 @@ from enum import Enum
 
 
 # ── Enums ──────────────────────────────────────────────────────────────────
+
+class AdminPingResponse(BaseModel):
+    status: str
+    admin_id: str
+
 
 class SectionType(str, Enum):
     VERBAL = "VERBAL"
@@ -89,19 +94,70 @@ def validate_question_config(section_type: str, config: dict | None) -> dict | N
 # config above — every section type (VERBAL/CODING/MCQ) carries the same
 # shape, since a time budget applies uniformly regardless of content type.
 
+BACKGROUND_QUESTION_COUNT_MAX = 6
+
+
 class SectionConfig(BaseModel):
-    time_budget_minutes: int = Field(gt=0)
+    # Optional *inside* the dict as well as the dict itself being optional
+    # (Background subsection, 2026-09-16): a VERBAL section is seeded with its
+    # background settings at creation, before HR has typed a time budget, so
+    # the budget can no longer be a hard requirement of the dict. Publish
+    # still refuses a section without one (publish_job / update_job_status).
+    time_budget_minutes: Optional[int] = Field(default=None, gt=0)
+
+    # Background subsection (docs/verbal-background-subsection-plan.md, §10
+    # + §11 rulings). VERBAL sections only; absent (None, not dumped) for
+    # CODING/MCQ. include_background: start the verbal section with a short
+    # CV-grounded conversation. background_question_count: how many
+    # generated questions (bounded, it is a warm-up). background_time_
+    # budget_minutes: a sub-clock carved OUT of time_budget_minutes, never
+    # added on top -- hence the <= 50 % rule below.
+    include_background: Optional[bool] = None
+    background_question_count: Optional[int] = Field(default=None, ge=1, le=BACKGROUND_QUESTION_COUNT_MAX)
+    background_time_budget_minutes: Optional[int] = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def _background_budget_fits(self):
+        if (
+            self.include_background
+            and self.background_time_budget_minutes is not None
+            and self.time_budget_minutes is not None
+            and self.background_time_budget_minutes * 2 > self.time_budget_minutes
+        ):
+            raise ValueError(
+                "background_time_budget_minutes must be at most half of the "
+                "section's time_budget_minutes (the background is carved out of "
+                "the section budget, and the discussion keeps the rest)."
+            )
+        return self
+
+
+BACKGROUND_QUESTION_COUNT_DEFAULT = 3
+BACKGROUND_TIME_BUDGET_MINUTES_DEFAULT = 5
+
+
+def default_verbal_section_config() -> dict:
+    """The config a brand-new VERBAL section is seeded with: background ON
+    with the plan's defaults (§2 "default checked for new VERBAL sections").
+    HR can switch it off or resize it in SectionsEditor before publishing."""
+    return {
+        "include_background": True,
+        "background_question_count": BACKGROUND_QUESTION_COUNT_DEFAULT,
+        "background_time_budget_minutes": BACKGROUND_TIME_BUDGET_MINUTES_DEFAULT,
+    }
 
 
 def validate_section_config(config: dict | None) -> dict | None:
-    """Validate and normalize a section's timing config.
+    """Validate and normalize a section's config.
 
     Optional at section creation (a bare section can exist before its
     budget is set, same as questions being addable after section creation)
-    — None passes through unchanged. Required at publish time; see
-    publish_job's own check for that enforcement. Returns the normalized
-    dict on success, raises ValueError on failure. Callers catch ValueError
-    and raise HTTPException(422).
+    — None passes through unchanged. The time budget is required at publish
+    time; see publish_job's own check for that enforcement. Returns the
+    normalized dict on success (keys that are None are dropped, so a
+    CODING/MCQ config stays exactly {"time_budget_minutes": N}), raises
+    ValueError on failure. Callers catch ValueError and raise
+    HTTPException(422).
     """
     if config is None:
         return None
@@ -109,7 +165,7 @@ def validate_section_config(config: dict | None) -> dict | None:
         parsed = SectionConfig(**config)
     except PydanticValidationError as e:
         raise ValueError(f"Invalid section config: {e}") from e
-    return parsed.model_dump()
+    return parsed.model_dump(exclude_none=True)
 
 
 class JobLanguage(str, Enum):
@@ -367,6 +423,10 @@ class QuestionRecordDetail(BaseModel):
     hints_used: int = 0
     followups_used: int = 0
     clarifications_used: int = 0
+    # Verbal Background subsection: "BACKGROUND" for a CV-grounded opening
+    # question (its title/text/competency come from the record itself --
+    # generated per session, no InterviewQuestion row), None otherwise.
+    subsection: Optional[str] = None
 
 
 class IntegrityEventResponse(BaseModel):
@@ -526,3 +586,29 @@ class CriteriaToggleRequest(BaseModel):
     the others."""
     criteria: List[CriterionWeightSetting]
 
+# ── Background tasks (H2-F) ───────────────────────────────────────────────
+# The four AI endpoints answer 202 with one of these instead of holding the
+# connection open for a Groq call the browser would abandon at 30s.
+
+class TaskAcceptedResponse(BaseModel):
+    task_id: UUID
+    kind: str
+    status: str
+    """Always QUEUED here; poll GET /admin/tasks/{task_id}."""
+
+
+class TaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    kind: str
+    status: str
+    """QUEUED | RUNNING | SUCCEEDED | FAILED."""
+    result: Optional[dict] = None
+    """Handler output, present once SUCCEEDED. The invitation draft lives only here."""
+    error: Optional[str] = None
+    error_code: Optional[str] = None
+    attempts: int = 0
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None

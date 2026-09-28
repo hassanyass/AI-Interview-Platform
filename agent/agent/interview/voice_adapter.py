@@ -6,14 +6,14 @@ Persists finalized messages and meaningful events.
 """
 import asyncio
 import logging
-import os
 import re
-from typing import Optional, List, Dict
+from typing import Optional, List
 from livekit.agents import APIConnectOptions, stt, tts, vad
 from livekit import rtc
 
+from agent.config import get_settings
 from agent.interview.controller import InterviewController
-from agent.interview.models import ActionEnum, InterviewPhase
+from agent.interview.models import ActionEnum, CandidateControlAction, InterviewPhase
 from agent.interview.persistence import InterviewPersistence
 from agent.interview import tts_cache
 from agent.llm.prompts import SYSTEM_MESSAGES
@@ -28,6 +28,26 @@ _FIXED_SYSTEM_MESSAGE_TEXTS = frozenset(
 )
 
 logger = logging.getLogger(__name__)
+
+# H2-D: the only shape a ui_command name may have.
+_UI_COMMAND_RE = re.compile(r"^[A-Z_]{1,64}$")
+
+# H5-B: the shape check above says a command *looks* like one; this says it
+# *is* one. Anything else from a candidate's browser is dropped at the edge
+# rather than travelling into the controller to be ignored somewhere deeper.
+# Three sources, all real:
+#   - every CandidateControlAction (the controls the state machine gates),
+#   - the two submissions and the intro screen's readiness signal, which are
+#     commands rather than gated controls,
+#   - the browser-detected proctoring signals, which are always-on telemetry.
+_SUBMISSION_COMMANDS = frozenset({"SUBMIT_CODE", "SUBMIT_MCQ_ANSWER", "IM_READY"})
+_PROCTORING_COMMANDS = frozenset({
+    "FULLSCREEN_EXITED", "TAB_HIDDEN", "WINDOW_BLURRED",
+    "NO_FACE_DETECTED", "MULTIPLE_FACES_DETECTED", "HEAD_DOWN_SUSPECTED",
+})
+ALLOWED_UI_COMMANDS = frozenset(
+    {action.value for action in CandidateControlAction} | _SUBMISSION_COMMANDS | _PROCTORING_COMMANDS
+)
 
 
 class VoiceInterviewAdapter:
@@ -88,23 +108,16 @@ class VoiceInterviewAdapter:
         # by main.py's teardown retry to decide whether this specifically
         # still needs retrying.
         self._evaluation_submitted = False
-        try:
-            self._candidate_endpoint_delay = max(
-                0.25, float(os.getenv("STT_ENDPOINT_DELAY_SECONDS", "0.8"))
-            )
-        except ValueError:
-            self._candidate_endpoint_delay = 0.8
+        # Both floors / invalid-value fallbacks are applied by AgentSettings
+        # (agent/config.py) -- same semantics the inline os.getenv reads had.
+        _settings = get_settings()
+        self._candidate_endpoint_delay = _settings.STT_ENDPOINT_DELAY_SECONDS
+        self._stt_restart_max = _settings.STT_RESTART_MAX
+        self._ui_command_max_bytes = _settings.UI_COMMAND_MAX_BYTES
 
         # WR-C (docs/section-pacing-architecture.md): auto-proceed timeout
-        # for the waiting room — handles an abandoned/AFK session. Same
-        # defensive env-var loading pattern as _candidate_endpoint_delay
-        # above.
-        try:
-            self._waiting_room_timeout_seconds = max(
-                1.0, float(os.getenv("WAITING_ROOM_TIMEOUT_SECONDS", "300"))
-            )
-        except ValueError:
-            self._waiting_room_timeout_seconds = 300.0
+        # for the waiting room — handles an abandoned/AFK session.
+        self._waiting_room_timeout_seconds = _settings.WAITING_ROOM_TIMEOUT_SECONDS
         self._waiting_room_timeout_task: Optional[asyncio.Task] = None
         # Edge-detection for the waiting-room timer: only (re)schedule on
         # the transition INTO WAITING_ROOM, only cancel on the transition
@@ -119,6 +132,14 @@ class VoiceInterviewAdapter:
         # STT turns and UI controls share one interview timeline. Never let
         # two controller turns generate responses concurrently.
         self._turn_lock = asyncio.Lock()
+
+        # H2-D: every background task the adapter spawns is kept here so it
+        # can neither be garbage-collected mid-flight nor outlive the job.
+        self._stt_tasks: list[asyncio.Task] = []
+        self._command_tasks: set[asyncio.Task] = set()
+        self._stt_track: Optional[rtc.RemoteAudioTrack] = None
+        self._stt_restarts = 0
+        self._closed = False
 
     async def start(self, resume: bool = False):
         """Initializes audio tracks and starts listening for events."""
@@ -169,7 +190,7 @@ class VoiceInterviewAdapter:
         """Explicitly kicks off the interview by generating the first AI turn."""
         self._is_interrupted = False
         logger.info("[Agent Thinking... Initializing Interview]")
-        
+
         # Pass None to generate the next action without an initial user message
         action = await self.controller.process_candidate_input(None)
 
@@ -179,7 +200,7 @@ class VoiceInterviewAdapter:
         logger.info(f"AI ({action.action.value}): {action.response}")
 
         meta = {"action": action.action.value, "reason": action.reason, "is_greeting": True}
-        
+
         await self._persist_message(
             speaker="agent",
             text=action.response,
@@ -293,17 +314,35 @@ class VoiceInterviewAdapter:
         import json
         data = packet.data
         topic = packet.topic
-        
+
         if topic == "ui_command":
+            # H2-D: only the candidate's own client may drive the interview,
+            # and only with a well-formed, bounded command.
+            sender = getattr(getattr(packet, "participant", None), "identity", "") or ""
+            if not sender.startswith("candidate-"):
+                logger.warning("Dropped ui_command from non-candidate participant %r", sender)
+                return
+            if len(data) > self._ui_command_max_bytes:
+                logger.warning("Dropped oversized ui_command (%d bytes) from %s", len(data), sender)
+                return
             try:
                 payload = json.loads(data.decode("utf-8"))
-                command = payload.get("command")
-                if command:
-                    logger.info(f"Received UI command: {command}")
-                    asyncio.create_task(self._handle_ui_command(command, payload))
-            except Exception as e:
-                logger.error(f"Error parsing UI command: {e}")
-                
+            except (UnicodeDecodeError, ValueError) as e:
+                logger.warning("Dropped unparseable ui_command from %s: %s", sender, e)
+                return
+            if not isinstance(payload, dict) or not isinstance(payload.get("command"), str) \
+                    or not _UI_COMMAND_RE.match(payload["command"]):
+                logger.warning("Dropped malformed ui_command from %s: %r", sender, payload if isinstance(payload, dict) else type(payload).__name__)
+                return
+            command = payload["command"]
+            if command not in ALLOWED_UI_COMMANDS:
+                logger.warning("Dropped unknown ui_command %r from %s", command, sender)
+                return
+            logger.info(f"Received UI command: {command}")
+            task = asyncio.create_task(self._handle_ui_command(command, payload))
+            self._command_tasks.add(task)
+            task.add_done_callback(self._command_tasks.discard)
+
     async def _handle_ui_command(self, command: str, payload: dict = None):
         """Processes a UI command through the controller and executes the resulting action."""
         async with self._turn_lock:
@@ -311,7 +350,7 @@ class VoiceInterviewAdapter:
 
     async def _handle_ui_command_locked(self, command: str, payload: dict = None):
         """Runs one serialized UI command and its optional follow-up turn."""
-        
+
         # If the candidate skips or moves sections, immediately stop the current TTS
         # WR-C: PROCEED_TO_NEXT_SECTION added — guards against the wrap-up
         # message from the just-finished section still being mid-playback
@@ -328,7 +367,7 @@ class VoiceInterviewAdapter:
             self._handle_interruption()
             # Wait a tiny bit to ensure the audio frame buffer clears
             await asyncio.sleep(0.05)
-            
+
         self._is_interrupted = False
         try:
             action = await self.controller.process_ui_command(command, payload)
@@ -406,9 +445,9 @@ class VoiceInterviewAdapter:
                 else:
                     await self._emit_ui_state()
                 return
-                
+
             logger.info(f"AI ({action.action.value}): {action.response}")
-            
+
             await self._persist_message(
                 speaker="agent",
                 text=action.response,
@@ -416,18 +455,18 @@ class VoiceInterviewAdapter:
             )
             await self._emit_transcription(speaker="agent", text=action.response)
             await self._persist_action_event(action)
-            
+
             if self.controller.context.current_phase == InterviewPhase.COMPLETED:
                 await self._speak_text(action.response)
                 await self._handle_completion()
                 return
-                
+
             await self._speak_text(action.response)
-            
+
             # If we transitioned to a new phase, clear stale context
             if getattr(action, "should_transition", False):
                 self.controller.context.conversation_history.clear()
-                
+
             # Audit fix (2026-08-27): SKIP_QUESTION/SKIP_SECTION/
             # MOVE_TO_TECHNICAL can be REJECTED as a no-op (Issue 6's guard
             # — core content is HR-approved and can't be skipped live; see
@@ -477,18 +516,91 @@ class VoiceInterviewAdapter:
         self, track: rtc.Track, publication: rtc.RemoteTrackPublication,
         participant: rtc.RemoteParticipant,
     ):
-        if track.kind == rtc.TrackKind.KIND_AUDIO:
-            logger.info(f"Subscribed to candidate audio track from {participant.identity}")
+        if track.kind != rtc.TrackKind.KIND_AUDIO:
+            return
+        # H2-D: only the candidate's microphone is transcribed. The backend
+        # mints candidate identities as "candidate-<profile id>"; anyone else
+        # in the room (an observer, a second agent) must not become "the
+        # candidate" for the controller.
+        identity = getattr(participant, "identity", "") or ""
+        if not identity.startswith("candidate-"):
+            logger.warning("Ignoring audio track from non-candidate participant %r", identity)
+            return
+        if self._stt_tasks and any(not t.done() for t in self._stt_tasks):
+            logger.warning("A candidate audio track is already being transcribed; ignoring a second one from %s", identity)
+            return
+        logger.info(f"Subscribed to candidate audio track from {identity}")
+        self._stt_track = track
+        self._start_stt_pipeline(track)
 
-            # Use StreamAdapter with VAD to chunk audio into REST requests
-            from livekit.agents import stt as stt_module
-            self._stt_stream = stt_module.StreamAdapter(
-                stt=self.stt_plugin,
-                vad=self.vad_plugin,
-            ).stream()
+    def _start_stt_pipeline(self, track: rtc.RemoteAudioTrack) -> None:
+        # Use StreamAdapter with VAD to chunk audio into REST requests
+        from livekit.agents import stt as stt_module
+        self._stt_stream = stt_module.StreamAdapter(
+            stt=self.stt_plugin,
+            vad=self.vad_plugin,
+        ).stream()
+        self._stt_tasks = [
+            asyncio.create_task(self._guarded_stt_loop(self._push_audio_to_stt(track), "push")),
+            asyncio.create_task(self._guarded_stt_loop(self._read_stt_events(), "read")),
+        ]
 
-            asyncio.create_task(self._push_audio_to_stt(track))
-            asyncio.create_task(self._read_stt_events())
+    async def _guarded_stt_loop(self, coro, name: str) -> None:
+        """Run one STT loop; on an unexpected exception rebuild the whole
+        pipeline (up to STT_RESTART_MAX times) instead of silently losing
+        transcription for the rest of the interview."""
+        try:
+            await coro
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- any failure in the pipeline is handled the same way: restart or give up
+            if self._closed:
+                return
+            logger.exception("[STT] %s loop crashed", name)
+            await self._restart_stt_pipeline()
+
+    async def _restart_stt_pipeline(self) -> None:
+        if self._stt_restarts >= self._stt_restart_max or self._stt_track is None:
+            logger.error("[STT] giving up after %d restart(s); candidate speech will no longer be transcribed", self._stt_restarts)
+            return
+        self._stt_restarts += 1
+        logger.warning("[STT] restarting pipeline (%d/%d)", self._stt_restarts, self._stt_restart_max)
+        await self._stop_stt_pipeline()
+        await asyncio.sleep(0.5 * self._stt_restarts)
+        if not self._closed:
+            self._start_stt_pipeline(self._stt_track)
+
+    async def _stop_stt_pipeline(self) -> None:
+        current = asyncio.current_task()
+        tasks, self._stt_tasks = self._stt_tasks, []
+        for t in tasks:
+            if t is not current and not t.done():
+                t.cancel()
+        for t in tasks:
+            if t is not current:
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001 -- already logged by the guard
+                    pass
+        stream, self._stt_stream = self._stt_stream, None
+        if stream is not None:
+            try:
+                await stream.aclose()
+            except Exception:  # noqa: BLE001 -- closing a broken stream may itself fail; nothing to do
+                pass
+
+    async def aclose(self) -> None:
+        """Release everything the adapter started (H2-D): STT pipeline,
+        pending command handlers, playback. Called from the entrypoint's
+        finally, so it must be safe on a half-started adapter."""
+        self._closed = True
+        await self._stop_stt_pipeline()
+        for t in list(self._command_tasks):
+            t.cancel()
+        for name in ("_playback_task", "_candidate_endpoint_task", "_waiting_room_timeout_task", "_current_synthesis_task"):
+            t = getattr(self, name, None)
+            if t is not None and not t.done():
+                t.cancel()
 
     async def _push_audio_to_stt(self, track: rtc.RemoteAudioTrack):
         audio_stream = rtc.AudioStream(track)
@@ -782,7 +894,7 @@ class VoiceInterviewAdapter:
         self._generation_id += 1
         current_gen = self._generation_id
         logger.info("[TTS] generation_started id=%s", current_gen)
-        
+
         if not self._is_interrupted and self._generation_id == current_gen:
             try:
                 await asyncio.wait_for(self._tts_queue.put((text, 1, 1, current_gen)), timeout=5.0)
@@ -873,7 +985,7 @@ class VoiceInterviewAdapter:
         if self._completion_persisted:
             logger.info("[COMPLETION] duplicate_completion_ignored")
             return
-        
+
         # Drain the TTS queue so audio doesn't get cut off before disconnecting
         if not self._tts_queue.empty():
             await self._tts_queue.join()
@@ -883,10 +995,10 @@ class VoiceInterviewAdapter:
                 await asyncio.wait_for(asyncio.shield(self._current_synthesis_task), timeout=30.0)
             except Exception as e:
                 logger.warning(f"Error waiting for final TTS playback: {e}")
-        
+
         # Give audio engine a little time to empty buffers
         await asyncio.sleep(2.0)
-        
+
         ctx = self.controller.context
         logger.info("Interview completed. Persisting final state.")
 
@@ -966,7 +1078,7 @@ class VoiceInterviewAdapter:
     async def _synthesize_and_play(self, text: str, chunk_idx: int = 1, total_chunks: int = 1, gen_id: int = 0):
         if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
             raise asyncio.CancelledError()
-            
+
         logger.info(f"[TTS-DIAG] Synthesizing response (Gen {gen_id}): {text[:40]}...")
 
         # Audit fix (2026-08-27): cache fixed, non-personalized system
@@ -1105,6 +1217,8 @@ class VoiceInterviewAdapter:
                             if self._is_interrupted or (gen_id != 0 and gen_id != self._generation_id):
                                 raise asyncio.CancelledError()
                             self.tts_plugin = key_rotator.rebuild_plugin()
+                            # H2-D: the listener was bound to the old instance.
+                            self.tts_plugin.on("metrics_collected", self._on_tts_metrics)
                             continue
                         else:
                             logger.warning(

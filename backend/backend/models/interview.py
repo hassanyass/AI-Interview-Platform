@@ -163,6 +163,12 @@ class InterviewSession(Base):
     # audit-trail need the way InterviewConsent had. recording_storage_path
     # is the R2 object key we choose ourselves at egress-start time (known
     # immediately, not dependent on a completion webhook).
+    # H5-B: set before the egress is started, by the one caller whose
+    # conditional UPDATE won. Its presence means "a start is in flight or
+    # succeeded", which is what makes the start idempotent -- checking
+    # recording_egress_id alone was check-then-act, so two concurrent
+    # /livekit/token calls could start two recordings and orphan one.
+    recording_egress_started_at = Column(DateTime(timezone=True), nullable=True)
     recording_egress_id = Column(String, nullable=True)
     recording_storage_path = Column(String, nullable=True)
 

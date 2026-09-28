@@ -1,0 +1,206 @@
+# Continuous integration (hardening H4-A).
+#
+# Mirrors `make test` plus the gates that only make sense on a clean
+# machine: a database built from the Alembic chain rather than a
+# developer's long-lived one, a reversibility check on the last
+# migration, and image builds for the two services that ship as images.
+#
+# Secrets: none. Every test runs against fakes and the ephemeral Postgres
+# below; the Supabase/Groq/LiveKit values here are placeholders that exist
+# only because Settings has four required fields (H1-A fail-closed
+# config). ENVIRONMENT=test keeps the production boot checks off. If a job
+# here ever needs a real credential, something has started calling a
+# vendor from a test -- fix the test, do not add the secret.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
+
+jobs:
+  python:
+    name: Python — lint, tests, migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: himma_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d himma_test"
+          --health-interval 5s --health-timeout 5s --health-retries 15
+
+    env:
+      # conftest.py rewrites DATABASE_URL to this and refuses Supabase hosts.
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/himma_test
+      ENVIRONMENT: test
+      SUPABASE_URL: https://ci.invalid
+      SUPABASE_SECRET_KEY: ci-placeholder-not-a-secret
+      SUPABASE_JWKS_URL: https://ci.invalid/.well-known/jwks.json
+      SECRET_KEY: ci-placeholder-secret-key-at-least-32-chars
+      AGENT_API_SECRET: ci-placeholder-agent-secret
+      # Room tokens are signed locally -- `mint_participant_token` makes no
+      # network call and creates no room -- so placeholders are enough for
+      # the CV-gate test to reach a 200. Without them the route answers 500,
+      # which is how CI's second run failed: that test had been passing on
+      # developer machines only because a real .env was present.
+      LIVEKIT_URL: wss://ci.invalid
+      LIVEKIT_API_KEY: ci-placeholder-livekit-key
+      LIVEKIT_API_SECRET: ci-placeholder-livekit-secret-at-least-32-chars
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt -r agent/requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Audit dependencies (pip-audit)
+        # Runtime dependencies only -- these are what ship in the images.
+        run: |
+          pip-audit -r backend/requirements.txt --progress-spinner off
+          pip-audit -r agent/requirements.txt --progress-spinner off
+
+      - name: Backend + agent tests
+        # testpaths in pytest.ini: backend/tests, agent, tests/legacy.
+        # conftest.py rebuilds the schema from the Alembic chain first, so a
+        # broken migration fails here before any test runs.
+        run: pytest -q --cov=backend/backend --cov=agent/agent --cov-report=term-missing:skip-covered --cov-report=xml
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo '### Coverage' >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          try:
+              root = ET.parse("coverage.xml").getroot()
+              print(f"Line rate: **{float(root.get('line-rate', 0)) * 100:.1f}%** "
+                    f"({root.get('lines-covered')}/{root.get('lines-valid')} lines)")
+          except Exception as e:
+              print(f"(no coverage report: {e})")
+          PY
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend — typecheck, lint, tests, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (vitest + jsdom)
+        run: npm test
+
+      - name: Audit dependencies (npm)
+        # Production dependencies fail the build; dev-only findings are
+        # reported and do not, because the current two are in vitest and
+        # only "fixable" by a breaking major bump. Read the second block
+        # when it prints -- it is information, not noise to be ignored.
+        run: |
+          npm audit --omit=dev --audit-level=low
+          npm audit || echo "::notice::dev-dependency advisories above (not gating)"
+
+      - name: Build
+        # `npm run build` re-runs typecheck and lint; build:only is the bare
+        # bundler step, already gated by the two above.
+        run: npm run build:only
+        env:
+          # config.ts refuses to boot without these; they are not baked into
+          # anything CI publishes -- this job only proves the bundle builds.
+          VITE_API_BASE_URL: http://localhost:8001
+          VITE_SUPABASE_URL: https://ci.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-not-a-secret
+
+  images:
+    name: Container images
+    runs-on: ubuntu-latest
+    env:
+      # alembic/env.py imports the app Settings, which has four required
+      # fields (H1-A), so the migration steps below fail at import time --
+      # not at the database -- without them. Found by running this job's
+      # commands locally before shipping it. Placeholders only.
+      MIGRATE_ENV: >-
+        -e ENVIRONMENT=test
+        -e SUPABASE_URL=https://ci.invalid
+        -e SUPABASE_SECRET_KEY=ci-placeholder-not-a-secret
+        -e SUPABASE_JWKS_URL=https://ci.invalid/.well-known/jwks.json
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build only; nothing is pushed. The frontend has no Dockerfile yet
+      # (compose runs the Vite dev server) -- that is H6 packaging.
+      - name: Build backend image
+        run: docker build -t himma-backend:ci ./backend
+
+      - name: Build agent image
+        run: docker build -t himma-agent:ci ./agent
+
+      - name: Migrations apply to an empty database and reverse
+        run: |
+          docker run -d --name ci-postgres \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=himma_ci \
+            -p 5439:5432 postgres:15
+          for i in $(seq 1 30); do
+            docker exec ci-postgres pg_isready -U postgres -d himma_ci && break
+            sleep 2
+          done
+          DB=postgresql+asyncpg://postgres:postgres@127.0.0.1:5439/himma_ci
+          for step in "upgrade head" "downgrade -1" "upgrade head"; do
+            echo "--- alembic $step ---"
+            docker run --rm --network host -e DATABASE_URL=$DB $MIGRATE_ENV \
+              himma-backend:ci alembic $step
+          done
+
+      - name: Stop the database
+        if: always()
+        run: docker rm -f ci-postgres || true

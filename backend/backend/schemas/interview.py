@@ -113,6 +113,29 @@ class ConsentResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+# Background subsection step 2 (docs/verbal-background-subsection-plan.md
+# §2 "Candidate (entry)", rulings Q1/Q2): the candidate's CV gate for one
+# session. `required` is True for every B2B session (one with a
+# JobApplication); a legacy/admin test-drive session has none and is not
+# gated. `summary` is the "what we read" shown before Start.
+
+class CvSummary(BaseModel):
+    professional_title: Optional[str] = None
+    years_of_experience: Optional[int] = None
+    skills: List[str] = []
+    projects_count: int = 0
+
+
+class SessionCvStatus(BaseModel):
+    session_id: UUID
+    required: bool
+    has_resume: bool
+    resume_id: Optional[UUID] = None
+    original_filename: Optional[str] = None
+    extraction_status: Optional[str] = None
+    summary: Optional[CvSummary] = None
+
+
 class InterviewResultResponse(BaseModel):
     session_id: UUID
     status: str
@@ -120,3 +143,21 @@ class InterviewResultResponse(BaseModel):
     final_result: Optional[dict] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class TranscriptEntryResponse(BaseModel):
+    """One line of GET /interviews/{id}/transcript (H2-A1: typed, same shape)."""
+    sequence_number: int
+    speaker: str
+    text: str
+    phase: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class SessionEventResponse(BaseModel):
+    """One entry of GET /interviews/{id}/events (H2-A1: typed, same shape)."""
+    event_type: str
+    phase: Optional[str] = None
+    sequence_number: int
+    metadata: Optional[dict] = None
+    created_at: Optional[str] = None

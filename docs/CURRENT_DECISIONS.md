@@ -237,10 +237,15 @@ data, not yet a finished/trusted threshold:**
   "down" vs. "up" — this sandbox's Browser pane blocks camera access
   (same limitation PR-D hit), so this can only be confirmed via a real
   live test. `useFaceDetectionMonitor.ts` logs every decomposed angle to
-  the console (`VITE_HEAD_POSE_DEBUG`, on by default) and the trigger
-  condition checks `Math.abs(pitch)` in both directions until that's
-  confirmed. Do not treat HEAD_DOWN_SUSPECTED as a calibrated signal until
-  a real test confirms the axis/sign and the 25°/3-sample defaults hold up.
+  the console and the trigger condition checks `Math.abs(pitch)` in both
+  directions until that's confirmed. Do not treat HEAD_DOWN_SUSPECTED as a
+  calibrated signal until a real test confirms the axis/sign and the
+  25°/3-sample defaults hold up.
+  **Decision 2026-09-21 (hardening H1-D):** the angle log is on in dev
+  builds and off in production builds; `VITE_HEAD_POSE_DEBUG=true|false`
+  overrides either way (`src/config.ts`). Calibration therefore runs on a
+  dev server or with the flag set explicitly; a production build no longer
+  spams the console by default. The calibration itself is still pending.
 - The LiveKit agent worker (`python -m agent.main dev`) does NOT hot-reload
   in dev mode (`in-process auto-reload has been removed`, per its own
   startup warning) — it must be manually restarted to pick up this
@@ -297,6 +302,13 @@ data (via the fix above) a real evaluation could be generated from.
    project's existing philosophy (HR judges, the system surfaces evidence
    — same spirit as the scoring override) and avoids background-job
    scheduling/backoff design this project doesn't otherwise have.
+   **Superseded in part (2026-09-23, hardening H2-F):** the trigger is
+   unchanged — still HR-clicked, one session at a time, no sweep, no bulk
+   action — but the execution is no longer inline. The project now *does*
+   have a durable task queue (`tasks` table + in-process worker), so
+   regeneration is queued and polled instead of held open on an HTTP
+   connection the browser abandons after 30s. No backoff/retry design was
+   added: a failed task is reported and re-running it is still HR's click.
 2. **TERMINATED sessions ARE eligible** — a real AI evaluation should be
    generated from whatever partial evidence exists (the existing
    `evidence_sufficiency` field already exists precisely to flag this as

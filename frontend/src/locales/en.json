@@ -1,4 +1,12 @@
 {
+    "errorBoundary":  {
+        "title":  "Something went wrong",
+        "body":  "The page hit an unexpected error. Reload to continue.",
+        "interviewTitle":  "The interview screen hit a problem",
+        "interviewBody":  "Your progress is saved. Reload the page to reconnect and continue where you left off.",
+        "reload":  "Reload",
+        "details":  "Technical details"
+    },
     "auth":  {
                  "title":  "Sign in to Admin Dashboard",
                  "emailLabel":  "Email address",
@@ -15,6 +23,7 @@
                    "invalidDesc":  "This invitation link is no longer valid. Please contact the organization that invited you.",
                    "instructions":  "Instructions",
                    "estDuration":  "Estimated duration: {{minutes}} minutes",
+                   "followupBonusNote":  "Follow-up questions add extra time as you go, so your clock can grow.",
                    "emailLabel":  "Email address",
                    "sending":  "Sending…",
                    "sendCode":  "Send verification code",
@@ -36,7 +45,48 @@
                   "invalidDesc":  "This application link is no longer active.",
                   "invalidTitle":  "Invalid or inactive link"
               },
+    "cv":  {
+            "title":  "Upload your CV",
+            "description":  "We read your CV to open the interview with a short conversation about your real experience, and to evaluate you fairly against it. PDF only.",
+            "loading":  "Checking your CV…",
+            "loadFailed":  "Could not check your CV. Please reload the page.",
+            "dropHere":  "Drop your CV here, or click to choose a file",
+            "constraints":  "PDF · up to 5 MB",
+            "uploading":  "Reading your CV…",
+            "uploadingHint":  "This takes a few seconds.",
+            "errorNotPdf":  "Please upload a PDF file.",
+            "errorTooLarge":  "Your CV must be 5 MB or smaller.",
+            "errorUpload":  "We couldn't upload your CV. Please try again.",
+            "existingFile":  "Your CV",
+            "whatWeRead":  "What we read from it:",
+            "summaryTitle":  "Title",
+            "summaryYears":  "Years of experience",
+            "summarySkills":  "Skills",
+            "summaryUnknown":  "not found",
+            "parseIncomplete":  "We could store your CV but couldn't read it fully. You can replace it with a clearer PDF.",
+            "useThisCv":  "Use this CV and continue",
+            "continue":  "Continue",
+            "replace":  "Replace",
+            "keepExisting":  "Keep the existing CV",
+            "requiredBeforeStart":  "Your CV is required before the interview can start."
+           },
     "workspace":  {
+                      "start":  {
+                                "header":  "Setting up",
+                                "title":  "Preparing your interview",
+                                "subtitle":  "This usually takes about 15 seconds. Your microphone stays muted until you unmute it.",
+                                "connecting":  "Connecting to the interview room",
+                                "joining":  "Your interviewer is joining",
+                                "preparing":  "Preparing your questions",
+                                "preparingCv":  "Reading your CV and preparing your questions",
+                                "starting":  "Starting",
+                                "tip1":  "You can re-read any question in the transcript during the interview.",
+                                "tip2":  "Answer naturally — the interviewer waits for you to finish before responding.",
+                                "tip3":  "You can skip a question if you prefer; it will be marked as skipped.",
+                                "slow":  "Taking a little longer than usual — still working on it.",
+                                "stuck":  "This is taking too long. Reloading the page will reconnect you without losing your place.",
+                                "reload":  "Reload"
+                             },
                       "session":  "Interview session",
                       "reviewing":  "Reviewing your answers...",
                       "finalizedTurns":  "Finalized conversation turns",
@@ -57,7 +107,7 @@
                                            "CODING":  "Coding",
                                            "MCQ":  "Multiple Choice"
                                        },
-                      "listening":  "Listening",
+                      "listening":  "Your turn",
                       "constraints":  "Constraints",
                       "micOn":  "Microphone on",
                       "retrieving":  "Retrieving assessment report...",
@@ -68,6 +118,8 @@
                       "liveConnection":  "Live connection",
                       "cameraOn":  "Camera on — being recorded",
                       "cameraOff":  "Camera unavailable — audio-only",
+                      "timeBonusAdded":  "{{time}} added",
+                      "timeBonusTitle":  "Extra time earned from follow-up questions",
                       "starting":  "Starting Interview",
                       "conversationWillAppear":  "Your conversation will appear here.",
                       "finalizing":  "Finalizing interview session...",
@@ -76,9 +128,24 @@
                       "live":  "Live",
                       "codeAnswer":  "Code answer",
                       "select":  "Select",
-                      "interviewerSpeaking":  "The interviewer is speaking. Listen for the next prompt.",
+                      "interviewerSpeakingHint":  "The interviewer is speaking. Listen for the next prompt.",
+                      "listeningHint":  "Your microphone is live -- speak whenever you're ready.",
+                      "interviewerSpeaking":  "Interviewer speaking",
                       "min":  "min",
                       "backgroundDiscussion":  "Background Discussion",
+                      "subsection":  {
+                                       "label":  "Interview part",
+                                       "background":  "Background",
+                                       "discussion":  "Discussion",
+                                       "partBackground":  "Part 1 of 2 — Background (from your CV)",
+                                       "partDiscussion":  "Part 2 of 2 — Discussion",
+                                       "questionOf":  "Question {{index}} of {{total}}",
+                                       "timeLeft":  "{{time}} left",
+                                       "nowDiscussion":  "Background done — moving to the discussion questions",
+                                       "nowBackground":  "Starting with your background",
+                                       "fromYourCv":  "From your CV",
+                                       "discussionQuestion":  "Discussion question"
+                                    },
                       "submitOnceReady":  "Submit once you are ready to finish the technical problem.",
                       "micMuted":  "Microphone muted",
                       "writeSolution":  "Write your solution here...",
@@ -88,8 +155,6 @@
                       "submitAnswer":  "Submit answer",
                       "interview":  "Interview",
                       "liveTranscript":  "Live transcript",
-                      "showTranscript":  "Transcript",
-                      "hideTranscript":  "Hide transcript",
                       "example":  "Example {{num}}",
                       "initializing":  "Initializing AI interviewer...",
                       "speaking":  "Speaking",
@@ -113,13 +178,25 @@
                       "hideTranscript":  "Hide transcript"
                   },
     "adminLayout":  {
+        "verifyFailed":  "We couldn't verify your access right now.",
+        "retry":  "Retry",
                         "loading":  "Loading admin...",
                         "signOut":  "Sign Out",
                         "adminPortal":  "Admin Portal",
                         "jobs":  "Jobs",
-                        "settings":  "Settings"
+                        "settings":  "Settings",
+                        "openMenu":  "Open menu",
+                        "menu":  "Menu"
                     },
+    "jobStatus":  {
+                     "published":  "Published",
+                     "draft":  "Draft",
+                     "paused":  "Paused"
+                 },
     "jobsList":  {
+        "deleteFailed":  "Failed to delete job",
+                                        "results":  "Results",
+                                        "deleteJob":  "Delete job",
                      "manage":  "Manage",
                      "loading":  "Loading jobs...",
                      "getStarted":  "Get started by creating your first job posting to define the interview configuration.",
@@ -131,6 +208,7 @@
                      "noJobsYet":  "No jobs yet"
                  },
     "jobCreate":  {
+        "durationNotSet":  "Job created, but setting the duration failed. Please update it below.",
                       "reqSkillsPlaceholder":  "Python\nReact\nSystem Design",
                       "duration":  "Interview Duration (Minutes) *",
                       "createJob":  "Create Job",
@@ -166,6 +244,13 @@
                       "respPlaceholder":  "Lead a team of 4 engineers\nArchitect backend services"
                   },
     "jobDetail":  {
+                                          "pauseJob":  "Pause job",
+                                          "resumeJob":  "Resume job",
+                                          "unpublish":  "Unpublish",
+                                          "viewResults":  "View results",
+                                          "delete":  "Delete",
+                                          "moreActions":  "More actions",
+                                          "actions":  "Job actions",
                       "publishConfirm":  "Publish this job? This is irreversible — there is no un-publish, and structural edits (sections/questions) will be locked afterward.",
                       "retry":  "Retry",
                       "publish":  "Publish",
@@ -177,6 +262,17 @@
                       "jobNotFoundDesc":  "The job you are looking for does not exist or has been deleted.",
                       "unexpectedError":  "An unexpected error occurred."
                   },
+    "criteriaEditor":  {
+                     "title":  "Assessment Criteria",
+                     "description":  "Configure the behavioral dimensions the AI will evaluate, and how much each counts toward the criteria-weighted score.",
+                     "save":  "Save criteria",
+                     "saved":  "Criteria saved successfully.",
+                     "weight":  "Weight",
+                     "none":  "No behavioral criteria found.",
+                     "autoManaged":  "Content-specific criteria (auto-managed)",
+                     "failedToLoad":  "Failed to load criteria",
+                     "failedToSave":  "Failed to save criteria"
+                 },
     "sectionsEditor":  {
                            "comingSoon":  " (coming soon)",
                            "failedToAdd":  "Failed to add section.",
@@ -200,13 +296,41 @@
                            "comingSoonHover":  "Coming soon — not yet supported by the interview engine",
                            "addSection":  "Add Section",
                            "failedToReorderFull":  "Failed to fully reorder sections. State has been re-synced.",
-                           "timeBudget":  "Time budget (min)",
+                           "timeBudget":  "Time budget",
                            "timeBudgetPlaceholder":  "e.g. 15",
                            "savingBudget":  "Saving...",
                            "timeBudgetSaved":  "Saved",
-                           "timeBudgetFailed":  "Failed to save time budget"
+                           "timeBudgetFailed":  "Failed to save time budget",
+                           "backgroundToggle":  "Start with a background conversation based on the candidate's CV",
+                           "backgroundHelp":  "Short, CV-grounded questions asked before the discussion questions. Their time is carved out of this section's budget.",
+                           "backgroundCount":  "Questions",
+                           "backgroundMinutes":  "Up to",
+                           "backgroundSummary":  "Verbal {{total}} min — up to {{background}} min background, at least {{discussion}} min discussion",
+                           "backgroundSummaryNoBudget":  "Set the section's time budget to see the split.",
+                           "backgroundTooLong":  "Background must be at most half of the section budget ({{max}} min).",
+                           "backgroundSaveFailed":  "Failed to save background settings",
+                           "saveFailed":  "Failed to save",
+                           "min":  "min",
+                           "timingTitle":  "Timing",
+                           "timingHint":  "How long this section lasts. Section budgets add up to the duration candidates see on the invitation.",
+                           "backgroundTitle":  "Background conversation",
+                           "backgroundOn":  "On — start with questions from the candidate's CV",
+                           "backgroundOff":  "Off — go straight to the discussion questions",
+                           "questionsTitle":  {"VERBAL": "Discussion questions", "CODING": "Coding problems", "MCQ": "Multiple-choice questions"},
+                           "questionsHint":  {"VERBAL": "Asked verbatim, in this order, after the background conversation. Each allows up to two follow-ups.", "CODING": "Solved live in the editor, in this order.", "MCQ": "Answered on screen, in this order."},
+                           "summaryNoBudget":  "no time budget",
+                           "summaryNoQuestions":  "no questions yet",
+                           "summaryPlain":  "{{total}} min — {{questions}}",
+                           "summaryWithBackground":  "{{total}} min — up to {{background}} min background ({{bgCount}} questions from the CV) + at least {{discussion}} min discussion ({{questions}})",
+                           "summaryQuestions_one":  "{{count}} question",
+                           "summaryQuestions_other":  "{{count}} questions",
+                           "summaryDiscussionQuestions_one":  "{{count}} discussion question",
+                           "summaryDiscussionQuestions_other":  "{{count}} discussion questions",
+                           "summaryNoBudgetLine":  "No time budget yet — {{questions}}",
+                           "summaryReady":  "Ready to publish"
                        },
     "questionEditor":  {
+                                                    "generateCount":  "Number of questions to generate",
                            "regenerate":  "Regenerate",
                            "delete":  "Delete",
                            "noQuestions":  "No questions yet.",
@@ -243,6 +367,7 @@
                            "hasStarterCode":  "Starter code provided"
                        },
     "candidateAccess":  {
+                                                      "openInNewTab":  "Open in new tab",
                             "invitationsSent":  "Invitations Sent",
                             "date":  "Date",
                             "failedToInvite":  "Failed to invite candidate.",
@@ -313,7 +438,7 @@
         "rule3": "Speak clearly and naturally; the AI will listen and respond.",
         "tipMic": "Make sure your microphone is on and you're in a quiet space.",
         "tipSections": "The interview is split into sections, with a short break in between each one.",
-        "startButton": "Start Session",
+        "startButton": "Start in fullscreen",
         "starting": "Connecting…",
         "endLink": "End before starting",
         "ending": "Ending…",
@@ -324,9 +449,22 @@
         "consent": {
             "title": "Recording & monitoring",
             "body": "To help our hiring team review this interview fairly, we may record video and monitor certain in-app activity while you're in session, including: fullscreen-exit events (if you leave fullscreen) and focus-loss events (if you switch away from this tab or window). This is used only to support our hiring team's review — nothing about you is judged or decided automatically.",
-            "checkboxLabel": "I understand and consent to this recording and monitoring.",
+            "checkboxLabel": "I understand the fullscreen rule and consent to this recording and monitoring.",
             "recordFailed": "Failed to record your consent. Please try again."
         },
+        "devices": {
+            "error": "We couldn't access your camera or microphone. Check your browser permissions and reload; the interview can still run audio-only.",
+            "released": "Devices checked — camera and microphone will be handed to the interview room."
+        },
+        "fullscreen": {
+            "title": "The interview runs in fullscreen",
+            "body": "When you press Start, this page switches to fullscreen and stays there until the interview ends. This keeps you focused and gives the hiring team confidence that the session was completed without distractions.",
+            "point1": "If you leave fullscreen (Esc, switching windows or tabs), a 10-second countdown appears — return to fullscreen to continue.",
+            "point2": "If you don't return in time, the interview ends and is recorded as terminated. It can't be resumed.",
+            "point3": "Fullscreen is required to start. Closing the tab also ends the interview."
+        },
+        "readyDevices": "Devices checked",
+        "readyConsent": "Rules acknowledged",
         "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
     }
 }
