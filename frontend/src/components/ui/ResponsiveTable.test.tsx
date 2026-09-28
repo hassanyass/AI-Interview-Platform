@@ -98,4 +98,31 @@ describe("ResponsiveTable", () => {
     expect(screen.getByRole("table", { name: "Candidates for this job" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "Candidates for this job" })).toBeTruthy();
   });
+
+  /**
+   * R3-A: which breakpoint swaps the cards for the table is now a prop,
+   * because the answer depends on the column count and on what else holds
+   * the width. The job-results table (7 columns) still overflowed at 768
+   * AND at 1024 -- where the admin sidebar stops being a drawer and takes
+   * 256px back -- so it renders cards until `xl`. These two tests pin the
+   * class pair, since the whole mechanism is Tailwind picking one
+   * rendering and a wrong variant would silently show both or neither.
+   */
+  it("swaps renderings at `md` by default", () => {
+    renderTable();
+    expect(screen.getByRole("table").parentElement?.className).toContain("md:block");
+    expect(screen.getByRole("list").className).toContain("md:hidden");
+  });
+
+  it("honours a wider breakpoint, and drops the default one entirely", () => {
+    renderTable({ breakpoint: "xl" });
+    const wrapper = screen.getByRole("table").parentElement!;
+    const list = screen.getByRole("list");
+    expect(wrapper.className).toContain("xl:block");
+    expect(list.className).toContain("xl:hidden");
+    // Both variants present at once would show the table and the cards
+    // together between the two widths.
+    expect(wrapper.className).not.toContain("md:block");
+    expect(list.className).not.toContain("md:hidden");
+  });
 });

@@ -11,6 +11,8 @@ import VerbalPreview from './routes/dev/VerbalPreview'
 import SectionsPreview from './routes/dev/SectionsPreview'
 import StartPreview from './routes/dev/StartPreview'
 import AdminPreview from './routes/dev/AdminPreview'
+import ResultsPreview from './routes/dev/ResultsPreview'
+import CandidateResultPreview from './routes/dev/CandidateResultPreview'
 import WorkspacePreview from './routes/dev/WorkspacePreview'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
@@ -87,6 +89,13 @@ function App() {
               {import.meta.env.DEV && <Route path="/dev/start-preview" element={<StartPreview />} />}
               {/* Responsive plan R0 (docs/responsive-design-plan.md): real admin shell / real workspace chrome without a backend. */}
               {import.meta.env.DEV && <Route path="/dev/admin-preview" element={<AdminPreview />} />}
+              {/* R3-A: the results page against fixtures, so the harness can reach it without a login. */}
+              {import.meta.env.DEV && <Route path="/dev/results-preview" element={<ResultsPreview />} />}
+              {/* R3-B: the real CandidateResultPage over a stubbed GET. The
+                  params are in the path because the page reads them from
+                  useParams and will not fetch without a sessionId. */}
+              {import.meta.env.DEV && <Route path="/dev/candidate-result-preview/:jobId/:sessionId" element={<CandidateResultPreview />} />}
+              {import.meta.env.DEV && <Route path="/dev/candidate-result-preview" element={<Navigate to="/dev/candidate-result-preview/job-preview/sess-preview" replace />} />}
               {import.meta.env.DEV && <Route path="/dev/workspace-preview" element={<WorkspacePreview />} />}
               {/* H2-E: throws on render so the ErrorBoundary can be seen (DEV only, tree-shaken from prod). */}
               {import.meta.env.DEV && <Route path="/dev/boom" element={<DevBoom />} />}

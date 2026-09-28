@@ -466,5 +466,183 @@
         "readyDevices": "Devices checked",
         "readyConsent": "Rules acknowledged",
         "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
+    },
+    "jobResults": {
+        "title": "{{job}} — Results",
+        "desc": "Aggregate dashboard and candidate tracking",
+        "backToJob": "Back to Job",
+        "refresh": "Refresh",
+        "refreshing": "Refreshing…",
+        "retry": "Retry",
+        "unexpectedError": "An unexpected error occurred.",
+        "failedToLoad": "Failed to load results",
+        "failedToDelete": "Failed to delete candidate",
+        "totalCandidates": "Total Candidates",
+        "completed": "Completed",
+        "inProgress": "In Progress",
+        "suggestedForNextStep": "Suggested for Next Step",
+        "flaggedForReview": "Flagged for Review",
+        "candidates": "Candidates",
+        "noCandidates": "No candidates have started this interview yet.",
+        "tableCaption": "Candidates who have taken this interview, with score, evidence and integrity status",
+        "unknownCandidate": "Unknown",
+        "noEmail": "No email",
+        "candidate": "candidate",
+        "thisCandidate": "this candidate",
+        "yes": "Yes",
+        "no": "No",
+        "override": "OVERRIDE",
+        "flagged": "Flagged",
+        "viewResult": "View Result",
+        "pending": "Pending",
+        "deleteCandidate": "Delete candidate",
+        "deleteCandidateNamed": "Delete {{name}}",
+        "columns": {
+            "candidate": "Candidate",
+            "status": "Status",
+            "score": "Score",
+            "evidence": "Evidence",
+            "suggested": "Suggested",
+            "integrity": "Integrity",
+            "action": "Action"
+        },
+        "recommendation": {
+            "Hire": "Hire",
+            "No Hire": "No Hire",
+            "Consider": "Consider",
+            "Mixed": "Mixed"
+        },
+        "status": {
+            "CREATED": "Created",
+            "IN_PROGRESS": "In Progress",
+            "COMPLETED": "Completed",
+            "TERMINATED": "Terminated",
+            "DISCONNECTED": "Disconnected"
+        },
+        "deleteModal": {
+            "title": "Delete Candidate",
+            "description": "Remove {{name}} from this job's results? This permanently deletes their interview transcript, evaluation, scores, and recording. It cannot be undone.",
+            "confirm": "Delete Candidate"
+        }
+    },
+    "candidateResult": {
+        "eyebrow": "{{job}} · Candidate Result",
+        "unknownJob": "Unknown Job",
+        "unnamedCandidate": "Unnamed candidate",
+        "backToResults": "Back to Results",
+        "refresh": "Refresh",
+        "refreshing": "Refreshing…",
+        "retry": "Retry",
+        "unexpectedError": "An unexpected error occurred.",
+        "failedToLoad": "Failed to load candidate result",
+        "failedToRegenerate": "Failed to regenerate the evaluation",
+        "failedToSaveOverride": "Failed to save override",
+        "noEmail": "No email provided",
+        "pendingDate": "Pending",
+        "yes": "Yes",
+        "no": "No",
+        "incomplete": {
+            "title": "Incomplete session",
+            "disconnected": "was disconnected and never resumed",
+            "ended": "ended before all sections were completed",
+            "body": "This interview {{what}}. The score and summary below are based on partial evidence — review the transcript and recording directly before deciding."
+        },
+        "score": {
+            "holistic": "Holistic",
+            "holisticHint": "AI's overall judgment",
+            "weighted": "Weighted",
+            "weightedHint": "From your criteria",
+            "neither": "Not enough evidence to compute either score.",
+            "noHolistic": "Not enough evidence for a holistic score.",
+            "noWeighted": "No scored criteria to compute a weighted score.",
+            "proceed": "Proceed to Next Step",
+            "doNotProceed": "Do Not Proceed",
+            "aiRecommendation": "AI recommendation:",
+            "manualOverride": "Manual override"
+        },
+        "nav": {
+            "onThisPage": "On this page",
+            "recording": "Recording & assessment",
+            "criteria": "Criteria breakdown",
+            "fullRecord": "Full record"
+        },
+        "recording": {
+            "eyebrow": "Voice Interview Recording",
+            "unsupported": "Your browser does not support video playback.",
+            "mockData": "This result is mock data, included to show what a completed candidate review looks like — no interview actually happened for it.",
+            "none": "No recording is available for this session (recording may not have been enabled, camera access was declined, or the recording failed to start)."
+        },
+        "override": {
+            "editTitle": "Edit outcome override",
+            "suggestedNextStep": "Suggested Next Step",
+            "useComputed": "Use AI Computed Result ({{value}})",
+            "forceYes": "Force Override: Yes",
+            "forceNo": "Force Override: No",
+            "reasonLabel": "Override Reason (Required)",
+            "reasonPlaceholder": "Why are you overriding the AI's suggestion?",
+            "save": "Save Changes",
+            "cancel": "Cancel",
+            "edit": "Edit manual override",
+            "set": "Override this suggestion manually",
+            "editShort": "Edit",
+            "setShort": "Set override"
+        },
+        "integrity": {
+            "title": "Integrity Timeline",
+            "flagged_one": "{{count}} flagged moment",
+            "flagged_other": "{{count}} flagged moments",
+            "none": "No integrity flags were recorded for this session — fullscreen, tab focus, and camera presence all stayed within bounds throughout.",
+            "FULLSCREEN_EXITED": "Exited fullscreen",
+            "TAB_HIDDEN": "Switched away from the interview tab",
+            "WINDOW_BLURRED": "Window lost focus",
+            "NO_FACE_DETECTED": "No face detected on camera",
+            "MULTIPLE_FACES_DETECTED": "Multiple faces detected on camera",
+            "HEAD_DOWN_SUSPECTED": "Suspected phone use (head tilted down)",
+            "DEFAULT": "Integrity event"
+        },
+        "assessment": {
+            "title": "Overall Assessment",
+            "regenerate": "Regenerate Evaluation",
+            "regenerating": "Generating…",
+            "placeholderWarning": "This session was never fully evaluated by AI — the summary and scores below are a placeholder. The real transcript and question records are still shown accurately; click \"Regenerate Evaluation\" to generate a real assessment from them.",
+            "noSummary": "No summary available.",
+            "evidenceNote": "Based on {{percent}}% of the assessed criteria having enough transcript evidence to score confidently."
+        },
+        "criteria": {
+            "title": "Criteria Breakdown",
+            "none": "No scores available.",
+            "weight": "Weight {{weight}}",
+            "noEvidence": "No evidence",
+            "strengths": "Strengths",
+            "improvements": "Areas for Improvement"
+        },
+        "record": {
+            "title": "Full Record",
+            "subtitle": "Question-by-question detail, the technical submission, and the full transcript.",
+            "questionReview": "Question-by-Question Review",
+            "noQuestions": "No questions were recorded for this session.",
+            "background": "Background (from the candidate's CV)",
+            "discussion": "Discussion questions",
+            "questionFallback": "Question {{index}}",
+            "hints_one": "{{count}} hint used",
+            "hints_other": "{{count}} hints used",
+            "followups_one": "{{count}} follow-up",
+            "followups_other": "{{count}} follow-ups",
+            "clarifications_one": "{{count}} clarification",
+            "clarifications_other": "{{count}} clarifications",
+            "seeTranscript": "See the full transcript below for exactly what the candidate said in response.",
+            "technicalSubmission": "Technical Submission",
+            "codeSubmission": "Code submission",
+            "fullTranscript": "Full Interview Transcript",
+            "interviewer": "Interviewer",
+            "candidate": "Candidate"
+        },
+        "outcome": {
+            "COMPLETED": "Completed",
+            "SKIPPED": "Skipped",
+            "CHANGED": "Changed",
+            "TIME_EXPIRED": "Time expired",
+            "NOT_ATTEMPTED": "Not attempted"
+        }
     }
 }
