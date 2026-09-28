@@ -467,5 +467,63 @@
         "readyDevices": "تم فحص الأجهزة",
         "readyConsent": "تمت الموافقة على القواعد",
         "fullscreenRequired": "وضع ملء الشاشة مطلوب لبدء المقابلة. يرجى السماح بوضع ملء الشاشة والمحاولة مرة أخرى."
+    },
+    "jobResults": {
+        "title": "{{job}} — النتائج",
+        "desc": "لوحة إجمالية وتتبع المرشحين",
+        "backToJob": "العودة إلى الوظيفة",
+        "refresh": "تحديث",
+        "refreshing": "جاري التحديث…",
+        "retry": "إعادة المحاولة",
+        "unexpectedError": "حدث خطأ غير متوقع.",
+        "failedToLoad": "فشل تحميل النتائج",
+        "failedToDelete": "تعذّر حذف المرشح",
+        "totalCandidates": "إجمالي المرشحين",
+        "completed": "مكتملة",
+        "inProgress": "قيد التقدم",
+        "suggestedForNextStep": "مقترح للمرحلة التالية",
+        "flaggedForReview": "مُعلَّم للمراجعة",
+        "candidates": "المرشحون",
+        "noCandidates": "لم يبدأ أي مرشح هذه المقابلة بعد.",
+        "tableCaption": "المرشحون الذين أجروا هذه المقابلة، مع الدرجة والأدلة وحالة النزاهة",
+        "unknownCandidate": "غير معروف",
+        "noEmail": "لا يوجد بريد إلكتروني",
+        "candidate": "مرشح",
+        "thisCandidate": "هذا المرشح",
+        "yes": "نعم",
+        "no": "لا",
+        "override": "تجاوز",
+        "flagged": "مُعلَّم",
+        "viewResult": "عرض النتيجة",
+        "pending": "قيد الانتظار",
+        "deleteCandidate": "حذف المرشح",
+        "deleteCandidateNamed": "حذف {{name}}",
+        "columns": {
+            "candidate": "المرشح",
+            "status": "الحالة",
+            "score": "الدرجة",
+            "evidence": "الأدلة",
+            "suggested": "مقترح",
+            "integrity": "النزاهة",
+            "action": "إجراء"
+        },
+        "recommendation": {
+            "Hire": "توظيف",
+            "No Hire": "عدم التوظيف",
+            "Consider": "قيد الدراسة",
+            "Mixed": "متباين"
+        },
+        "status": {
+            "CREATED": "تم الإنشاء",
+            "IN_PROGRESS": "قيد التقدم",
+            "COMPLETED": "مكتملة",
+            "TERMINATED": "منتهية",
+            "DISCONNECTED": "منقطعة"
+        },
+        "deleteModal": {
+            "title": "حذف المرشح",
+            "description": "إزالة {{name}} من نتائج هذه الوظيفة؟ سيؤدي هذا إلى حذف نص المقابلة والتقييم والدرجات والتسجيل بشكل نهائي. لا يمكن التراجع عن ذلك.",
+            "confirm": "حذف المرشح"
+        }
     }
 }

@@ -466,5 +466,63 @@
         "readyDevices": "Devices checked",
         "readyConsent": "Rules acknowledged",
         "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
+    },
+    "jobResults": {
+        "title": "{{job}} — Results",
+        "desc": "Aggregate dashboard and candidate tracking",
+        "backToJob": "Back to Job",
+        "refresh": "Refresh",
+        "refreshing": "Refreshing…",
+        "retry": "Retry",
+        "unexpectedError": "An unexpected error occurred.",
+        "failedToLoad": "Failed to load results",
+        "failedToDelete": "Failed to delete candidate",
+        "totalCandidates": "Total Candidates",
+        "completed": "Completed",
+        "inProgress": "In Progress",
+        "suggestedForNextStep": "Suggested for Next Step",
+        "flaggedForReview": "Flagged for Review",
+        "candidates": "Candidates",
+        "noCandidates": "No candidates have started this interview yet.",
+        "tableCaption": "Candidates who have taken this interview, with score, evidence and integrity status",
+        "unknownCandidate": "Unknown",
+        "noEmail": "No email",
+        "candidate": "candidate",
+        "thisCandidate": "this candidate",
+        "yes": "Yes",
+        "no": "No",
+        "override": "OVERRIDE",
+        "flagged": "Flagged",
+        "viewResult": "View Result",
+        "pending": "Pending",
+        "deleteCandidate": "Delete candidate",
+        "deleteCandidateNamed": "Delete {{name}}",
+        "columns": {
+            "candidate": "Candidate",
+            "status": "Status",
+            "score": "Score",
+            "evidence": "Evidence",
+            "suggested": "Suggested",
+            "integrity": "Integrity",
+            "action": "Action"
+        },
+        "recommendation": {
+            "Hire": "Hire",
+            "No Hire": "No Hire",
+            "Consider": "Consider",
+            "Mixed": "Mixed"
+        },
+        "status": {
+            "CREATED": "Created",
+            "IN_PROGRESS": "In Progress",
+            "COMPLETED": "Completed",
+            "TERMINATED": "Terminated",
+            "DISCONNECTED": "Disconnected"
+        },
+        "deleteModal": {
+            "title": "Delete Candidate",
+            "description": "Remove {{name}} from this job's results? This permanently deletes their interview transcript, evaluation, scores, and recording. It cannot be undone.",
+            "confirm": "Delete Candidate"
+        }
     }
 }

@@ -57,6 +57,7 @@ const DEFAULT_ROUTES = [
   "/dev/sections-preview",
   "/dev/start-preview",
   "/dev/admin-preview",
+  "/dev/results-preview",
   "/dev/workspace-preview",
 ];
 

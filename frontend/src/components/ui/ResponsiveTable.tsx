@@ -37,9 +37,30 @@ export interface ResponsiveTableProps<Row> {
   /** Optional accessible description of the table. */
   caption?: string;
   className?: string;
+  /**
+   * Where the card list gives way to the real table. Default `md` (768),
+   * which suits a 4-5 column table like Candidate Access's invitations.
+   *
+   * R3-A: a WIDER table needs more. The harness caught the job-results
+   * table (7 columns) overflowing its own `overflow-x-auto` at 768 (779px
+   * of content in a 718px well) AND at 1024, where the admin sidebar stops
+   * being a drawer and takes a persistent 256px, leaving 702px -- so `lg`
+   * is no better than `md` there. That table is `xl`. Measure before
+   * choosing: the right value depends on the column count and on what else
+   * is on screen at that width, not on taste.
+   */
+  breakpoint?: "md" | "lg" | "xl";
 }
 
-export function ResponsiveTable<Row>({ columns, rows, rowKey, empty, caption, className }: ResponsiveTableProps<Row>) {
+/** Tailwind scans source text, so both variants are spelled out; a
+ *  template-built class name would not survive the JIT. */
+const RENDER_AT = {
+  md: { table: "hidden overflow-x-auto md:block", cards: "divide-y divide-border md:hidden" },
+  lg: { table: "hidden overflow-x-auto lg:block", cards: "divide-y divide-border lg:hidden" },
+  xl: { table: "hidden overflow-x-auto xl:block", cards: "divide-y divide-border xl:hidden" },
+} as const;
+
+export function ResponsiveTable<Row>({ columns, rows, rowKey, empty, caption, className, breakpoint = "md" }: ResponsiveTableProps<Row>) {
   if (rows.length === 0 && empty !== undefined) {
     return <>{empty}</>;
   }
@@ -49,8 +70,8 @@ export function ResponsiveTable<Row>({ columns, rows, rowKey, empty, caption, cl
 
   return (
     <div className={className}>
-      {/* >= md: the table */}
-      <div className="hidden overflow-x-auto md:block">
+      {/* >= breakpoint: the table */}
+      <div className={RENDER_AT[breakpoint].table}>
         <table className="w-full text-sm text-start">
           {caption && <caption className="sr-only">{caption}</caption>}
           <thead className="border-b border-border bg-muted/20 text-xs uppercase text-muted-foreground">
@@ -76,8 +97,8 @@ export function ResponsiveTable<Row>({ columns, rows, rowKey, empty, caption, cl
         </table>
       </div>
 
-      {/* < md: cards */}
-      <ul className="divide-y divide-border md:hidden" aria-label={caption}>
+      {/* < breakpoint: cards */}
+      <ul className={RENDER_AT[breakpoint].cards} aria-label={caption}>
         {rows.map((row) => (
           <li key={rowKey(row)} className="flex flex-col gap-2 px-4 py-3">
             {primary && <div className="text-sm font-medium text-foreground">{primary.cell(row)}</div>}
