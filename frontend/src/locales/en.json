@@ -71,6 +71,9 @@
             "requiredBeforeStart":  "Your CV is required before the interview can start."
            },
     "workspace":  {
+                      "preparingRoom":  "Preparing Interview Room…",
+                      "connectionError":  "Connection Error",
+                      "tryAgain":  "Try Again",
                       "start":  {
                                 "header":  "Setting up",
                                 "title":  "Preparing your interview",

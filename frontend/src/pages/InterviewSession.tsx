@@ -218,10 +218,10 @@ export default function InterviewSession() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-foreground">
+      <div className="flex min-h-dvh items-center justify-center bg-background text-foreground">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-muted-foreground">Preparing Interview Room...</p>
+          <p className="text-muted-foreground">{t('workspace.preparingRoom')}</p>
         </div>
       </div>
     );
@@ -229,14 +229,14 @@ export default function InterviewSession() {
 
   if (error) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-background text-foreground p-4 text-center">
-        <h2 className="text-2xl font-bold mb-2 text-destructive">Connection Error</h2>
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-background text-foreground p-4 text-center">
+        <h2 className="text-2xl font-bold mb-2 text-destructive">{t('workspace.connectionError')}</h2>
         <p className="text-muted-foreground mb-6 max-w-md">{error}</p>
-        <button 
+        <button
           onClick={() => window.location.reload()}
-          className="rounded-md bg-primary px-4 py-2 text-primary-foreground hover:bg-primary/90"
+          className="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-primary-foreground hover:bg-primary/90 lg:h-10"
         >
-          Try Again
+          {t('workspace.tryAgain')}
         </button>
       </div>
     );
@@ -244,7 +244,7 @@ export default function InterviewSession() {
 
   if (ended) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center bg-background text-foreground p-4 text-center">
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-background text-foreground p-4 text-center">
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
           <div className="h-2.5 w-2.5 rounded-full bg-current" />
         </div>
@@ -256,7 +256,7 @@ export default function InterviewSession() {
 
   if (showIntro && session && cvMissing) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
+      <div className="min-h-dvh flex items-center justify-center bg-background px-4 py-12">
         <Card className="w-full max-w-lg shadow-xl shadow-black/5 border-muted/60">
           <CardContent className="p-6 space-y-4">
             <p className="text-xs font-medium text-muted-foreground">{t('cv.requiredBeforeStart')}</p>

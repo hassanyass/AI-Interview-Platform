@@ -126,7 +126,7 @@ export default function InvitePage() {
 
   if (step === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
+      <div className="flex min-h-dvh items-center justify-center bg-background text-muted-foreground">
         {t('invite.loading')}
       </div>
     );
@@ -134,7 +134,7 @@ export default function InvitePage() {
 
   if (step === "invalid") {
     return (
-      <div className="flex h-screen items-center justify-center px-4">
+      <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="max-w-md text-center space-y-2">
           <h1 className="text-xl font-semibold">{t('invite.invalidTitle')}</h1>
           <p className="text-muted-foreground text-sm">
@@ -146,7 +146,7 @@ export default function InvitePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-dvh flex flex-col bg-background">
       {/* Himma / e& Header Lockup */}
       <header className="border-b bg-white">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-6">
@@ -212,20 +212,21 @@ export default function InvitePage() {
               {step === "email" && (
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    <label htmlFor="invite-email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                       {t('invite.emailLabel')}
                     </label>
                     <input
+                      id="invite-email"
                       required
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm lg:h-10"
                     />
                   </div>
                   <Button
                     type="submit"
-                    className="w-full"
+                    className="h-11 w-full lg:h-10"
                     disabled={submitting}
                   >
                     {submitting ? t('invite.sending') : t('invite.sendCode')}
@@ -252,22 +253,23 @@ export default function InvitePage() {
                     </Trans>
                   </p>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    <label htmlFor="invite-otp" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                       {t('invite.otpLabel')}
                     </label>
                     <input
+                      id="invite-otp"
                       required
                       type="text"
                       inputMode="numeric"
                       value={otpCode}
                       onChange={(e) => setOtpCode(e.target.value)}
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm lg:h-10"
                       placeholder={t('invite.otpPlaceholder')}
                     />
                   </div>
                   <Button
                     type="submit"
-                    className="w-full"
+                    className="h-11 w-full lg:h-10"
                     disabled={submitting}
                   >
                     {submitting ? t('invite.verifying') : t('invite.verifyAndContinue')}

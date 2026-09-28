@@ -7,7 +7,21 @@ the same discipline as `.claude/skills/transition-phase/SKILL.md`
 (Explore → Plan → wait for approval → Execute → Verify), one phase per
 approval, one commit per phase step. Nothing in this document is code.
 
-Status: **R0 + R1 + R2-A + R2-B built (2026-09-17), uncommitted by request. R2-C (job create) / R3 next, after examine + confirm.**
+Status (2026-09-28): **R0, R1, R2-A, R2-B committed (`c2dff10`). R3 split
+A/B and both done — verify records §12 and §13 — pushed and CI green at
+`4caaabc`.**
+
+Outstanding, in the order they were planned:
+- **R2-C — `JobCreatePage`**, never started. §2.2 records the finding: a
+  `grid grid-cols-3` with no `sm:` prefix puts three ~90px inputs on a
+  phone, and the duration input is a fixed `w-48`.
+- ~~R4 — candidate entry~~ **done**, verify record §14.
+- **R5, R6** — blocked on decisions **D1–D5** (§5), which are product
+  policy and must be asked, not defaulted.
+- **R7 — RTL × responsive sweep**, which also inherits the question §7
+  records: every control the harness flags at 1024 is exactly 40px, which
+  is R2-A's stated convention but sits under §1.2's 44px for a width the
+  matrix calls touch. One decision for the whole admin, not per page.
 
 ---
 
@@ -420,6 +434,18 @@ Per surface, per matrix entry, LTR and RTL:
   icon in `JobCreatePage`/`JobDetailPage` is not mirrored.
 - (R3-A) `JobResultsPage`'s error branch uses a hard-coded `bg-white/50`
   instead of a token, so it ignores theming. Left alone: colour, not layout.
+- (R4) **`App.tsx`'s root wrapper is `min-h-screen`** — `100vh`, on the one
+  element that wraps every route. R4 converted the five candidate-entry
+  surfaces to `dvh`, but they sit inside this. On mobile `100vh` exceeds the
+  visible viewport while the browser chrome is showing, so the root stays
+  taller than the screen regardless of what its children use. One class to
+  change; left alone only because `App.tsx` is not in R4's file list and §3
+  says adjacent finds are recorded, not fixed inline. Worth doing before R5,
+  which is all full-height layout.
+- (R4) `Auth`, `InvitePage` and `ApplyPage` carry `peer-disabled:` modifiers
+  on their `<label>`s, implying a `peer` pattern that was never wired (the
+  inputs have no `peer` class). Harmless dead styling; R4 wired real
+  `htmlFor`/`id` instead rather than adopting the peer approach.
 - (R3-B, user decision) `CandidateResultPage` renders `completed_at` with
   `toLocaleString()`, which follows the **browser** locale, not the app
   language — so the date stays English/Gregorian in Arabic. Deliberately not
@@ -667,3 +693,57 @@ three integrity events including one with no offset, a code submission and
 a transcript — but Regenerate Evaluation and Save Override deliberately go
 through the real client and are not stubbed, so those two actions remain
 part of the owner's manual pass.
+
+## 14. R4 — verify record (2026-09-28)
+
+Scope confirmed by the user: the plan's `dvh`/target work **plus** the two
+defects found on examination that sat just outside it — unlabelled form
+fields and three untranslated strings.
+
+Changed: `pages/Auth.tsx`, `pages/InvitePage.tsx`, `pages/ApplyPage.tsx`,
+`features/candidate-entry/CvUploadStep.tsx`, `pages/InterviewSession.tsx`
+(loading / error / ended / cvMissing branches only — the live workspace is
+R6's), `locales/en.json` + `ar.json` (+3 `workspace.*` keys each).
+
+- **11 `vh` sites → `dvh`.** Mobile browser chrome and the on-screen
+  keyboard both change `vh`, which is what the checklist's rule is about.
+- **Touch targets:** six inputs and every submit button to `h-11 lg:h-10`;
+  `CvUploadStep`'s four buttons likewise (the inventory called that file
+  OK, which was true of its *layout* — the label-wrapped dropzone and the
+  `flex-col sm:flex-row` row — but said nothing about target size); and the
+  raw `<button>` in the error branch, which was `px-4 py-2` ≈ 36px and is
+  the candidate's only recovery action on a failed connection.
+- **16px text on phone** (`text-base sm:text-sm`) for all six inputs.
+  Below 16px iOS zooms the page the moment a field is focused — the same
+  defect fixed in R3-B's override form, and worse here because these are
+  the login and the candidate's OTP entry.
+- **`id`/`htmlFor` on all six fields.** They had none, and the inputs had
+  no `id`, so **the login form's fields had no accessible name at all**.
+  (The `peer-disabled:` modifiers on the labels imply a `peer` pattern that
+  was never wired either — recorded in §7.)
+- **Three strings an earlier i18n pass missed** in `InterviewSession`'s
+  loading and error branches: "Preparing Interview Room...", "Connection
+  Error", "Try Again". The neighbouring `ended` and `cvMissing` branches
+  were already translated, so these rendered English inside an otherwise
+  Arabic page, on the candidate's entry path. Now `workspace.preparingRoom`
+  / `.connectionError` / `.tryAgain`.
+
+Checked, measured in the page rather than read off a screenshot: `/login`
+at 375 reports **zero** sub-44px targets, both inputs 44px at a computed
+**16px**, and `labelled: true` for each. Across the matrix `/login` went
+from **30 small targets to 6**, and all six are the same three controls at
+exactly 1024, each exactly 40px — the `lg` convention, the open track-wide
+question in §7, not a regression. Zero at phone and zero at tablet.
+
+Full `DEFAULT_ROUTES` run: **112 shots across 8 routes, `overflow: 0,
+errors: 0`**; every other route's numbers unchanged from §13. The only
+inner scrollers remain the `<pre>` code block on the candidate-result
+preview.
+
+`npm run typecheck` clean; oxlint unchanged; `npm test` 40/40.
+
+Not verified here: `InvitePage` and `ApplyPage` past their first screen,
+which need a real token — and with no backend running, `/invite/<bogus>`
+stays on the loading branch rather than reaching the invalid-token state.
+Both belong to the owner's manual pass. What *was* confirmed live on that
+route is that the loading branch now renders `min-h-dvh`.

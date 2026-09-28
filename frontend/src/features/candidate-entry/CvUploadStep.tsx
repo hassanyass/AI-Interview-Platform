@@ -82,7 +82,7 @@ export function CvUploadStep({ sessionId, onContinue, continueLabel }: CvUploadS
   if (status && !status.required) {
     return (
       <div className="space-y-4">
-        <Button className="w-full" onClick={onContinue}>{continueLabel ?? t("cv.continue")}</Button>
+        <Button className="h-11 w-full lg:h-10" onClick={onContinue}>{continueLabel ?? t("cv.continue")}</Button>
       </div>
     );
   }
@@ -127,10 +127,10 @@ export function CvUploadStep({ sessionId, onContinue, continueLabel }: CvUploadS
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button className="flex-1" onClick={onContinue} disabled={uploading}>
+            <Button className="h-11 flex-1 lg:h-10" onClick={onContinue} disabled={uploading}>
               {continueLabel ?? t("cv.useThisCv")}
             </Button>
-            <Button variant="outline" className="flex-1" onClick={() => setReplacing(true)} disabled={uploading}>
+            <Button variant="outline" className="h-11 flex-1 lg:h-10" onClick={() => setReplacing(true)} disabled={uploading}>
               <RefreshCw className="h-4 w-4 me-2" /> {t("cv.replace")}
             </Button>
           </div>
@@ -172,7 +172,7 @@ export function CvUploadStep({ sessionId, onContinue, continueLabel }: CvUploadS
             )}
           </label>
           {replacing && !uploading && (
-            <Button variant="ghost" className="w-full" onClick={() => { setReplacing(false); setError(""); }}>
+            <Button variant="ghost" className="h-11 w-full lg:h-10" onClick={() => { setReplacing(false); setError(""); }}>
               {t("cv.keepExisting")}
             </Button>
           )}

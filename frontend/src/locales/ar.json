@@ -71,6 +71,9 @@
             "requiredBeforeStart":  "سيرتك الذاتية مطلوبة قبل بدء المقابلة."
            },
     "workspace":  {
+                      "preparingRoom":  "جاري تجهيز غرفة المقابلة…",
+                      "connectionError":  "خطأ في الاتصال",
+                      "tryAgain":  "إعادة المحاولة",
                       "start":  {
                                 "header":  "جارٍ التجهيز",
                                 "title":  "نجهّز مقابلتك",
