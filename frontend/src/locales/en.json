@@ -431,6 +431,25 @@
         "confirm": "End interview"
     },
     "intro": {
+        "unsupported":  {
+            "title":  "Open this on a laptop or desktop",
+            "body":  "This interview needs a device that can run full-screen, which phones cannot do reliably. Nothing is lost — open the same link on a laptop, desktop or tablet and you can start from here.",
+            "why":  "The interview runs full-screen so the session stays focused. Phone browsers either cannot do this at all, or drop out of full screen every time the keyboard appears, which would end your interview part-way through.",
+            "linkHint":  "Use the same link you opened this page with."
+        },
+        "deviceCheck":  {
+            "title":  "Camera & Microphone Check",
+            "subtitle":  "Confirm your devices are working before you begin.",
+            "waiting":  "Waiting for camera…",
+            "cameraOn":  "Camera on",
+            "cameraOff":  "Camera off",
+            "microphone":  "Microphone",
+            "micSpeak":  "Speak to test your microphone",
+            "micMissing":  "Microphone not detected",
+            "camera":  "Camera",
+            "cameraLive":  "Your camera preview is live",
+            "cameraMissing":  "Camera not detected — interview continues without it"
+        },
         "title": "{{role}} interview",
         "subtitle": "You're about to begin a live, voice-based interview with our AI interviewer. When you're ready, press Start Session.",
         "instructionsLabel": "A note from the hiring team",

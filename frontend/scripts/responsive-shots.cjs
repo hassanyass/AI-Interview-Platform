@@ -56,6 +56,7 @@ const DEFAULT_ROUTES = [
   "/dev/verbal-preview",
   "/dev/sections-preview",
   "/dev/start-preview",
+  "/dev/unsupported-preview",
   "/dev/admin-preview",
   "/dev/results-preview",
   "/dev/job-create-preview",

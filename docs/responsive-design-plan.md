@@ -14,9 +14,10 @@ A/B and both done — verify records §12 and §13 — pushed and CI green at
 Outstanding, in the order they were planned:
 - ~~R2-C — `JobCreatePage`~~ **done**, verify record §15.
 - ~~R4 — candidate entry~~ **done**, verify record §14.
-- **R5, R6** — **unblocked 2026-09-29**: D1–D4 answered (§5), D5 moot.
-  R5 also now owns the phone gate on the intro screen that D1 implies.
-  Neither has been examined yet.
+- ~~R5 — interview pre-flight~~ **done**, verify record §16.
+- **R6 — live interview workspace.** Unblocked (D1–D4 answered, §5) and
+  **tablet-first** rather than phone-first, since phones no longer reach
+  the interview at all. Not yet examined.
 - **R7 — RTL × responsive sweep**, which also inherits the question §7
   records: every control the harness flags at 1024 is exactly 40px, which
   is R2-A's stated convention but sits under §1.2's 44px for a width the
@@ -453,14 +454,18 @@ Per surface, per matrix entry, LTR and RTL:
 - ~~(R4) `App.tsx`'s root wrapper is `min-h-screen`~~ — **fixed 2026-09-29**,
   together with the two route-guard loading screens in the same file. The
   root is `min-h-dvh` and computes to exactly the viewport height.
-- **Seven `vh` sites remain, each belonging to a phase that has not run:**
+- **Six `vh` sites remain.** R5 took `IntroScreen`'s. Still open:
   `AdminLayout.tsx:35` (the admin shell's loading screen — a genuine miss
-  from R1, whose record claims the root went to `h-dvh`), and six in
-  `features/interview-session/`: `IntroScreen`, `InterviewWorkspace`,
-  `SessionEndedScreen`, `FullscreenTerminatedScreen`, and the two dialogs
-  (`EndInterviewDialog`, `EndSectionEarlyDialog`, both `fixed inset-0 grid
-  min-h-screen`). The six are **R5/R6 scope** and should be fixed there,
-  not before. `AdminLayout`'s is a one-line R1 leftover.
+  from R1, whose record claims the root went to `h-dvh`), and five in
+  `features/interview-session/`: `InterviewWorkspace`, `SessionEndedScreen`,
+  `FullscreenTerminatedScreen`, and the two dialogs (`EndInterviewDialog`,
+  `EndSectionEarlyDialog`, both `fixed inset-0 grid min-h-screen`). The five
+  are **R6 scope**. `AdminLayout`'s is a one-line R1 leftover.
+- (R5) `DevicePreview`'s camera tile keeps `aspect-video` below `sm`, which
+  the inventory flagged as a heavy face crop on phones. **D1 made that
+  branch dead on every supported device** — phones no longer reach this
+  screen — so it was left as-is rather than fixed or deleted. If phone
+  support is ever revisited, it is still wrong.
 - `App.tsx`'s two route-guard loading screens render a hard-coded
   **"Loading..."** — untranslated, and the first thing an Arabic user sees
   while a session resolves. Not fixed with the `dvh` change: it is i18n,
@@ -822,3 +827,73 @@ arrow mirrors.
 Not verified here: submitting the form. The preview renders the real page,
 but a submit would create a real job against whatever backend the
 environment points at, so the create path stays in the owner's manual pass.
+
+## 16. R5 — verify record (2026-09-29)
+
+The first phase shaped by a product decision rather than a measurement: D1
+says phones cannot take the live interview, so R5's job became gating them
+*before* the Start button, not making the pre-flight screen fit a phone.
+
+Changed: new `lib/deviceSupport.ts` + `lib/deviceSupport.test.ts`, new
+`features/interview-session/UnsupportedDeviceScreen.tsx`,
+`lib/fullscreen.ts` (+`canFullscreenDocument()`), `IntroScreen.tsx`,
+`DevicePreview.tsx`, `locales/en.json` + `ar.json`, and
+`routes/dev/UnsupportedPreview.tsx` + its route and harness entry.
+
+**The gate is a tested rule, not a screenshot.** `isLiveInterviewSupported()`
+is a pure function over a `DeviceProbe`, because the cases that matter are
+devices nobody has to hand:
+
+- an **iPhone**, where `document.documentElement` has no fullscreen method
+  at all, so PR-B's "fullscreen required, 10s grace, terminate" can never
+  run; and
+- an **Android phone**, which *does* fullscreen and would therefore sail
+  past a capability check, then lose fullscreen the first time its keyboard
+  appeared — terminating a candidate for typing. This is the case a
+  capability-only probe gets wrong, and it is why the rule has a second
+  clause.
+
+The size clause uses the **shorter viewport edge**, so a phone held in
+landscape (812×375) stays gated where a width-only rule would read 812 and
+let it through, and it is paired with a coarse-pointer test so a narrow
+window on a laptop is not gated for nothing. An iPad is 768 on its short
+edge in either orientation and passes. Nine tests cover exactly these
+cases, including both sides of the 768 boundary.
+
+Probed **once on mount**, deliberately: a candidate does not swap device
+mid-screen, and re-probing on resize would flip the gate the moment the
+keyboard opened — the very failure being avoided.
+
+**Two i18n defects found on the way, both on the candidate's own screen:**
+
+1. `DevicePreview` had **one** `t()` call and seven hard-coded English
+   strings, including "Your camera preview is live **on the right**" —
+   wrong in RTL at every width, where it is on the left. The direction is
+   now simply dropped; it added nothing.
+2. A parity sweep found **five `intro` keys missing from Arabic
+   altogether**: `rulesTitle`, `rule1`, `rule2`, `rule3` and
+   `defaultInstructions`. With `fallbackLng: 'en'`, every Arabic candidate
+   has been reading the interview rules panel and the default instructions
+   in English. Translated; `intro` parity is now clean in both directions.
+
+Also: the status pill moved from `bottom-3 left-3` to `bottom-3 start-3`,
+`IntroScreen`'s root went to `min-h-dvh`, and the End link got a real
+target.
+
+Checked: **140 shots across 10 routes, `overflow: 0, errors: 0`**, every
+pre-existing route identical to §15's run. On the new gate route, phone
+flags only the shell's `LanguageToggle`; at 1024 it flags that plus the End
+link, both exactly 40px. One thing the harness caught mid-phase: the End
+link's first version used `lg:min-h-0`, which collapsed it to **16px at
+1024** — smaller than anything else in the admin at that width. Now
+`lg:min-h-10`, matching the convention.
+
+`npm run typecheck` clean; oxlint 16 warnings, unchanged, none in these
+files; `npm test` **49/49** (was 40 — the nine gate tests).
+
+Not verified here: the gate firing on a real phone, and `IntroScreen`
+itself. The gate's *rule* is unit-tested and its *screen* is in the matrix,
+but the two meeting on real hardware is a manual check. `IntroScreen` is
+deliberately not previewed: it mounts `DevicePreview`, which requests
+camera and microphone, so a headless shot would only ever capture the
+permission-denied branch.

@@ -30,6 +30,30 @@ export async function requestFullscreen(): Promise<boolean> {
   }
 }
 
+/**
+ * Can this browser fullscreen the DOCUMENT at all? Asked before anything is
+ * attempted, unlike `requestFullscreen()` above, which only reports failure
+ * after the candidate has already pressed Start.
+ *
+ * The case this exists for: iOS Safari on iPhone exposes no document-level
+ * fullscreen at all — only `<video>` elements can go fullscreen — so PR-B's
+ * "fullscreen required, 10s grace, then terminate" can never succeed there.
+ * `lib/deviceSupport.ts` turns this into the policy decision; this function
+ * only reports the capability, next to the prefix list it shares with
+ * `requestFullscreen()`.
+ */
+export function canFullscreenDocument(): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.documentElement as HTMLElement & {
+    webkitRequestFullscreen?: () => Promise<void> | void;
+    mozRequestFullScreen?: () => Promise<void> | void;
+    msRequestFullscreen?: () => Promise<void> | void;
+  };
+  return Boolean(
+    el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen
+  );
+}
+
 /** True if the document is currently in fullscreen (any vendor prefix). */
 export function isFullscreenActive(): boolean {
   const doc = document as Document & {

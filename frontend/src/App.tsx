@@ -14,6 +14,7 @@ import AdminPreview from './routes/dev/AdminPreview'
 import ResultsPreview from './routes/dev/ResultsPreview'
 import CandidateResultPreview from './routes/dev/CandidateResultPreview'
 import JobCreatePreview from './routes/dev/JobCreatePreview'
+import UnsupportedPreview from './routes/dev/UnsupportedPreview'
 import WorkspacePreview from './routes/dev/WorkspacePreview'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
@@ -93,6 +94,8 @@ function App() {
               {import.meta.env.DEV && <Route path="/dev/verbal-preview" element={<VerbalPreview />} />}
               {import.meta.env.DEV && <Route path="/dev/sections-preview" element={<SectionsPreview />} />}
               {import.meta.env.DEV && <Route path="/dev/start-preview" element={<StartPreview />} />}
+              {/* R5: the D1 device gate. */}
+              {import.meta.env.DEV && <Route path="/dev/unsupported-preview" element={<UnsupportedPreview />} />}
               {/* Responsive plan R0 (docs/responsive-design-plan.md): real admin shell / real workspace chrome without a backend. */}
               {import.meta.env.DEV && <Route path="/dev/admin-preview" element={<AdminPreview />} />}
               {/* R3-A: the results page against fixtures, so the harness can reach it without a login. */}

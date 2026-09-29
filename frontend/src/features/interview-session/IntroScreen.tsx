@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Loader2, LogOut, Shield, CheckCircle2, Maximize2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { LanguageToggle } from "../../components/ui/LanguageToggle";
 import { EndInterviewDialog } from "./EndInterviewDialog";
 import { DevicePreview } from "./DevicePreview";
+import { isLiveInterviewSupported, probeDevice } from "../../lib/deviceSupport";
+import { UnsupportedDeviceScreen } from "./UnsupportedDeviceScreen";
 
 interface IntroScreenProps {
   role: string;
@@ -42,8 +44,17 @@ export function IntroScreen({
 
   const canStart = hasConsented && isDeviceReady && !isStarting && !isEnding;
 
+  // D1 (CURRENT_DECISIONS.md): phones cannot take the live interview, so
+  // say so HERE rather than letting the candidate consent, grant camera and
+  // microphone, and only then meet a fullscreen request that cannot
+  // succeed. Probed once on mount: a candidate does not change device
+  // mid-screen, and re-probing on every resize would flip the gate when the
+  // keyboard opens -- which is the very failure being avoided.
+  const supported = useMemo(() => isLiveInterviewSupported(probeDevice()), []);
+  if (!supported) return <UnsupportedDeviceScreen onEnd={onEnd} isEnding={isEnding} />;
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8F7F4]">
+    <div className="min-h-dvh flex flex-col bg-[#F8F7F4]">
       {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4 sm:px-8">
@@ -112,10 +123,10 @@ export function IntroScreen({
           {/* ── Row 2: Device check — full-width card ── */}
           <div className="rounded-2xl bg-white border border-slate-200 p-6 sm:p-8 shadow-sm">
             <h2 className="font-bold text-slate-900 text-base mb-1">
-              Camera &amp; Microphone Check
+              {t("intro.deviceCheck.title")}
             </h2>
             <p className="text-xs text-slate-500 mb-5">
-              Confirm your devices are working before you begin.
+              {t("intro.deviceCheck.subtitle")}
             </p>
             {/* Camera-stays-on fix (2026-09-16): the preview is unmounted the
                 moment Start is pressed, so its own capture is released BEFORE
@@ -215,7 +226,7 @@ export function IntroScreen({
                 type="button"
                 onClick={() => setIsEndDialogOpen(true)}
                 disabled={isStarting || isEnding}
-                className="flex items-center gap-1.5 text-xs font-medium text-slate-400 transition hover:text-red-500 disabled:opacity-50"
+                className="inline-flex min-h-11 items-center gap-1.5 px-2 text-xs font-medium text-slate-400 transition hover:text-red-500 disabled:opacity-50 lg:min-h-10"
               >
                 {isEnding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
                 {isEnding ? t("intro.ending") : t("intro.endLink")}

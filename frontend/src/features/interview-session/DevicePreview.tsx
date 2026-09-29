@@ -123,13 +123,13 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
         ) : (
           <div className="flex flex-col items-center gap-2 text-slate-500">
             <VideoOff className="h-10 w-10" />
-            <span className="text-xs font-medium">Waiting for camera…</span>
+            <span className="text-xs font-medium">{t("intro.deviceCheck.waiting")}</span>
           </div>
         )}
         {/* Status pill */}
-        <div className={`absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 backdrop-blur-sm text-[11px] font-semibold ${hasCamera ? "bg-emerald-600/90 text-white" : "bg-black/60 text-slate-300"}`}>
+        <div className={`absolute bottom-3 start-3 flex items-center gap-1.5 rounded-full px-2.5 py-1 backdrop-blur-sm text-[11px] font-semibold ${hasCamera ? "bg-emerald-600/90 text-white" : "bg-black/60 text-slate-300"}`}>
           <Video className="h-3 w-3" />
-          {hasCamera ? "Camera on" : "Camera off"}
+          {hasCamera ? t("intro.deviceCheck.cameraOn") : t("intro.deviceCheck.cameraOff")}
         </div>
       </div>
 
@@ -147,7 +147,7 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Mic className="h-4 w-4 text-slate-600" />
-                  <span className="text-sm font-semibold text-slate-700">Microphone</span>
+                  <span className="text-sm font-semibold text-slate-700">{t("intro.deviceCheck.microphone")}</span>
                 </div>
                 {hasMic && (
                   <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -161,7 +161,7 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
                 />
               </div>
               <p className="text-xs text-slate-500 mt-2">
-                {hasMic ? "Speak to test your microphone" : "Microphone not detected"}
+                {hasMic ? t("intro.deviceCheck.micSpeak") : t("intro.deviceCheck.micMissing")}
               </p>
             </div>
 
@@ -170,7 +170,7 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Video className="h-4 w-4 text-slate-600" />
-                  <span className="text-sm font-semibold text-slate-700">Camera</span>
+                  <span className="text-sm font-semibold text-slate-700">{t("intro.deviceCheck.camera")}</span>
                 </div>
                 {hasCamera
                   ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
@@ -178,7 +178,7 @@ export function DevicePreview({ onReady }: DevicePreviewProps) {
                 }
               </div>
               <p className="text-xs text-slate-500 mt-2">
-                {hasCamera ? "Your camera preview is live on the right" : "Camera not detected — interview continues without it"}
+                {hasCamera ? t("intro.deviceCheck.cameraLive") : t("intro.deviceCheck.cameraMissing")}
               </p>
             </div>
           </>
