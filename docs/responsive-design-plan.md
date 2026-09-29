@@ -12,9 +12,7 @@ A/B and both done — verify records §12 and §13 — pushed and CI green at
 `4caaabc`.**
 
 Outstanding, in the order they were planned:
-- **R2-C — `JobCreatePage`**, never started. §2.2 records the finding: a
-  `grid grid-cols-3` with no `sm:` prefix puts three ~90px inputs on a
-  phone, and the duration input is a fixed `w-48`.
+- ~~R2-C — `JobCreatePage`~~ **done**, verify record §15.
 - ~~R4 — candidate entry~~ **done**, verify record §14.
 - **R5, R6** — blocked on decisions **D1–D5** (§5), which are product
   policy and must be asked, not defaulted.
@@ -429,9 +427,13 @@ Per surface, per matrix entry, LTR and RTL:
   responsiveness.
 - `QuestionEditor`/`SectionsEditor` use `window.confirm` for deletes while
   the rest of the admin uses `ConfirmDeleteModal`.
-- `JobResultsPage` "Back to Job" / `CandidateResultPage` "Back to Results"
-  are the only two places with `rtl:rotate-180` on `ArrowLeft`; the same
-  icon in `JobCreatePage`/`JobDetailPage` is not mirrored.
+- ~~`JobResultsPage` / `CandidateResultPage` are the only two places with
+  `rtl:rotate-180` on `ArrowLeft`~~ — R2-C fixed `JobCreatePage`.
+  **`JobDetailPage` is the last one still unmirrored.**
+- (R2-C) `JobCreatePage`'s error banner uses raw `bg-red-500/10` /
+  `text-red-500` rather than the `destructive` tokens, so it ignores
+  theming. Left alone for the same reason as `JobResultsPage`'s
+  `bg-white/50`: colour, not layout.
 - (R3-A) `JobResultsPage`'s error branch uses a hard-coded `bg-white/50`
   instead of a token, so it ignores theming. Left alone: colour, not layout.
 - (R4) **`App.tsx`'s root wrapper is `min-h-screen`** — `100vh`, on the one
@@ -747,3 +749,55 @@ which need a real token — and with no backend running, `/invite/<bogus>`
 stays on the loading branch rather than reaching the invalid-token state.
 Both belong to the owner's manual pass. What *was* confirmed live on that
 route is that the loading branch now renders `min-h-dvh`.
+
+## 15. R2-C — verify record (2026-09-29)
+
+The phase R2 left behind: `JobCreatePage`, never started, and easy to miss
+because the numbering jumps from R2-B to R3. Scope confirmed by the user:
+the plan's two findings, plus `id`/`htmlFor` (the one item outside R2's
+stated bullets), plus a dev preview route.
+
+Changed: `routes/admin/JobCreatePage.tsx` (18 asserted replacements), new
+`routes/dev/JobCreatePreview.tsx` + its route + the harness entry. **No
+i18n work** — this page was already fully translated, so unlike R3 and R4
+nothing moved into the locale files. The back button's `aria-label` reuses
+the existing `jobDetail.backToJobs` rather than adding a duplicate string;
+`ApplyPage` already reuses `invite.emailLabel`, so cross-namespace reuse is
+established here.
+
+- **`grid grid-cols-3` → `grid gap-4 sm:grid-cols-3`.** Measured after:
+  `gridTemplateColumns` at 375 is a single `293.6px` track, where it used
+  to be three ~87px ones.
+- **Duration `w-48` → `w-full sm:w-48`** — 294px at 375, measured.
+- **Ten controls sized.** Every input and the `<select>` were
+  padding-sized (`py-2`, no height class) and landed at ~40px; they are
+  `h-11 lg:h-10` now. The textareas keep their `rows` heights.
+- **Ten `id`/`htmlFor` pairs.** Measured after: `unlabelled: 0` of 10
+  controls, where before every one of them was anonymous to a screen
+  reader — on the form that creates a job.
+- **Back button**: `h-11 w-11 lg:h-10 lg:w-10`, an `aria-label` where it
+  had none, `inline-flex` on the `Link` (the collapsing-anchor finding from
+  R3-A, present here too), and **`rtl:rotate-180` on the `ArrowLeft`** —
+  §7 named this exact file as missing it. Confirmed live: the arrow points
+  → in Arabic.
+- **Footer**: `flex-wrap` and 44px targets. The inventory called it OK,
+  which was true at 375 in English; Arabic labels are longer and it had no
+  wrap to fall back on.
+
+**The cheapest preview route yet.** `JobCreatePage` makes no call on mount
+— only on submit — so unlike `/dev/candidate-result-preview` there is no
+`fetch` to stub and no fixture to invent. The dev file renders the real
+page in the real shell and is about 25 lines.
+
+Checked: harness on the new route, 14 shots — `overflow: 0, errors: 0`.
+At phone and tablet the only flagged control is the shell's
+`LanguageToggle` (90x40, the R2-A leftover for R7); at 1024 all 14 are
+exactly 40px, the `lg` convention, no outliers — the same posture as R3
+and R4. Live at 375 RTL: the three fields stack one per row and the back
+arrow mirrors.
+
+`npm run typecheck` clean; oxlint unchanged; `npm test` 40/40.
+
+Not verified here: submitting the form. The preview renders the real page,
+but a submit would create a real job against whatever backend the
+environment points at, so the create path stays in the owner's manual pass.

@@ -13,6 +13,7 @@ import StartPreview from './routes/dev/StartPreview'
 import AdminPreview from './routes/dev/AdminPreview'
 import ResultsPreview from './routes/dev/ResultsPreview'
 import CandidateResultPreview from './routes/dev/CandidateResultPreview'
+import JobCreatePreview from './routes/dev/JobCreatePreview'
 import WorkspacePreview from './routes/dev/WorkspacePreview'
 import AdminLayout from './routes/admin/AdminLayout'
 import JobsListPage from './routes/admin/JobsListPage'
@@ -91,6 +92,8 @@ function App() {
               {import.meta.env.DEV && <Route path="/dev/admin-preview" element={<AdminPreview />} />}
               {/* R3-A: the results page against fixtures, so the harness can reach it without a login. */}
               {import.meta.env.DEV && <Route path="/dev/results-preview" element={<ResultsPreview />} />}
+              {/* R2-C: the real JobCreatePage; it fetches nothing on mount. */}
+              {import.meta.env.DEV && <Route path="/dev/job-create-preview" element={<JobCreatePreview />} />}
               {/* R3-B: the real CandidateResultPage over a stubbed GET. The
                   params are in the path because the page reads them from
                   useParams and will not fetch without a sessionId. */}

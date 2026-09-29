@@ -79,9 +79,15 @@ export default function JobCreatePage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-12">
       <div className="flex items-center gap-4">
-        <Link to="/admin/jobs">
-          <Button variant="outline" className="p-2 h-10 w-10">
-            <ArrowLeft className="h-5 w-5" />
+        {/* inline-flex: a bare <a> around a button collapses to the text's
+            own box, so the LINK was a sub-44px target even though the button
+            was not (the R3-A finding). rtl:rotate-180 because a static
+            back-arrow points the wrong way once the page flows
+            right-to-left; this file was named in the plan's §7 as one of the
+            places still missing it. */}
+        <Link to="/admin/jobs" className="inline-flex shrink-0">
+          <Button variant="outline" aria-label={t('jobDetail.backToJobs')} className="h-11 w-11 p-0 lg:h-10 lg:w-10">
+            <ArrowLeft className="h-5 w-5 rtl:rotate-180" />
           </Button>
         </Link>
         <div>
@@ -104,45 +110,51 @@ export default function JobCreatePage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4">
               <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.jobTitle')}</label>
+              <label htmlFor="job-title" className="block text-sm font-medium mb-1">{t('jobCreate.jobTitle')}</label>
               <input
+                id="job-title"
                 required
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="h-11 w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 lg:h-10"
                 placeholder={t('jobCreate.jobTitlePlaceholder')}
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            {/* R2-C: without the `sm:` prefix this was three ~87px inputs
+                at 375 inside max-w-3xl. They stack below `sm`. */}
+            <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="block text-sm font-medium mb-1">{t('jobCreate.seniority')}</label>
+                <label htmlFor="job-seniority" className="block text-sm font-medium mb-1">{t('jobCreate.seniority')}</label>
                 <input
+                id="job-seniority"
                   type="text"
                   value={formData.seniority}
                   onChange={(e) => setFormData({ ...formData, seniority: e.target.value })}
-                  className="w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="h-11 w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 lg:h-10"
                   placeholder={t('jobCreate.seniorityPlaceholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">{t('jobCreate.location')}</label>
+                <label htmlFor="job-location" className="block text-sm font-medium mb-1">{t('jobCreate.location')}</label>
                 <input
+                id="job-location"
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  className="w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="h-11 w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 lg:h-10"
                   placeholder={t('jobCreate.locationPlaceholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">{t('jobCreate.language')}</label>
+                <label htmlFor="job-language" className="block text-sm font-medium mb-1">{t('jobCreate.language')}</label>
                 <select
+                id="job-language"
                   required
                   value={formData.language}
                   onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                  className="w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="h-11 w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 lg:h-10"
                 >
                   <option value="en">{t('jobCreate.english')}</option>
                   <option value="ar">{t('jobCreate.arabic')}</option>
@@ -151,8 +163,9 @@ export default function JobCreatePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.jobDesc')}</label>
+              <label htmlFor="job-description" className="block text-sm font-medium mb-1">{t('jobCreate.jobDesc')}</label>
               <textarea
+                id="job-description"
                 rows={4}
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -172,9 +185,10 @@ export default function JobCreatePage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4">
               <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.reqSkills')}</label>
+              <label htmlFor="job-required-skills" className="block text-sm font-medium mb-1">{t('jobCreate.reqSkills')}</label>
               <p className="text-xs text-muted-foreground mb-2">{t('jobCreate.reqSkillsDesc')}</p>
               <textarea
+                id="job-required-skills"
                 rows={3}
                 value={formData.required_skills}
                 onChange={(e) => setFormData({ ...formData, required_skills: e.target.value })}
@@ -184,9 +198,10 @@ export default function JobCreatePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.prefSkills')}</label>
+              <label htmlFor="job-preferred-skills" className="block text-sm font-medium mb-1">{t('jobCreate.prefSkills')}</label>
               <p className="text-xs text-muted-foreground mb-2">{t('jobCreate.prefSkillsDesc')}</p>
               <textarea
+                id="job-preferred-skills"
                 rows={3}
                 value={formData.preferred_skills}
                 onChange={(e) => setFormData({ ...formData, preferred_skills: e.target.value })}
@@ -196,9 +211,10 @@ export default function JobCreatePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.resp')}</label>
+              <label htmlFor="job-responsibilities" className="block text-sm font-medium mb-1">{t('jobCreate.resp')}</label>
               <p className="text-xs text-muted-foreground mb-2">{t('jobCreate.respDesc')}</p>
               <textarea
+                id="job-responsibilities"
                 rows={3}
                 value={formData.responsibilities}
                 onChange={(e) => setFormData({ ...formData, responsibilities: e.target.value })}
@@ -217,8 +233,9 @@ export default function JobCreatePage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4">
               <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.candInst')}</label>
+              <label htmlFor="job-instructions" className="block text-sm font-medium mb-1">{t('jobCreate.candInst')}</label>
               <textarea
+                id="job-instructions"
                 rows={2}
                 value={formData.instructions}
                 onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
@@ -228,29 +245,30 @@ export default function JobCreatePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">{t('jobCreate.duration')}</label>
+              <label htmlFor="job-duration" className="block text-sm font-medium mb-1">{t('jobCreate.duration')}</label>
               <input
+                id="job-duration"
                 required
                 type="number"
                 min="5"
                 max="120"
                 value={formData.duration_minutes}
                 onChange={(e) => setFormData({ ...formData, duration_minutes: e.target.value })}
-                className="w-48 bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                className="h-11 w-full bg-background border border-input rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 sm:w-48 lg:h-10"
               />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <div className="flex justify-end gap-4 pt-2">
-          <Link to="/admin/jobs">
-            <Button type="button" variant="outline" className="px-6">{t('jobCreate.cancel')}</Button>
+        <div className="flex flex-wrap justify-end gap-4 pt-2">
+          <Link to="/admin/jobs" className="inline-flex">
+            <Button type="button" variant="outline" className="h-11 px-6 lg:h-10">{t('jobCreate.cancel')}</Button>
           </Link>
           <Button
             type="submit"
             disabled={isSubmitting}
-            className="px-8"
+            className="h-11 px-8 lg:h-10"
           >
             {isSubmitting ? t('jobCreate.creating') : t('jobCreate.createJob')}
           </Button>
