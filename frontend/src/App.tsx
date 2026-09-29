@@ -31,7 +31,7 @@ function DevBoom(): never {
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, isLoading } = useAuth()
 
-  if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>
+  if (isLoading) return <div className="flex min-h-dvh items-center justify-center">Loading...</div>
   if (!user) return <Navigate to="/login" replace />
 
   return <>{children}</>
@@ -47,7 +47,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 const GuestOrAuthRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, guestToken, isLoading } = useAuth()
 
-  if (isLoading) return <div className="flex h-screen items-center justify-center">Loading...</div>
+  if (isLoading) return <div className="flex min-h-dvh items-center justify-center">Loading...</div>
   if (!user && !guestToken) return <Navigate to="/login" replace />
 
   return <>{children}</>
@@ -58,7 +58,12 @@ function App() {
     <AuthProvider>
       <RoleProvider>
         <BrowserRouter>
-          <div className="min-h-screen bg-background text-foreground">
+          {/* dvh, not vh: this wraps every route, so a `100vh` here kept the
+              root taller than the visible viewport on mobile no matter what
+              the page inside used -- which quietly undercut the dvh work in
+              R4. Recorded in the plan's §7 during R4 and fixed here, before
+              R5, which is entirely full-height layout. */}
+          <div className="min-h-dvh bg-background text-foreground">
             {/* H2-E: a render error anywhere shows a recoverable screen instead of a blank page. */}
             <ErrorBoundary>
             <Routes>

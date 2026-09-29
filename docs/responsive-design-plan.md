@@ -436,14 +436,21 @@ Per surface, per matrix entry, LTR and RTL:
   `bg-white/50`: colour, not layout.
 - (R3-A) `JobResultsPage`'s error branch uses a hard-coded `bg-white/50`
   instead of a token, so it ignores theming. Left alone: colour, not layout.
-- (R4) **`App.tsx`'s root wrapper is `min-h-screen`** — `100vh`, on the one
-  element that wraps every route. R4 converted the five candidate-entry
-  surfaces to `dvh`, but they sit inside this. On mobile `100vh` exceeds the
-  visible viewport while the browser chrome is showing, so the root stays
-  taller than the screen regardless of what its children use. One class to
-  change; left alone only because `App.tsx` is not in R4's file list and §3
-  says adjacent finds are recorded, not fixed inline. Worth doing before R5,
-  which is all full-height layout.
+- ~~(R4) `App.tsx`'s root wrapper is `min-h-screen`~~ — **fixed 2026-09-29**,
+  together with the two route-guard loading screens in the same file. The
+  root is `min-h-dvh` and computes to exactly the viewport height.
+- **Seven `vh` sites remain, each belonging to a phase that has not run:**
+  `AdminLayout.tsx:35` (the admin shell's loading screen — a genuine miss
+  from R1, whose record claims the root went to `h-dvh`), and six in
+  `features/interview-session/`: `IntroScreen`, `InterviewWorkspace`,
+  `SessionEndedScreen`, `FullscreenTerminatedScreen`, and the two dialogs
+  (`EndInterviewDialog`, `EndSectionEarlyDialog`, both `fixed inset-0 grid
+  min-h-screen`). The six are **R5/R6 scope** and should be fixed there,
+  not before. `AdminLayout`'s is a one-line R1 leftover.
+- `App.tsx`'s two route-guard loading screens render a hard-coded
+  **"Loading..."** — untranslated, and the first thing an Arabic user sees
+  while a session resolves. Not fixed with the `dvh` change: it is i18n,
+  and `App.tsx` belongs to no phase's file list.
 - (R4) `Auth`, `InvitePage` and `ApplyPage` carry `peer-disabled:` modifiers
   on their `<label>`s, implying a `peer` pattern that was never wired (the
   inputs have no `peer` class). Harmless dead styling; R4 wired real
