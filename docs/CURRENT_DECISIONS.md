@@ -368,6 +368,37 @@ Railway, not Render" entry for the concrete code/config changes this
 triggered (`render.yaml`, `agent/start.sh`, `agent/requirements.txt`,
 both Dockerfiles).
 
+## Device support for the live interview (RESOLVED 2026-09-29)
+Decided while unblocking R5/R6 of `docs/responsive-design-plan.md` (its §5
+D1–D4). **Phones are not supported for the live interview.**
+
+- Candidate *entry* stays fully supported on a phone: the invite and apply
+  pages, OTP, CV upload, and the results an admin reads. Only the live
+  interview itself is gated, and the intro screen must say so plainly
+  rather than failing later.
+- Tablets and laptops are supported.
+- **Why:** iOS Safari cannot fullscreen the document — only `<video>`
+  elements — so PR-B's "fullscreen required, 10s grace, then terminate"
+  cannot run on iPhone or iPad at all. On Android Chrome the fullscreen
+  drops on every keyboard or notification, which would terminate a
+  candidate for typing. The alternative was relaxing the proctoring
+  contract per device; that was considered and **not** taken.
+- **Consequence:** the proctoring contract is unchanged — no new
+  `InterviewEvent` variant, no backend work. The head-pose thresholds
+  question for handhelds (the plan's D5) does not arise.
+
+**CODING sections on touch devices (RESOLVED, same date):** gated with a
+"use a computer" message rather than rendering a `<textarea>` editor
+against a soft keyboard. This holds independently of the above, for
+keyboard-less tablets, which *are* otherwise supported.
+
+**Minimum supported width: 360px.** Below that, no guarantees. This matches
+the `phone-s` entry already in the responsive matrix.
+
+**Admin on a phone: full parity** — authoring included. This confirms what
+R2-A/R2-B/R2-C already built; the alternative (review-only, editors behind
+a "best on a larger screen" note) would have meant revisiting shipped work.
+
 ## Still unresolved (do not implement against these silently)
 - Invitation expiration policy
 - Whether public candidates need any email verification at all (currently: no, by design)

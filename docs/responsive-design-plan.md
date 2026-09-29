@@ -14,8 +14,9 @@ A/B and both done — verify records §12 and §13 — pushed and CI green at
 Outstanding, in the order they were planned:
 - ~~R2-C — `JobCreatePage`~~ **done**, verify record §15.
 - ~~R4 — candidate entry~~ **done**, verify record §14.
-- **R5, R6** — blocked on decisions **D1–D5** (§5), which are product
-  policy and must be asked, not defaulted.
+- **R5, R6** — **unblocked 2026-09-29**: D1–D4 answered (§5), D5 moot.
+  R5 also now owns the phone gate on the intro screen that D1 implies.
+  Neither has been examined yet.
 - **R7 — RTL × responsive sweep**, which also inherits the question §7
   records: every control the harness flags at 1024 is exactly 40px, which
   is R2-A's stated convention but sits under §1.2's 44px for a width the
@@ -355,6 +356,19 @@ Left over: anything discovered and NOT fixed, appended to §7.
 ---
 
 ## 5. Decisions required from you before R5/R6 (not decided here)
+
+> **ANSWERED 2026-09-29.** D1 = **(a)**, phones are not supported for the
+> live interview. D2 = **gate CODING on touch** with a "use a computer"
+> message. D3 = **360px**. D4 = **full parity** for admin on phone, which
+> confirms what R2 already built. D5 **does not arise**, because it applied
+> only if D1 ≠ (a). The product-level statement of this, including the
+> proctoring consequence, is in `../CURRENT_DECISIONS.md` — that file is
+> authoritative; this block records what unblocked the phases.
+>
+> **What this changes:** R6 becomes **tablet-first** rather than
+> phone-first, and R5 gains a real piece of work the plan did not have —
+> the intro screen has to *gate* a phone clearly and early, instead of
+> letting a candidate reach a fullscreen request that cannot succeed.
 
 These are product decisions; per AGENTS.md §5 I am not picking defaults.
 
