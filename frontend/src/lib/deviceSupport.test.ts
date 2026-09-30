@@ -10,7 +10,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { TABLET_MIN_EDGE_PX, isLiveInterviewSupported, type DeviceProbe } from "./deviceSupport";
+import {
+  TABLET_MIN_EDGE_PX,
+  isCodingSupported,
+  isLiveInterviewSupported,
+  type DeviceProbe,
+} from "./deviceSupport";
 
 const probe = (over: Partial<DeviceProbe> = {}): DeviceProbe => ({
   canFullscreen: true,
@@ -76,5 +81,35 @@ describe("isLiveInterviewSupported", () => {
     expect(
       isLiveInterviewSupported({ canFullscreen: false, coarsePointer: true, shortestViewportEdgePx: 1200 })
     ).toBe(false);
+  });
+});
+
+/**
+ * D2 is a different question from D1 and must not collapse into it: a
+ * tablet is a *supported device* that takes verbal and MCQ sections
+ * normally, and is blocked from coding alone.
+ */
+describe("isCodingSupported", () => {
+  it("allows a laptop", () => {
+    expect(isCodingSupported(probe())).toBe(true);
+  });
+
+  it("blocks a tablet, which passes the interview gate but has no keyboard", () => {
+    const tablet: DeviceProbe = { canFullscreen: true, coarsePointer: true, shortestViewportEdgePx: 768 };
+    // The pair that matters: supported for the interview, not for coding.
+    expect(isLiveInterviewSupported(tablet)).toBe(true);
+    expect(isCodingSupported(tablet)).toBe(false);
+  });
+
+  it("blocks a large touch screen too — it is the pointer, not the size", () => {
+    expect(
+      isCodingSupported({ canFullscreen: true, coarsePointer: true, shortestViewportEdgePx: 1400 })
+    ).toBe(false);
+  });
+
+  it("allows a narrow laptop window, where size would say otherwise", () => {
+    expect(
+      isCodingSupported({ canFullscreen: true, coarsePointer: false, shortestViewportEdgePx: 500 })
+    ).toBe(true);
   });
 });

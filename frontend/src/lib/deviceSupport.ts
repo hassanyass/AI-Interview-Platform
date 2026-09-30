@@ -62,3 +62,18 @@ export function isLiveInterviewSupported(probe: DeviceProbe): boolean {
   if (probe.coarsePointer && probe.shortestViewportEdgePx < TABLET_MIN_EDGE_PX) return false;
   return true;
 }
+
+/**
+ * May this device answer a CODING section? Product decision D2, same entry
+ * in CURRENT_DECISIONS.md: **no, on a touch device.**
+ *
+ * This is a *separate* question from the one above, and deliberately so. A
+ * tablet passes `isLiveInterviewSupported` — it is a supported device and
+ * takes verbal and MCQ sections normally — but a `<textarea>` code editor
+ * driven by a soft keyboard is not an answer anyone can write, so the
+ * coding section alone is gated. Pointer, not size: a keyboard-less 12"
+ * tablet has plenty of pixels and still no keyboard.
+ */
+export function isCodingSupported(probe: DeviceProbe): boolean {
+  return !probe.coarsePointer;
+}

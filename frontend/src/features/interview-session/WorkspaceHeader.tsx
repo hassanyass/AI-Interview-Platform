@@ -63,7 +63,7 @@ export function WorkspaceHeader({
               unavailable, proceeding audio-only" (per CURRENT_DECISIONS.md's
               graceful-degradation decision) rather than hiding that gap. */}
           {!isCompleted && (
-            <span className="hidden items-center gap-1.5 sm:flex" title={isCameraEnabled ? t('workspace.cameraOn') : t('workspace.cameraOff')}>
+            <span className="flex items-center gap-1.5" title={isCameraEnabled ? t('workspace.cameraOn') : t('workspace.cameraOff')}>
               {isCameraEnabled ? (
                 <Video className="h-3.5 w-3.5 text-success" />
               ) : (
@@ -71,7 +71,7 @@ export function WorkspaceHeader({
               )}
             </span>
           )}
-          <span className="hidden items-center gap-2 sm:flex">
+          <span className="hidden items-center gap-2 md:flex">
             <span className={`h-2 w-2 rounded-full ${isCompleted ? "bg-muted-foreground" : isWaitingRoom ? "bg-blue-400" : "bg-success"}`} />
             {isCompleted ? t('workspace.sessionEnded') : isWaitingRoom ? t('workspace.phase.waitingRoom') : t('workspace.liveConnection')}
           </span>
@@ -95,22 +95,23 @@ export function WorkspaceHeader({
 
           <button
               onClick={() => { void onToggleFullscreen(); }}
-              className="hidden sm:flex items-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-semibold text-foreground/80 transition hover:bg-muted"
-              title={isFullscreenNow ? "Exit fullscreen" : "Enter fullscreen"}
+              className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md border border-border bg-background/60 px-3 py-1.5 text-xs font-semibold text-foreground/80 transition hover:bg-muted sm:min-w-0 lg:min-h-10"
+              title={isFullscreenNow ? t('workspace.exitFullscreen') : t('workspace.enterFullscreen')}
             >
               {isFullscreenNow
-                ? <><Minimize2 className="h-3.5 w-3.5" />Exit Fullscreen</>
-                : <><Maximize2 className="h-3.5 w-3.5" />Fullscreen</>
+                ? <><Minimize2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t('workspace.exitFullscreen')}</span></>
+                : <><Maximize2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">{t('workspace.enterFullscreen')}</span></>
               }
             </button>
 
           <button
             onClick={onEndSession}
             disabled={isCompleted || isEndingSession}
-            className="hidden sm:flex items-center gap-1.5 rounded-md bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50"
+            aria-label={t('workspace.endSession')}
+            className="flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-md bg-destructive/10 px-3 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-destructive-foreground disabled:opacity-50 sm:min-w-0 lg:min-h-10"
           >
             {isEndingSession ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
-            End Session
+            <span className="hidden sm:inline">{t('workspace.endSession')}</span>
           </button>
         </div>
       </div>

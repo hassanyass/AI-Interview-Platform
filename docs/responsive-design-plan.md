@@ -15,9 +15,9 @@ Outstanding, in the order they were planned:
 - ~~R2-C — `JobCreatePage`~~ **done**, verify record §15.
 - ~~R4 — candidate entry~~ **done**, verify record §14.
 - ~~R5 — interview pre-flight~~ **done**, verify record §16.
-- **R6 — live interview workspace.** Unblocked (D1–D4 answered, §5) and
-  **tablet-first** rather than phone-first, since phones no longer reach
-  the interview at all. Not yet examined.
+- ~~R6 — live interview workspace~~ **done**, verify record §17.
+- **R7 — RTL × responsive sweep**, the only phase left. It inherits one
+  open question, below.
 - **R7 — RTL × responsive sweep**, which also inherits the question §7
   records: every control the harness flags at 1024 is exactly 40px, which
   is R2-A's stated convention but sits under §1.2's 44px for a width the
@@ -454,13 +454,15 @@ Per surface, per matrix entry, LTR and RTL:
 - ~~(R4) `App.tsx`'s root wrapper is `min-h-screen`~~ — **fixed 2026-09-29**,
   together with the two route-guard loading screens in the same file. The
   root is `min-h-dvh` and computes to exactly the viewport height.
-- **Six `vh` sites remain.** R5 took `IntroScreen`'s. Still open:
-  `AdminLayout.tsx:35` (the admin shell's loading screen — a genuine miss
-  from R1, whose record claims the root went to `h-dvh`), and five in
-  `features/interview-session/`: `InterviewWorkspace`, `SessionEndedScreen`,
-  `FullscreenTerminatedScreen`, and the two dialogs (`EndInterviewDialog`,
-  `EndSectionEarlyDialog`, both `fixed inset-0 grid min-h-screen`). The five
-  are **R6 scope**. `AdminLayout`'s is a one-line R1 leftover.
+- ~~Six `vh` sites remain~~ — R6 took the five in
+  `features/interview-session/`. **One left: `AdminLayout.tsx:35`**, the
+  admin shell's loading screen, a genuine miss from R1 whose own record
+  claims the root went to `h-dvh`. One line, belongs to nobody's phase.
+- ~~Hard-coded English in the live workspace chrome: "Fullscreen" /
+  "Exit Fullscreen" / "End Session" (`WorkspaceHeader`)~~ — **fixed in R6**,
+  along with the two `title` strings beside them. The
+  `InterviewController` half of that entry (Repeat/Hint/Skip/End Section
+  and their tooltips) is **still open** and belongs to R7.
 - (R5) `DevicePreview`'s camera tile keeps `aspect-video` below `sm`, which
   the inventory flagged as a heavy face crop on phones. **D1 made that
   branch dead on every supported device** — phones no longer reach this
@@ -897,3 +899,77 @@ but the two meeting on real hardware is a manual check. `IntroScreen` is
 deliberately not previewed: it mounts `DevicePreview`, which requests
 camera and microphone, so a headless shot would only ever capture the
 permission-denied branch.
+
+## 17. R6 — verify record (2026-09-30)
+
+The last build phase, and the one D1 changed most: the 2.6 inventory was
+written assuming a candidate could reach this screen on a phone, and none
+can any more.
+
+**Moot, and deliberately not done:** the controller stacking three rows and
+eating half a landscape phone; the self-view PiP landing on top of Skip /
+End Section (its `BOTTOM_MARGIN_PX` was computed for the desktop controller
+height); the coding editor under a soft keyboard; D5's face-monitor
+thresholds. Every one of those was a phone finding.
+
+Changed: `WorkspaceHeader.tsx`, `InterviewController.tsx`,
+`CodingSectionView.tsx`, `VerbalSectionView.tsx`, `lib/deviceSupport.ts`
+(+`isCodingSupported`) and its test, five files for the `dvh` sweep, and
+`locales/en.json` + `ar.json` (+4 `workspace.*` entries each).
+
+**D2 existed only on paper.** The decision to gate CODING on touch devices
+had nothing implementing it: `CodingSectionView` rendered its `<textarea>`
+to whoever opened it, and R0's `useCoarsePointer()` had been sitting unused.
+The gate is now `isCodingSupported()` — **pointer, not size**, because a
+large keyboard-less tablet has plenty of pixels and still no keyboard — with
+four more tests, including the pair that matters: a tablet passes
+`isLiveInterviewSupported` and fails `isCodingSupported`, which is exactly
+the distinction D1 and D2 draw between each other. It replaces the editor
+pane only: the problem statement stays visible so the candidate still knows
+what was asked, and the controller's Skip / End Section remain available, so
+nobody is stranded.
+
+**Two real defects survived D1, and both were worse than the inventory:**
+
+1. `Fullscreen` and `End Session` were `hidden sm:flex` — confirmed live at
+   375, absent from the DOM's visible set. A *candidate* can no longer hit
+   this, but a **narrow laptop window** can — correctly, it has a fine
+   pointer and is not gated — and there it left **no way to end the session
+   or re-enter fullscreen at all**. Now always visible, icon-only below
+   `sm`, with the label from `sm` up.
+2. `SecondaryButton` set `title` **only when disabled** while the label is
+   `hidden sm:inline`, so an *enabled* Repeat / Hint / Skip / End Section
+   below 640 had no text, no title and no `aria-label` — nothing whatsoever
+   for a screen reader. The inventory recorded "title only"; it was less
+   than that. Now `aria-label` always.
+
+**Tablets are touch devices**, which the phone gating does not rescue: the
+controller's buttons were 36–38px and the transcript toggle 26px. Both are
+44px below `lg` now. The transcript itself only splits into a column at
+`lg`, so on a supported tablet (768–1023) it sat below the interviewer and
+pushed the caption off-screen; it is capped at `38dvh` there with its own
+scroll, and uncapped from `lg` where it is a real column.
+
+Checked: **140 shots across 10 routes, `overflow: 0, errors: 0`, and
+`hiddenControls: 0` everywhere** — that number was 8 before this phase.
+`workspace-preview` went from 64 small targets to 19, `verbal-preview` from
+10 to 2. Measured live at **768×1024**, the tablet this phase is now
+written for: `hidden 0`, `unnamed 0`, no overflow, and the only flagged
+control is the shell's `LanguageToggle`.
+
+**Across all ten routes, every flagged target is now exactly 40px** — one
+number, no outliers anywhere in the application. The harness caught two of
+my own on the way there: `lg:min-h-0` *removes* the floor rather than
+lowering it, leaving the Fullscreen button at 30px and the transcript
+toggle at 26px at 1024 (the same mistake as R5's End link), and the two
+header buttons were 38–40px **wide** while icon-only. Both fixed.
+
+`npm run typecheck` clean; oxlint 16 warnings, unchanged — the three in
+`InterviewController` are pre-existing; `npm test` **53/53** (was 49).
+
+Not verified here: a real interview. The workspace preview renders the real
+header, controller and section views against mock state, but the live loop
+— agent audio, fullscreen enforcement, the grace overlay actually firing —
+needs a spoken interview on a tablet, which is the owner's manual pass. The
+coding gate's *rule* is unit-tested; the gate *rendering* mid-interview on a
+real tablet is not.

@@ -37,7 +37,7 @@ export function EndSectionEarlyDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] grid min-h-screen place-items-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[100] grid min-h-dvh place-items-center bg-slate-950/60 p-4 backdrop-blur-[2px]"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onCancel();
       }}

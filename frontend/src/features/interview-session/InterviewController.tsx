@@ -236,8 +236,9 @@ function SecondaryButton({
     <button 
       disabled={disabled}
       onClick={onClick} 
-      title={disabled ? tooltip : undefined}
-      className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-full transition-colors
+      aria-label={label}
+      title={disabled ? tooltip : label}
+      className={`flex min-h-11 items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-full transition-colors lg:min-h-10
         ${variant === "warning" ? warningClasses : defaultClasses}
       `}
     >

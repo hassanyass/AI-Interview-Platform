@@ -60,7 +60,7 @@ export function StartSequenceView({ stage, hasCv, elapsedSeconds }: { stage: Sta
     : t(`workspace.start.${stage}`);
 
   return (
-    <div className="min-h-screen w-full flex flex-col bg-background text-foreground">
+    <div className="min-h-dvh w-full flex flex-col bg-background text-foreground">
       <header className="border-b bg-card">
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">

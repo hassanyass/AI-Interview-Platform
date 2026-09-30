@@ -71,6 +71,13 @@
             "requiredBeforeStart":  "Your CV is required before the interview can start."
            },
     "workspace":  {
+                      "enterFullscreen":  "Fullscreen",
+                      "exitFullscreen":  "Exit Fullscreen",
+                      "endSession":  "End Session",
+                      "coding":  {
+                          "unsupportedTitle":  "Use a computer for this section",
+                          "unsupportedBody":  "This question needs a keyboard to answer. The rest of the interview works on this device — you can skip this section, or reopen the interview on a laptop or desktop to answer it."
+                      },
                       "preparingRoom":  "Preparing Interview Room…",
                       "connectionError":  "Connection Error",
                       "tryAgain":  "Try Again",

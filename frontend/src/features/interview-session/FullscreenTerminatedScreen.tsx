@@ -20,7 +20,7 @@ export function FullscreenTerminatedScreen({ session }: FullscreenTerminatedScre
     : "Candidate";
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-white flex flex-col">
+    <div className="min-h-dvh w-full bg-slate-950 text-white flex flex-col">
       {/* Minimal header — same structure as SessionEndedScreen for chrome consistency */}
       <header className="border-b border-slate-800/60 bg-slate-950/90 backdrop-blur-sm">
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">

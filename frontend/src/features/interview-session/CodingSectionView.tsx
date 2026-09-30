@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
-import { Code2, Mic, Send, Timer, Volume2 } from "lucide-react";
+import { Code2, Laptop, Mic, Send, Timer, Volume2 } from "lucide-react";
 import type { ActiveQuestion } from "../../types/realtime";
+import { isCodingSupported, probeDevice } from "../../lib/deviceSupport";
 
 /**
  * CodingSectionView — LeetCode/CoderPad-style split view for an ordered
@@ -46,6 +47,9 @@ export function CodingSectionView({
   formattedTime,
 }: CodingSectionViewProps) {
   const { t } = useTranslation();
+  // Probed once per render of this section; the pointer type does not
+  // change mid-interview.
+  const canCode = isCodingSupported(probeDevice());
 
   return (
     <section className="col-span-full flex min-h-0 min-w-0 flex-1 flex-col gap-3 lg:overflow-hidden">
@@ -101,6 +105,26 @@ export function CodingSectionView({
           </div>
         </article>
 
+        {/* D2 (CURRENT_DECISIONS.md): a CODING section is not answerable
+            on a touch device -- a textarea against a soft keyboard is not
+            somewhere anyone can write code. The problem statement above
+            stays visible so the candidate still knows what was asked, and
+            the controller's Skip / End Section remain available, so this
+            replaces the editor rather than stranding them. Gated on the
+            POINTER, not the size: a large tablet has plenty of pixels and
+            still no keyboard. */}
+        {!canCode ? (
+          <section
+            className="flex min-h-[220px] min-w-0 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/30 p-6 text-center"
+            aria-label={t('workspace.coding.unsupportedTitle')}
+          >
+            <Laptop className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-semibold text-foreground">{t('workspace.coding.unsupportedTitle')}</p>
+            <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+              {t('workspace.coding.unsupportedBody')}
+            </p>
+          </section>
+        ) : (
         <section className="flex min-h-[360px] min-w-0 flex-col overflow-hidden border border-secondary rounded-xl bg-secondary text-secondary-foreground shadow-sm" aria-label={t('workspace.codeAnswer')}>
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
             <div className="flex items-center gap-2 text-sm font-medium"><Code2 className="h-4 w-4 text-primary/70" />{t('workspace.codeAnswer')}</div>
@@ -133,6 +157,7 @@ export function CodingSectionView({
             {codeStatus && <span className="sr-only" role="status">{codeStatus}</span>}
           </div>
         </section>
+        )}
       </div>
     </section>
   );

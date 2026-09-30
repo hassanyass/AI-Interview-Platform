@@ -22,7 +22,7 @@ export function SessionEndedScreen({ session }: SessionEndedScreenProps) {
   const { t } = useTranslation();
 
   return (
-    <div className="min-h-screen w-full bg-background text-foreground flex flex-col">
+    <div className="min-h-dvh w-full bg-background text-foreground flex flex-col">
       <header className="border-b bg-white">
         <div className="mx-auto flex min-h-16 max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
