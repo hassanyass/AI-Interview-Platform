@@ -20,6 +20,43 @@ Every setting is documented in `backend/.env.example`, `agent/.env.example`
 and `frontend/.env.example`, each with a one-line comment. A generated
 matrix (setting x environment, required or default) is H6-B.
 
+## What is and is not swappable
+
+Worth knowing before you plan a migration, because the answer differs by
+concern.
+
+| Concern | Port | Adapter today | Swappable |
+|---|---|---|---|
+| LLM / STT / TTS | `providers/llm` | `groq.py` | yes |
+| Object storage (CVs, recordings) | `providers/storage` | `s3.py`, `supabase.py` | yes |
+| Real-time media | `providers/realtime` | `livekit.py` | yes |
+| Email | `providers/email` | `null.py` | yes — and **must** be, nothing is sent today |
+| Notifications | `providers/notifications` | `console.py`, `email.py` | yes |
+| Background jobs | `providers/queue` | `postgres.py` | yes |
+| Database | — | PostgreSQL 15 via SQLAlchemy | any Postgres |
+| **Authentication** | **none** | **Supabase Auth** | **no — see below** |
+
+`runbooks/add-provider-adapter.md` is the procedure for the swappable ones.
+
+### Authentication is a fixed dependency today
+
+Supabase Auth is not behind a port. It is wired through
+`backend/backend/core/security.py` (JWKS verification, `kid`-based
+selection between Supabase and guest tokens), `core/config.py`,
+`api/deps.py`, the `supabase_user_id` column on `candidate_profiles`, and
+the frontend's `lib/supabase.ts` and `AuthContext`. Replacing it is a
+project, not a setting.
+
+This does **not** block a cloud migration: Supabase is a SaaS you can call
+from any cloud, so the container stack still moves freely. It blocks a
+*vendor* migration. If that becomes a requirement, the work is an `auth`
+port with the same shape as the six above, plus a migration for the
+profile column — plan it as its own phase, not as part of a move.
+
+One more caveat on the ports that do exist: each has exactly one real
+adapter. They are exercised by tests against fakes, which proves the seam
+compiles and is honoured, not that a second vendor drops in cleanly.
+
 ## First deploy
 
 ```bash

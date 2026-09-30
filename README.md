@@ -74,6 +74,41 @@ the above: `install`, `lock`, `up`, `down`, `test`, `lint`, `typecheck`, `migrat
 the pinned `requirements.txt` files are compiled from them (`make lock`). Edit the `.in`,
 never the lockfile.
 
+## Deploying and operating it
+
+**`docs/handover/` is the entry point for anyone running this rather than
+developing it** — start at [docs/handover/README.md](docs/handover/README.md).
+
+| If you want to | Read |
+|---|---|
+| Stand the stack up somewhere new | [handover/deploy.md](docs/handover/deploy.md) — a portable container stack; anything that runs Docker will run it |
+| Put it on Kubernetes | [handover/kubernetes.md](docs/handover/kubernetes.md) |
+| Look up a setting: what it does, whether it is required | [handover/env-matrix.md](docs/handover/env-matrix.md) — **generated from the code**, and a test fails if it drifts |
+| Size a deployment | [handover/capacity.md](docs/handover/capacity.md) |
+| Find logs, metrics, request ids | [handover/observability.md](docs/handover/observability.md) |
+| Threat model, personal data, erasure | [handover/security.md](docs/handover/security.md) |
+| Fix something at 2am | [handover/runbooks/](docs/handover/runbooks/) — nine runbooks, each executed once against the stack when written |
+| Swap a provider (LLM, storage, email, …) | [handover/runbooks/add-provider-adapter.md](docs/handover/runbooks/add-provider-adapter.md) |
+
+### How portable is it, really
+
+**Cloud-portable: yes.** `compose.prod.yaml` plus three Dockerfiles, no
+hosting-provider specifics, TLS deliberately left to a proxy you put in
+front. It runs on any Docker host or Kubernetes cluster.
+
+**Vendor-portable: partly.** Six concerns sit behind provider ports with a
+written swap procedure — `llm`, `storage`, `realtime`, `email`,
+`notifications`, `queue`. **Authentication does not.** Supabase Auth is
+wired through `backend/backend/core/security.py`, `core/config.py`,
+`api/deps.py`, the `supabase_user_id` column on the candidate profile, and
+the frontend's `lib/supabase.ts`. Moving to another identity provider is a
+project, not a configuration change. This is a deliberate position, not an
+oversight — see `docs/handover/deploy.md` § "What is and is not swappable".
+
+Note also that each port currently has exactly one real adapter (`groq`,
+`livekit`, `s3`, `postgres`). The seams are exercised by tests against
+fakes, not yet by a second real implementation.
+
 ## Status and plans
 - `docs/PROJECT_STATUS.md` — what is done and verified
 - `docs/production-hardening-plan.md` — production-readiness track (H0–H6)

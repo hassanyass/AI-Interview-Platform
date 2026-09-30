@@ -127,12 +127,12 @@ Reviewed against this codebase, not a checklist copied in.
 | 1 | Broken object-level authorization | **Addressed.** Every session route checks ownership; `test_auth_matrix.py` proves candidate B cannot reach candidate A's session on any of them |
 | 2 | Broken authentication | **Addressed** in H5-A: one verification path per token, no fallback, pinned algorithms, `iss`/`aud` checked, JWKS outage reported as 503 |
 | 3 | Broken object-property-level authorization | **Addressed** for the known case (`email` removed from the profile update schema). Admin schemas accept only declared fields |
-| 4 | Unrestricted resource consumption | **Partly.** Rate limits on the anonymous and expensive routes (H5-B); provider calls bounded (H2-A). **Gap:** a permitted burst (20) can still exceed the database's own connection ceiling (15 on the Supabase pooler), which surfaces as a 500 — see plan §24 |
+| 4 | Unrestricted resource consumption | **Partly.** Rate limits on the anonymous and expensive routes (H5-B); provider calls bounded (H2-A). A permitted burst (20) can still exceed the database's own connection ceiling (15 on the Supabase pooler) — choose the two together per deployment — but that now answers **503 + `Retry-After`**, not a 500 (`core/db_errors.py`), so it reads as backpressure rather than a fault |
 | 5 | Broken function-level authorization | **Addressed.** Admin routes require a role row; `test_auth_matrix.py` walks the whole route table so a new route without auth fails the build |
 | 6 | Unrestricted access to sensitive business flows | **Partly.** Registration is rate-limited but still creates a session per call by design; no CAPTCHA or device signal |
 | 7 | Server-side request forgery | **Not applicable.** No user-supplied URL is fetched |
 | 8 | Security misconfiguration | **Addressed:** fail-closed settings, explicit CORS, non-root images, no secrets in the repo. **Gap:** TLS, ingress and network policy are the deployment's (H6) |
-| 9 | Improper inventory management | **Partly.** One API version, documented in `docs/API_REFERENCE.md`; `/docs` and `/openapi.json` are **publicly reachable** — close them on a production ingress or gate them |
+| 9 | Improper inventory management | **Yes.** One API version, documented in `docs/API_REFERENCE.md`. `/docs`, `/redoc` and `/openapi.json` are served only when `expose_api_docs` is true — on for `local`/`test`, **off for `staging` and `production`**, overridable either way with `EXPOSE_API_DOCS`. Passing `None` to FastAPI removes the routes rather than hiding them, so there is nothing left to probe. (Was an open gap through H5-C.) |
 | 10 | Unsafe consumption of third-party APIs | **Addressed.** Every provider is behind an adapter with timeouts and bounded retries; LLM output is validated (`validate_question_config`) before it is stored |
 
 Two items above are genuine open gaps rather than accepted risk: **#4**'s

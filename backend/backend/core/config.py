@@ -38,6 +38,8 @@ _DEFAULT_GROQ_EXTRACTION_MODEL = "llama-3.1-8b-instant"
 class Settings(BaseSettings):
     # ── Application ────────────────────────────────────────────────────────
     ENVIRONMENT: Literal["local", "test", "staging", "production"] = "local"
+    EXPOSE_API_DOCS: bool | None = None
+    """Serve /docs, /redoc and /openapi.json. Unset follows ENVIRONMENT: on for local/test, off otherwise. Set true to open them on a staging box (see core/config.py's expose_api_docs)."""
     """Deployment environment. Anything but local/test enables the boot-time safety checks."""
     APP_VERSION: str = "0.1.0"
     """Reported by /health and /version."""
@@ -267,6 +269,21 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.ENVIRONMENT in ("local", "test")
+
+    @property
+    def expose_api_docs(self) -> bool:
+        """Whether /docs, /redoc and /openapi.json are served.
+
+        Recorded as an open gap in the H5-C OWASP review: they were
+        reachable unauthenticated in every environment, which hands an
+        unauthenticated reader the complete route table, every schema and
+        every field name. Now closed by default outside local/test, with
+        `EXPOSE_API_DOCS` as the deliberate override for a staging box
+        someone needs to explore. Not a secret -- the frontend calls these
+        routes and anyone can watch it -- but there is no reason to publish
+        a map, and the default should not be the permissive one.
+        """
+        return self.is_local if self.EXPOSE_API_DOCS is None else self.EXPOSE_API_DOCS
 
     @property
     def log_format(self) -> str:

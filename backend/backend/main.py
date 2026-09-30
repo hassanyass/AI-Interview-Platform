@@ -59,7 +59,17 @@ async def lifespan(_app: FastAPI):
         await engine.dispose()
 
 
-app = FastAPI(title="AI Interview Platform API", version=settings.APP_VERSION, lifespan=lifespan)
+# Passing None to any of these removes the route entirely rather than
+# hiding it, so there is nothing left to find. See config.expose_api_docs.
+_docs = settings.expose_api_docs
+app = FastAPI(
+    title="AI Interview Platform API",
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
+)
 
 # One error body for every failure (core/errors.py).
 install_exception_handlers(app)

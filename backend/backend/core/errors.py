@@ -26,6 +26,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+import sqlalchemy.exc
+
+from backend.core.db_errors import exhaustion_source, is_connection_exhaustion
 from backend.core.request_id import HEADER, get_request_id
 
 logger = logging.getLogger(__name__)
@@ -147,6 +150,27 @@ def install_exception_handlers(app: FastAPI) -> None:
         # FastAPI's list-of-errors `detail` is kept: lib/api.ts joins the
         # `msg` fields of a list detail.
         return problem(request, 422, exc.errors())
+
+    @app.exception_handler(sqlalchemy.exc.SQLAlchemyError)
+    async def _db_error(request: Request, exc: sqlalchemy.exc.SQLAlchemyError) -> JSONResponse:
+        # H5-B left this open: the connection pooler refusing another client
+        # reached the caller as a 500, which says "this server is broken"
+        # when the truth is "busy, try again". Only exhaustion is softened;
+        # every other SQLAlchemy failure falls through to the 500 below,
+        # because a 503 invites a retry loop against a broken database.
+        if not is_connection_exhaustion(exc):
+            return await _unhandled(request, exc)
+        logger.warning(
+            "Database connections exhausted (%s) on %s %s (request_id=%s)",
+            exhaustion_source(exc), request.method, request.url.path, get_request_id(request),
+        )
+        response = problem(
+            request, 503,
+            "The service is busy. Please retry in a moment.",
+            code="db_unavailable",
+        )
+        response.headers["Retry-After"] = "5"
+        return response
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:

@@ -115,8 +115,12 @@ this application. Two consequences:
 - A rate-limit burst the API permits (`RATE_LIMIT_PUBLIC_REGISTER`, 20 by
   default) can exceed the number of database clients available. Choose the
   two together for a given deployment.
-- That failure surfaces as an unhandled **500**, not a 503. Mapping it is
-  recorded as open in `security.md` §7 (item 4).
+- That failure used to surface as an unhandled **500**. It now answers
+  **503 with `Retry-After: 5`** and the code `db_unavailable`
+  (`core/db_errors.py`), so a proxy or a client can retry instead of
+  treating a busy database as a broken server. The log line distinguishes
+  `local_pool` from `server_or_pooler`, which matters because raising
+  `DB_POOL_SIZE` fixes the first and makes the second worse.
 
 ## Still unmeasured: interviews per agent worker (U4)
 

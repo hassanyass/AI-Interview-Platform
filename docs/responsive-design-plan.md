@@ -442,14 +442,16 @@ Per surface, per matrix entry, LTR and RTL:
   + controller leave ~60px for the interviewer. Recorded here so R6's plan
   starts from the measurement, not a guess.
 
-- `frontend/src/App.css` is Vite-template CSS, imported nowhere.
-- `AppShell.tsx`, `Container.tsx`, `AdminResultView.tsx` are unreferenced
-  by the router.
+- ~~`frontend/src/App.css` is Vite-template CSS, imported nowhere.~~
+- ~~`AppShell.tsx`, `Container.tsx`, `AdminResultView.tsx` are unreferenced
+  by the router.~~ Both entries are **stale**: all four files were removed
+  when `master`'s tree replaced `main`'s on 2026-09-28 (they were among the
+  49 paths dropped). Verified 2026-09-30.
 - `animate-in / fade-in / slide-in-*` utilities are no-ops under Tailwind
   v4 here (already documented in `index.css`).
-- `CandidateAccess.handleTestDrive` opens `/interview/${id}` (singular);
-  the route is `/interviews/:id`. Looks like a real bug, unrelated to
-  responsiveness.
+- ~~`CandidateAccess.handleTestDrive` opens `/interview/${id}` (singular)~~
+  — **fixed**, and the code carries a comment saying so. It navigates to
+  `/interviews/${id}` now. Verified 2026-09-30.
 - `QuestionEditor`/`SectionsEditor` use `window.confirm` for deletes while
   the rest of the admin uses `ConfirmDeleteModal`.
 - ~~`JobResultsPage` / `CandidateResultPage` are the only two places with
