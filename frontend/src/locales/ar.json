@@ -71,6 +71,28 @@
             "requiredBeforeStart":  "سيرتك الذاتية مطلوبة قبل بدء المقابلة."
            },
     "workspace":  {
+                      "controller":  {
+                          "repeat":  "إعادة",
+                          "repeating":  "جاري الإعادة…",
+                          "repeatTooltip":  "إعادة آخر رسالة من المُحاوِر",
+                          "hint":  "تلميح",
+                          "thinking":  "جاري التفكير…",
+                          "hintTooltip":  "متاح أثناء الأسئلة التقنية",
+                          "muteMic":  "كتم الميكروفون",
+                          "unmuteMic":  "إلغاء كتم الميكروفون",
+                          "listening":  "يستمع",
+                          "muted":  "مكتوم",
+                          "skip":  "تخطي",
+                          "skipping":  "جاري التخطي…",
+                          "skipTooltip":  "تخطي هذا السؤال",
+                          "skipBackground":  "تخطي الخلفية",
+                          "skipBackgroundTooltip":  "تخطي بقية أسئلة الخلفية والانتقال إلى النقاش",
+                          "endSection":  "إنهاء القسم",
+                          "endingSection":  "جاري إنهاء القسم…",
+                          "endSectionTooltip":  "إنهاء هذا القسم مبكرًا",
+                          "sendFailed":  "تعذّر إرسال الأمر.",
+                          "endSectionFailed":  "تعذّر إنهاء القسم."
+                      },
                       "enterFullscreen":  "ملء الشاشة",
                       "exitFullscreen":  "إنهاء ملء الشاشة",
                       "endSession":  "إنهاء الجلسة",

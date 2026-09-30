@@ -71,6 +71,28 @@
             "requiredBeforeStart":  "Your CV is required before the interview can start."
            },
     "workspace":  {
+                      "controller":  {
+                          "repeat":  "Repeat",
+                          "repeating":  "Repeating…",
+                          "repeatTooltip":  "Repeat the last interviewer message",
+                          "hint":  "Hint",
+                          "thinking":  "Thinking…",
+                          "hintTooltip":  "Available during technical questions",
+                          "muteMic":  "Mute microphone",
+                          "unmuteMic":  "Unmute microphone",
+                          "listening":  "Listening",
+                          "muted":  "Muted",
+                          "skip":  "Skip",
+                          "skipping":  "Skipping…",
+                          "skipTooltip":  "Skip this question",
+                          "skipBackground":  "Skip background",
+                          "skipBackgroundTooltip":  "Skip the rest of the background questions and go to the discussion",
+                          "endSection":  "End Section",
+                          "endingSection":  "Ending section…",
+                          "endSectionTooltip":  "End this section early",
+                          "sendFailed":  "Failed to send command.",
+                          "endSectionFailed":  "Failed to end section."
+                      },
                       "enterFullscreen":  "Fullscreen",
                       "exitFullscreen":  "Exit Fullscreen",
                       "endSession":  "End Session",

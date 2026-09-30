@@ -55,8 +55,32 @@ Counts at the last full run: **pytest 473 passed, 1 skipped; vitest 38/38.**
   per agent worker is unmeasured (U4) and the procedure for it is in that
   same file.
 - **Frontend layout** — `npm run responsive` (`scripts/responsive-shots.cjs`,
-  puppeteer) produces screenshots at the breakpoints in
-  `docs/responsive-checklist.md` for a human to compare; it is not a pass/fail gate.
+  puppeteer) shoots every route in `DEFAULT_ROUTES` at the seven viewports
+  in `docs/responsive-design-plan.md` §1, in **both LTR and RTL** (140 shots
+  over 10 routes today), and writes `frontend/.responsive/report.json`
+  alongside the images. It is **not** a pass/fail gate, but it is more than
+  screenshots: per shot it reports `overflow` (`scrollWidth > innerWidth`),
+  `smallTargets` (below 44px under `lg`, below 40px from `lg` — see the
+  §1.2 amendment), `hiddenControls` (an action available on desktop and
+  `display:none` here) and `innerScrollers`.
+  At the end of the responsive track that report is **0 / 0 / 0**, with the
+  only inner scroller being the `<pre>` code block on the candidate-result
+  preview, which the plan records as acceptable for code. Treat a non-zero
+  number as a regression to explain, not noise.
+
+  Two things it cannot do, both learned the hard way. It **sets `dir`
+  itself** before shooting, so it cannot catch a page that fails to set its
+  own — which is exactly how R7's `<html dir>` bug survived the whole
+  track; `src/lib/documentLanguage.test.ts` covers that instead. And its
+  routes are dev-only previews (`/dev/*`, `import.meta.env.DEV`), because
+  most real pages need a session; a preview renders the **real** components
+  wherever possible rather than a copy, since a copied header is how R6's
+  hidden End Session button went unseen for months.
+
+  On Git Bash, run it with `MSYS_NO_PATHCONV=1`, or a `--routes=/dev/...`
+  argument is silently rewritten to a Windows path and the shots are of the
+  wrong page. Do not run it at the same time as `npm test`: it starves
+  vitest of workers, which reports as "no tests / N errors".
 
 ## Gates (H4-A)
 

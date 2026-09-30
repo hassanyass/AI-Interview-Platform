@@ -64,7 +64,24 @@ const DEFAULT_ROUTES = [
   "/dev/workspace-preview",
 ];
 
+// R7 (decided with the user): 44px below `lg`, 40px from `lg` up.
+//
+// The plan's §1.2 asked for 44px at every "touch" width, and the matrix
+// calls 1024 a touch width because an iPad in landscape is one. But R2-A
+// had already set the admin's density at 40px from `lg`, and by the end of
+// R6 EVERY flagged control in the app was exactly 40px -- roughly 180
+// "findings" that were all the same deliberate choice, which drowns out a
+// real regression. Rather than leave the two statements contradicting each
+// other, the convention wins and the threshold follows it: 1024 and up is
+// treated as pointer-capable.
 const MIN_TARGET_PX = 44;
+const MIN_TARGET_PX_FROM_LG = 40;
+const LG_PX = 1024;
+
+/** The floor that applies at a given viewport width. */
+function minTargetFor(width) {
+  return width >= LG_PX ? MIN_TARGET_PX_FROM_LG : MIN_TARGET_PX;
+}
 
 function parseArgs(argv) {
   const args = { strict: false, routes: null, viewports: null, dirs: null };
@@ -157,7 +174,7 @@ async function main() {
           const file = `${slug}__${vName}__${dir}.png`;
           let findings = null;
           if (!error) {
-            findings = await page.evaluate(inspectPage, MIN_TARGET_PX, vp.touch);
+            findings = await page.evaluate(inspectPage, minTargetFor(vp.width), vp.touch);
             await page.screenshot({ path: path.join(OUT_DIR, file), fullPage: true });
           }
           report.push({ route, viewport: vName, width: vp.width, height: vp.height, dir, file, error, ...(findings || {}) });

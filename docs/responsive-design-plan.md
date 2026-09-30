@@ -15,9 +15,12 @@ Outstanding, in the order they were planned:
 - ~~R2-C — `JobCreatePage`~~ **done**, verify record §15.
 - ~~R4 — candidate entry~~ **done**, verify record §14.
 - ~~R5 — interview pre-flight~~ **done**, verify record §16.
-- ~~R6 — live interview workspace~~ **done**, verify record §17.
-- **R7 — RTL × responsive sweep**, the only phase left. It inherits one
-  open question, below.
+- ~~R7 — RTL × responsive sweep~~ **done**, verify record §18.
+
+**The plan is complete: R0 through R7.** Final harness state — 140 shots
+across 10 routes, LTR and RTL: `overflow: 0, errors: 0, smallTargets: 0,
+hiddenControls: 0`. What is left is not layout: one spoken interview on a
+real tablet, which no harness can stand in for.
 - **R7 — RTL × responsive sweep**, which also inherits the question §7
   records: every control the harness flags at 1024 is exactly 40px, which
   is R2-A's stated convention but sits under §1.2's 44px for a width the
@@ -76,8 +79,16 @@ These are what stop this becoming the usual half-done responsive pass.
      innerWidth`) at every matrix entry;
    - every action reachable on desktop is reachable on phone (nothing is
      `hidden` below `sm` without a replacement);
-   - interactive targets ≥ 44 × 44 CSS px on touch widths (buttons,
-     icon-buttons, table row actions);
+   - interactive targets **≥ 44 × 44 CSS px below `lg`, ≥ 40 × 40 from
+     `lg` up** (buttons, icon-buttons, table row actions).
+     *Amended in R7.* This originally said 44px at every touch width, and
+     the matrix counts 1024 as one because an iPad in landscape is. But
+     R2-A had set the admin's density at 40px from `lg`, and by the end of
+     R6 **every** control the harness flagged was exactly 40px — about 180
+     findings that were all the same deliberate choice, which buries a real
+     regression. The convention won and the harness threshold follows it
+     (`minTargetFor()` in `scripts/responsive-shots.cjs`), so a flagged
+     target now means something;
    - text never truncates *information* (truncate is fine for titles with a
      `title=`/tooltip, never for scores, statuses, emails in a list);
    - no fixed pixel widths on containers below `lg` unless they are ≤ 320px
@@ -419,11 +430,10 @@ Per surface, per matrix entry, LTR and RTL:
 
 ## 7. Parking lot (found during the audit, deliberately NOT in scope)
 
-- `document.documentElement.dir` is set only inside `LanguageToggle`'s
-  effect, so a hard load of a page without the toggle (`/login`, every
-  admin page) with `preferred-lang=ar` renders Arabic text in an LTR
-  layout. `i18n.ts` should set `dir` at init. (Found while building the
-  harness, which sets `dir` itself to compensate.)
+- ~~`document.documentElement.dir` is set only inside `LanguageToggle`'s
+  effect…~~ **fixed in R7**, and it was the single most consequential
+  finding of the track — see §18. `src/lib/documentLanguage.ts` owns
+  `lang`/`dir`, applied at i18n init and on every `languageChanged`.
 - Hard-coded English in the live workspace chrome: "Fullscreen"/"Exit
   Fullscreen"/"End Session" (`WorkspaceHeader`), "Repeat"/"Hint"/"Skip"/
   "End Section"/"Listening"/"Muted" and the tooltips (`InterviewController`)
@@ -454,15 +464,15 @@ Per surface, per matrix entry, LTR and RTL:
 - ~~(R4) `App.tsx`'s root wrapper is `min-h-screen`~~ — **fixed 2026-09-29**,
   together with the two route-guard loading screens in the same file. The
   root is `min-h-dvh` and computes to exactly the viewport height.
-- ~~Six `vh` sites remain~~ — R6 took the five in
-  `features/interview-session/`. **One left: `AdminLayout.tsx:35`**, the
-  admin shell's loading screen, a genuine miss from R1 whose own record
-  claims the root went to `h-dvh`. One line, belongs to nobody's phase.
-- ~~Hard-coded English in the live workspace chrome: "Fullscreen" /
-  "Exit Fullscreen" / "End Session" (`WorkspaceHeader`)~~ — **fixed in R6**,
-  along with the two `title` strings beside them. The
-  `InterviewController` half of that entry (Repeat/Hint/Skip/End Section
-  and their tooltips) is **still open** and belongs to R7.
+- ~~Six `vh` sites remain~~ — **none do.** R6 took the five in
+  `features/interview-session/`; R7 took `AdminLayout`'s loading screen,
+  the R1 miss. `grep -rn "h-screen" src/ --include=*.tsx` outside the dev
+  previews now returns nothing.
+- ~~Hard-coded English in the live workspace chrome~~ — **fully closed**:
+  `WorkspaceHeader` in R6, and `InterviewController`'s 14 strings
+  (Repeat/Hint/Skip/Skip background/End Section, their in-progress states,
+  tooltips, the mic `aria-label`s, Listening/Muted and two error messages)
+  in R7.
 - (R5) `DevicePreview`'s camera tile keeps `aspect-video` below `sm`, which
   the inventory flagged as a heavy face crop on phones. **D1 made that
   branch dead on every supported device** — phones no longer reach this
@@ -973,3 +983,69 @@ header, controller and section views against mock state, but the live loop
 needs a spoken interview on a tablet, which is the owner's manual pass. The
 coding gate's *rule* is unit-tested; the gate *rendering* mid-interview on a
 real tablet is not.
+
+## 18. R7 — verify record (2026-09-30)
+
+The sweep, and it found that the thing being swept for had never been
+switched on.
+
+**`<html dir>` was never set on most of the application.**
+`LanguageToggle` — a presentational button — owned `dir` and `lang` in a
+`useEffect`. So pages that render it set direction only *after* mount
+(a flash of LTR on every load), and pages that do not — `/login`, and
+`InterviewSession`'s loading / error / cvMissing branches — **never set it
+at all**. Verified live before the fix, with `preferred-lang=ar` on
+`/login`:
+
+    storedLang        "ar"
+    text              تسجيل الدخول إلى لوحة التحكم
+    htmlDir           (EMPTY)
+    htmlLang          "en"
+    computedDirection "ltr"
+
+Arabic text in a left-to-right layout. Every `ps-`/`pe-`/`text-start`/`rtl:`
+class written across R1–R6 was inert there.
+
+It survived the whole track for one reason worth recording: **the harness
+sets `dir` itself before shooting**, so every RTL screenshot in §8–§17 was
+taken with direction forced externally. The tool was compensating for the
+bug it existed to catch. `src/lib/documentLanguage.ts` now owns `lang` and
+`dir`, applied at i18n init — before React mounts, so no flash — and on
+every `languageChanged`; the toggle only asks for a language. Eight tests
+pin it, including that `ar-AE` and `ar` agree and that `ltr` is set
+explicitly rather than left empty (an empty `dir` inherits, which is why
+this looked fine in English and wrong only in Arabic). Verified live after:
+`dir: rtl`, `lang: ar`, `direction: rtl`.
+
+Also done: `InterviewController`'s 14 hard-coded strings moved to
+`workspace.controller.*` (EN + AR), closing the parking-lot entry R6 half-
+closed; `AdminLayout`'s loading screen to `h-dvh`, the **last** `vh` site
+in the application; `left-0 right-0` → `inset-x-0`.
+
+**The 40-vs-44 contradiction is resolved** (user's call): 44px below `lg`,
+40px from `lg` up. §1.2 is amended and `minTargetFor()` in the harness
+follows it. That turned ~180 "findings" — all of them the same deliberate
+density choice — into **two real ones**, which were then fixed: the
+`LanguageToggle`, deferred to R7 by name back in R2-A, and `Add Section`,
+which dropped to 40px at `sm` where the convention settled on `lg`.
+
+Checked: **140 shots, 10 routes, LTR and RTL — `overflow: 0, errors: 0,
+smallTargets: 0, hiddenControls: 0`.** The only inner scrollers are the 14
+instances of the `<pre>` code block, which §2.3 records as acceptable for
+code. `npm run typecheck` clean; oxlint 16 warnings, unchanged, all
+pre-existing; `npm test` **61/61** (was 53).
+
+Docs: `PROJECT_STATUS.md` gains a Responsive & RTL section (and its H4-A
+row no longer claims CI has never run, which stopped being true days ago),
+and `technical/testing-strategy.md`'s harness entry now describes what the
+report actually contains, what the harness **cannot** catch, and the two
+operational traps — `MSYS_NO_PATHCONV=1` on Git Bash, and never running it
+alongside `npm test`.
+
+The optional `responsive-phase` skill was **not** written, by decision: the
+track ends here, so there are no phases left for it to run.
+
+Not verified, and no harness can: one spoken interview on a real tablet —
+fullscreen enforcement, the grace overlay firing, the D1 and D2 gates
+appearing on real hardware. That is the owner's manual pass, and it is the
+only thing between this plan and done.

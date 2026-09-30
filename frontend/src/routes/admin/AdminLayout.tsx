@@ -32,7 +32,7 @@ export default function AdminLayout() {
 
   if (isLoadingRole || role === "unknown") {
     return (
-      <div className="flex h-screen items-center justify-center bg-background text-foreground">
+      <div className="flex h-dvh items-center justify-center bg-background text-foreground">
         {t('adminLayout.loading')}
       </div>
     );

@@ -414,7 +414,7 @@ export default function SectionsEditor({ definition, onRefresh, status }: Sectio
             variant="secondary"
             onClick={() => setIsAdding(true)}
             disabled={availableTypes.length === 0 || isAdding || loadingAction !== null}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 sm:h-10 sm:w-auto sm:shrink-0"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 sm:w-auto sm:shrink-0 lg:h-10"
           >
             <Plus className="h-4 w-4" />
             <span>{t('sectionsEditor.addSection')}</span>

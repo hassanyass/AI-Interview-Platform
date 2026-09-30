@@ -47,7 +47,7 @@ Runs alongside the transition phases; each sub-phase has a verify record in the 
 | H2-E | frontend resilience: `ApiError`, timeouts, `ErrorBoundary`, `RoleContext` retry, realtime types aligned, vitest + jsdom | done, `7ae5d8b` |
 | H3 | structured JSON logs with `request_id`/`session_id` across backend + agent, `/metrics` (Prometheus), `python -m backend.cli`, `docs/handover/` (README, observability, 8 runbooks), this doc + `testing-strategy.md` refreshed | done (see plan §19) |
 | H2-F | durable `tasks` table + in-process worker (`FOR UPDATE SKIP LOCKED`), `TaskQueue` port; the four admin AI endpoints answer 202 + a task id and the browser polls, so a slow Groq call is no longer a failed-looking request whose result silently landed | done (see plan §20) |
-| H4-A | CI pipeline (`.github/workflows/ci.yml`: lint, tests + coverage, typecheck, build, image builds, migration up/down/up), `pre-commit`, `ruff`, frontend `strict: true`, `npm run build` gated on typecheck + lint, migration reversibility/drift tests | done (see plan §21) — **not yet run on GitHub: nothing is pushed** |
+| H4-A | CI pipeline (`.github/workflows/ci.yml`: lint, tests + coverage, typecheck, build, image builds, migration up/down/up), `pre-commit`, `ruff`, frontend `strict: true`, `npm run build` gated on typecheck + lint, migration reversibility/drift tests | done (see plan §21) — **pushed and green on GitHub Actions** (all three jobs; the first three runs each exposed a real repository defect, see plan §29) |
 | H4-B | auth matrix over the whole route table (401 unauthenticated, 403 for a non-admin, agent-secret handling, one candidate cannot reach another's session), the real `build_context` resume path, TTS cache, Groq key rotator, LLM timeout + turn-lock release, `ResponsiveTable`; +41 backend/agent and +7 frontend tests | done (see plan §22) |
 | H5-A | token verification: Supabase and guest paths selected by `kid` with no fallback, `iss`/`aud` checked, a JWKS outage answers 503 instead of 401; identity linking by email now follows the data (a profile holding sessions or a CV needs a verified address) and is logged, `IDENTITY_AUTOLINK` policy; `email` removed from the profile update schema | done (see plan §23) |
 | H5-B | in-process token-bucket rate limits on the four anonymous/expensive routes (429 + `Retry-After`, keyed by subject where authenticated so a shared NAT is not throttled as one attacker); recording start made idempotent by a claim column instead of check-then-act; `ui_command` allow-list built from `CandidateControlAction` | done (see plan §24) |
@@ -57,6 +57,39 @@ Runs alongside the transition phases; each sub-phase has a verify record in the 
 | H6-C | `scripts/load_baseline.py` + `make load-baseline`: the candidate HTTP path measured at rising concurrency against the disposable database, recordings and rate limits off, fixture created and deleted; real numbers and their diagnosis in `docs/handover/capacity.md` — throughput flat at ~6–12 req/s with the server's own histogram showing 4 ms for `/health` against 500–1100 ms for every database route, i.e. the measurement is of this laptop; the agent-concurrency half (U4) written up as a procedure | done (see plan §28) |
 
 Owed live checks (owner): one spoken interview after H2-C/H2-D (egress, voice, "I'm done" confirmation), the admin retry screen and test-drive after H2-E, and applying migration `c4d1e8f2a9b7` to the live DB.
+
+
+## Responsive & RTL (2026-09-17 → 2026-09-30, `docs/responsive-design-plan.md`)
+
+**Complete: R0–R7.** Verify records §8–§18 of that plan. The admin, the
+candidate entry pages and the live interview all work from 360px up, in
+Arabic as well as English.
+
+| Phase | What it covered | Record |
+|---|---|---|
+| R0 | Harness (`npm run responsive`), `Drawer`, `ResponsiveTable`, `useMediaQuery`, safe-area vars, dev preview routes | §8 |
+| R1 | Admin shell: sidebar becomes a drawer below `lg` | §9 |
+| R2-A/B | Job list & detail, editors, modals, overflow menus | §10, §11 |
+| R2-C | Job create — the phase the numbering skipped | §15 |
+| R3-A/B | Results list (table → cards) and the candidate scorecard | §12, §13 |
+| R4 | Candidate entry: `dvh`, 44px targets, 16px inputs | §14 |
+| R5 | Pre-flight, and the **device gate** for D1 | §16 |
+| R6 | Live workspace, tablet-first, and the **coding gate** for D2 | §17 |
+| R7 | RTL sweep, `<html dir>` at init, docs | §18 |
+
+**Product decisions this produced** (in `CURRENT_DECISIONS.md`, "Device
+support for the live interview"): phones are **not supported for the live
+interview** — entry, OTP, CV upload and results are, and the interview
+itself is gated before the Start button rather than failing at a fullscreen
+request iOS cannot serve; CODING sections are gated on touch devices;
+minimum supported width 360px; admin keeps full parity on a phone.
+
+**Final harness state:** 140 shots, 10 routes, LTR and RTL — `overflow: 0,
+errors: 0, smallTargets: 0, hiddenControls: 0`.
+
+**Not covered by any of it:** a real spoken interview on a real tablet. The
+previews render the real components against mock state, and the two gates'
+*rules* are unit-tested, but the live loop is a manual check.
 
 ## Not started
 - **Phase 8** — results normalization (replace `final_result` JSONB with real `Evaluation`/`Score` tables, HR comparison/ranking views)

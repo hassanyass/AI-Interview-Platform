@@ -7,10 +7,11 @@ export function LanguageToggle() {
   const { i18n } = useTranslation();
   const [lang, setLang] = useState(localStorage.getItem('preferred-lang') || 'en');
 
+  // R7: this used to set `<html lang>`/`<html dir>` and persist the choice
+  // itself, which meant direction only existed on pages that happened to
+  // render this button. `i18n.ts` owns all three now, keyed off
+  // `languageChanged`; the toggle just asks for the language.
   useEffect(() => {
-    document.documentElement.lang = lang;
-    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
-    localStorage.setItem('preferred-lang', lang);
     if (i18n.language !== lang) {
       i18n.changeLanguage(lang);
     }
@@ -24,7 +25,7 @@ export function LanguageToggle() {
     <Button 
       variant="ghost" 
       onClick={toggleLanguage} 
-      className="flex items-center gap-2 text-sm font-medium text-foreground hover:bg-muted"
+      className="flex h-11 items-center gap-2 text-sm font-medium text-foreground hover:bg-muted lg:h-10"
     >
       <Globe className="h-4 w-4" />
       {lang === 'en' ? 'العربية' : 'English'}

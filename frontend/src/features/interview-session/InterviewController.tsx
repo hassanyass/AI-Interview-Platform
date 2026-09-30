@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState, useEffect } from "react";
 import { Mic, MicOff, RefreshCcw, HelpCircle, SkipForward, LogOut, Loader2, FastForward } from "lucide-react";
 import { EndSectionEarlyDialog } from "./EndSectionEarlyDialog";
@@ -27,6 +28,7 @@ export function InterviewController({
   hasNextSection = true,
   isLocked = false,
 }: InterviewControllerProps) {
+  const { t } = useTranslation();
   const [controlState, setControlState] = useState<ControlState>(isCompleted ? "ENDED" : "IDLE");
   const [processingAction, setProcessingAction] = useState<string | null>(null);
   const [isEndSectionDialogOpen, setIsEndSectionDialogOpen] = useState(false);
@@ -74,7 +76,7 @@ export function InterviewController({
     } catch (e) {
       setControlState("IDLE");
       setProcessingAction(null);
-      setErrorMsg("Failed to send command.");
+      setErrorMsg(t("workspace.controller.sendFailed"));
       setTimeout(() => setErrorMsg(null), 3000);
     }
   };
@@ -88,7 +90,7 @@ export function InterviewController({
     } catch (e) {
       setControlState("IDLE");
       setProcessingAction(null);
-      setErrorMsg("Failed to end section.");
+      setErrorMsg(t("workspace.controller.endSectionFailed"));
       setTimeout(() => setErrorMsg(null), 3000);
     }
   };
@@ -102,7 +104,7 @@ export function InterviewController({
   return (
     <div className="w-full flex flex-col items-center gap-4 relative">
       {isLocked && (
-        <div className="absolute -top-12 left-0 right-0 mx-auto max-w-sm px-4 py-2.5 bg-red-950/80 text-red-300 text-xs font-medium rounded-lg border border-red-800/60 text-center shadow-sm animate-in fade-in slide-in-from-bottom-2">
+        <div className="absolute -top-12 inset-x-0 mx-auto max-w-sm px-4 py-2.5 bg-red-950/80 text-red-300 text-xs font-medium rounded-lg border border-red-800/60 text-center shadow-sm animate-in fade-in slide-in-from-bottom-2">
           Session terminated — controls disabled
         </div>
       )}
@@ -118,19 +120,19 @@ export function InterviewController({
         <div className="flex items-center gap-2 flex-1 justify-end">
           <SecondaryButton 
             icon={<RefreshCcw className="h-4 w-4" />}
-            label={processingAction === "REPEAT_QUESTION" ? "Repeating..." : "Repeat"}
+            label={processingAction === "REPEAT_QUESTION" ? t("workspace.controller.repeating") : t("workspace.controller.repeat")}
             disabled={allDisabled || isProcessing || !allowedControls.includes("REPEAT_QUESTION")}
             onClick={() => handleAction("REPEAT_QUESTION")}
             isLoading={processingAction === "REPEAT_QUESTION"}
-            tooltip="Repeat the last interviewer message"
+            tooltip={t("workspace.controller.repeatTooltip")}
           />
           <SecondaryButton 
             icon={<HelpCircle className="h-4 w-4" />}
-            label={processingAction === "REQUEST_HINT" ? "Thinking..." : "Hint"}
+            label={processingAction === "REQUEST_HINT" ? t("workspace.controller.thinking") : t("workspace.controller.hint")}
             disabled={allDisabled || isProcessing || !allowedControls.includes("REQUEST_HINT")}
             onClick={() => handleAction("REQUEST_HINT")}
             isLoading={processingAction === "REQUEST_HINT"}
-            tooltip="Available during technical questions"
+            tooltip={t("workspace.controller.hintTooltip")}
           />
         </div>
 
@@ -146,7 +148,7 @@ export function InterviewController({
                 : "bg-muted text-muted-foreground border border-border hover:bg-muted/80 hover:scale-105"
               }
             `}
-            aria-label={isMicrophoneEnabled ? "Mute microphone" : "Unmute microphone"}
+            aria-label={isMicrophoneEnabled ? t("workspace.controller.muteMic") : t("workspace.controller.unmuteMic")}
           >
             {isMicrophoneEnabled ? (
               <Mic className="h-7 w-7" />
@@ -155,7 +157,7 @@ export function InterviewController({
             )}
           </button>
           <span className="text-xs font-medium text-muted-foreground mt-2 tracking-wide uppercase">
-            {isMicrophoneEnabled ? "Listening" : "Muted"}
+            {isMicrophoneEnabled ? t("workspace.controller.listening") : t("workspace.controller.muted")}
           </span>
         </div>
 
@@ -164,11 +166,11 @@ export function InterviewController({
         <div className="flex items-center gap-2 flex-1 justify-start">
           <SecondaryButton 
             icon={<SkipForward className="h-4 w-4" />}
-            label={processingAction === "SKIP_QUESTION" ? "Skipping..." : "Skip"}
+            label={processingAction === "SKIP_QUESTION" ? t("workspace.controller.skipping") : t("workspace.controller.skip")}
             disabled={allDisabled || isProcessing || !allowedControls.includes("SKIP_QUESTION")}
             onClick={() => handleAction("SKIP_QUESTION")}
             isLoading={processingAction === "SKIP_QUESTION"}
-            tooltip="Skip this question"
+            tooltip={t("workspace.controller.skipTooltip")}
           />
 
           {/* Verbal Background subsection: advertised by the agent only while a
@@ -176,21 +178,21 @@ export function InterviewController({
           {allowedControls.includes("SKIP_BACKGROUND") && (
             <SecondaryButton
               icon={<FastForward className="h-4 w-4" />}
-              label={processingAction === "SKIP_BACKGROUND" ? "Skipping..." : "Skip background"}
+              label={processingAction === "SKIP_BACKGROUND" ? t("workspace.controller.skipping") : t("workspace.controller.skipBackground")}
               disabled={allDisabled || isProcessing}
               onClick={() => handleAction("SKIP_BACKGROUND")}
               isLoading={processingAction === "SKIP_BACKGROUND"}
-              tooltip="Skip the rest of the background questions and go to the discussion"
+              tooltip={t("workspace.controller.skipBackgroundTooltip")}
             />
           )}
 
           <SecondaryButton
             icon={<LogOut className="h-4 w-4" />}
-            label={processingAction === "END_SECTION_EARLY" ? "Ending section..." : "End Section"}
+            label={processingAction === "END_SECTION_EARLY" ? t("workspace.controller.endingSection") : t("workspace.controller.endSection")}
             disabled={allDisabled || isProcessing || !allowedControls.includes("END_SECTION_EARLY")}
             onClick={() => handleAction("END_SECTION_EARLY")}
             isLoading={processingAction === "END_SECTION_EARLY"}
-            tooltip="End this section early"
+            tooltip={t("workspace.controller.endSectionTooltip")}
             variant="warning"
           />
         </div>
