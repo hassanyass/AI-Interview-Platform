@@ -178,7 +178,7 @@ pydantic-settings==2.15.0
     # via
     #   -c backend/requirements.txt
     #   -r backend/requirements.in
-pyjwt==2.13.0
+pyjwt==2.14.0
     # via
     #   -c backend/requirements.txt
     #   -r backend/requirements.in

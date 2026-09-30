@@ -311,7 +311,7 @@ pygments==2.21.0
     # via
     #   -c C:/Users/hassa/AppData/Local/Temp/agent-lock-prev.txt
     #   rich
-pyjwt==2.13.0
+pyjwt==2.14.0
     # via
     #   -c C:/Users/hassa/AppData/Local/Temp/agent-lock-prev.txt
     #   livekit-agents
