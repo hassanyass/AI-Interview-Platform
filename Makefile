@@ -30,8 +30,28 @@ install:
 # `pip install -r backend -r agent` was impossible (found by CI's first real
 # run, 2026-09-25). The agent is compiled first because livekit-agents
 # carries the tighter bounds, then the backend is constrained by its result.
+# `lock` RE-RESOLVES: pip-compile preserves versions already pinned in the
+# output file, so this picks up changes to the .in files and nothing else.
+# It will NOT pull newer releases -- that is `upgrade` below. Mistaking one
+# for the other is how a lock sits still for months while advisories pile
+# up against it.
 lock:
 	$(PY) -m piptools compile --strip-extras --no-header -o agent/requirements.txt agent/requirements.in
+	$(PY) -m piptools compile --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in
+	$(PY) -m pytest -q backend/tests/test_requirements.py
+
+# `upgrade` pulls the newest releases the .in files allow (pip-compile -U).
+# Backend only by default: the agent lock carries livekit-agents and `av`,
+# whose behaviour no test here can verify -- the agent suite runs against
+# fakes with no LiveKit server -- so bumping them needs a real spoken
+# interview afterwards. Do that deliberately, with:
+#   make upgrade-agent
+upgrade:
+	$(PY) -m piptools compile --upgrade --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in
+	$(PY) -m pytest -q backend/tests/test_requirements.py
+
+upgrade-agent:
+	$(PY) -m piptools compile --upgrade --strip-extras --no-header -o agent/requirements.txt agent/requirements.in
 	$(PY) -m piptools compile --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in
 	$(PY) -m pytest -q backend/tests/test_requirements.py
 

@@ -1989,3 +1989,66 @@ belongs with the deferred upgrade.
 
 Full `pytest` **473 passed, 1 skipped** on the aligned set; `ruff` clean.
 
+### 29a. The deferred upgrade, done for the backend (2026-10-01)
+
+Taken up after the `pip-audit` gate went red three times in one week on
+advisories alone (PyJWT twice, urllib3 once) with no repository change.
+That is the gate working, and also an argument that a lock sitting still
+is not a lock staying safe.
+
+**Two things §29 got wrong, corrected here.**
+
+1. **"50 packages" was stale.** The real diff is 21 for the backend and 25
+   for the agent — the piecemeal advisory bumps since September absorbed
+   the rest. Measured by compiling both locks in `python:3.13-slim` and on
+   Windows, not estimated.
+2. **The version upgrade and the platform question are separable**, which
+   §29 conflated ("recompiling properly on Linux … also bumps 50
+   packages"). Recompiling on *this* platform produces the identical
+   version bumps — `sqlalchemy 2.1.1`, `livekit-agents 1.8.3`, `av 19.0.0`
+   — while leaving the colorama/uvloop artifact exactly as it is. The
+   upgrade never required the platform change.
+
+**And a trap worth more than either.** A Linux-compiled lock carries
+**zero platform markers**: `uvloop==0.23.0` lands unconditional, and uvloop
+has no Windows wheels, so that lock would break `pip install` on every
+Windows development machine — including the owner's. `pip-compile
+--universal` (which emits markers) is not available in this pip-tools
+version. So compiling the locks on Linux is not merely "not a no-op", as
+§29 put it; it is **actively breaking** until pip-tools can produce a
+cross-platform lock or the markers are maintained by hand. The artifact
+stays as it is, deliberately, and is no longer described as a thing to fix
+by switching platform.
+
+**What was upgraded:** the backend lock only. 10 pins —
+`sqlalchemy 2.0.52 → 2.1.1`, `fastapi 0.141.1 → 0.142.2`,
+`starlette 1.6.0 → 1.7.0`, `uvicorn 0.52.1 → 0.54.0`,
+`alembic 1.19.1 → 1.20.0`, plus boto3/botocore, cryptography, greenlet,
+mako. `opentelemetry-api` enters and `colorama` leaves as the graph moved.
+**Zero conflicts with the unchanged agent lock**, checked before and after,
+so the drift §29 exists to prevent cannot recur from this.
+
+**What was not, and why.** The agent lock carries
+`livekit-agents 1.7.1 → 1.8.3` and **`av 18.1.0 → 19.0.0`**, a major bump
+of the media library the audio path runs on. The agent's 228 tests use
+fakes and **no LiveKit server**: they would catch an import or signature
+break and could not catch a voice regression. The honest verification for
+that bump is a real spoken interview, which this project still owes. Taking
+it now would mean shipping an unverifiable change into the one subsystem
+nobody has exercised. It waits for the interview — `make upgrade-agent`
+when that happens.
+
+**`make lock` does not upgrade.** pip-compile preserves versions already
+pinned in the output file, so `lock` only picks up `.in` changes; newer
+releases need `--upgrade`. That is how a lock sits still while advisories
+accumulate against it, and it cost a confused round here: the first
+recompile reported "0 changed" and looked like a no-op. `make upgrade` and
+`make upgrade-agent` (and the `dev.ps1` equivalents) now exist, with the
+distinction written into both files.
+
+Verified: **488 passed, 1 skipped** against SQLAlchemy 2.1.1 on a real
+Postgres — the ORM bump is the one that needed a real database, and it got
+one. `ruff` clean. Alembic 1.20 reads the chain and reports head
+`d2c58f31ae04`. CI additionally runs migrations up → down → up on a fresh
+database in the images job.
+

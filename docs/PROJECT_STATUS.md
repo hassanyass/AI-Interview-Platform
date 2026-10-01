@@ -164,11 +164,15 @@ capacity; it is blocked on a decision, a browser, or a microphone.
   belong together per deployment.
 - The capacity figures measure the laptop they were taken on, not the
   application (`handover/capacity.md` says so explicitly).
-- The dependency upgrade deferred in `production-hardening-plan.md` §29
-  (SQLAlchemy 2.0.52 → 2.1.0, livekit-agents 1.7.1 → 1.8.3). Worth noting:
-  `pip-audit` consults a live advisory database, so CI can go red with no
-  repository change — it did three times in the week of 2026-09-29. That
-  is an argument for doing the upgrade, not against the gate.
+- ~~The dependency upgrade deferred in §29~~ — **backend done 2026-10-01**
+  (SQLAlchemy 2.1.1, FastAPI 0.142.2, starlette, uvicorn, alembic; see plan
+  §29a). **The agent half is still open on purpose**: it carries
+  `livekit-agents 1.8.3` and a major `av` bump that the agent's fake-based
+  tests cannot verify, so it waits for the live spoken interview and then
+  `make upgrade-agent`. Note `make lock` does *not* upgrade — use
+  `make upgrade`. `pip-audit` consults a live advisory database, so CI can
+  go red with no repository change; it did three times in the week of
+  2026-09-29.
 - 16 pre-existing frontend lint warnings (exhaustive-deps and
   fast-refresh), unchanged across the whole responsive track.
 

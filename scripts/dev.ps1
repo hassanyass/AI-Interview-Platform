@@ -7,7 +7,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("help", "install", "lock", "up", "down", "test", "test-backend", "test-agent", "test-legacy", "lint", "lint-py", "hooks", "ci", "typecheck", "migrate", "cli")]
+    [ValidateSet("help", "install", "lock", "upgrade", "upgrade-agent", "up", "down", "test", "test-backend", "test-agent", "test-legacy", "lint", "lint-py", "hooks", "ci", "typecheck", "migrate", "cli")]
     [string]$Task = "help",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$CliArgs
@@ -49,8 +49,25 @@ try {
             # Agent first: both locks install into one environment, so the
             # backend is compiled against the agent's result as a constraint.
             # See the Makefile's `lock` target for why.
+            # NOTE: this RE-RESOLVES; pip-compile keeps versions already
+            # pinned in the output. It does not pull newer releases -- that
+            # is `upgrade`.
             Invoke-Step "compile agent lock" { & $Py -m piptools compile --strip-extras --no-header -o agent/requirements.txt agent/requirements.in }
             Invoke-Step "compile backend lock" { & $Py -m piptools compile --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in }
+            Invoke-Step "check they coexist" { & $Py -m pytest -q backend/tests/test_requirements.py }
+        }
+        "upgrade" {
+            # Pulls the newest releases the .in files allow. Backend only:
+            # the agent lock carries livekit-agents and `av`, which no test
+            # here can verify (the agent suite runs against fakes, with no
+            # LiveKit server), so bumping those needs a real spoken
+            # interview afterwards -- use `upgrade-agent` deliberately.
+            Invoke-Step "upgrade backend lock" { & $Py -m piptools compile --upgrade --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in }
+            Invoke-Step "check they coexist" { & $Py -m pytest -q backend/tests/test_requirements.py }
+        }
+        "upgrade-agent" {
+            Invoke-Step "upgrade agent lock" { & $Py -m piptools compile --upgrade --strip-extras --no-header -o agent/requirements.txt agent/requirements.in }
+            Invoke-Step "recompile backend against it" { & $Py -m piptools compile --strip-extras --no-header -c agent/requirements.txt -o backend/requirements.txt backend/requirements.in }
             Invoke-Step "check they coexist" { & $Py -m pytest -q backend/tests/test_requirements.py }
         }
         "up"   { Invoke-Step "docker compose up" { docker compose --profile app up --build } }
