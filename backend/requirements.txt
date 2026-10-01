@@ -178,7 +178,7 @@ pydantic-settings==2.15.0
     # via
     #   -c backend/requirements.txt
     #   -r backend/requirements.in
-pyjwt==2.14.0
+pyjwt==2.15.0
     # via
     #   -c backend/requirements.txt
     #   -r backend/requirements.in
@@ -246,7 +246,7 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
     #   pydantic-settings
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   -c backend/requirements.txt
     #   botocore
