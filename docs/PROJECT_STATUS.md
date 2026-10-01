@@ -146,8 +146,13 @@ capacity; it is blocked on a decision, a browser, or a microphone.
 ### Build work
 
 - [ ] **Phase 10 — cutover.** See "Not started" above.
-- [ ] **Phase 8's ranking view.** See "Partly done" above — the tables and
-      the per-candidate view exist; sorting and comparison do not.
+- [x] ~~**Phase 8's ranking view.**~~ Done 2026-10-01. The results list is
+      ranked by the criteria-weighted score (falling back to the holistic
+      one), unscored candidates sort last in both directions, and the
+      dashboard can re-sort by score, name or status. Decision recorded in
+      `CURRENT_DECISIONS.md`; five tests pin the ordering. **Phase 8's
+      definition of done is now met.** Filtering was deliberately left out
+      — see the decision entry.
 
 ### Known and accepted, not defects to fix today
 
@@ -178,7 +183,7 @@ consequences are written up in `README.md` and `handover/deploy.md`
 - **Phase 10** — cutover (mandatory `definition_id`, drop `InterviewConfiguration` and candidate self-serve, retire legacy adapter). Verified outstanding 2026-10-01: `InterviewSession.definition_id` is still `nullable=True` (`models/interview.py:137`) and `InterviewConfiguration` still exists (`:187`). Touches `/internal/*`, so it needs explicit sign-off (`AGENTS.md` §2), and its own plan says not to run it until Phases 2–9 are verified in production for a full cycle — which the live interview below gates.
 
 ## Partly done
-- **Phase 8 — results normalization.** Previously filed here as "not started", which was wrong in both directions. The `Evaluation` and `Score` tables are real (`models/interview.py:369`, `:424`), `GET /admin/jobs/{job_id}/results` serves the per-job aggregate and candidate list, and `JobResultsPage` / `CandidateResultPage` show scores, the weighted breakdown, integrity events and transcripts. **What is missing is the half the phase was for: ranking.** There is no `order_by` on score in the endpoint and no sort control in the UI, so its definition of done — "HR dashboard can list *and sort* candidates for a given Job by score" — is not met. Verified 2026-10-01.
+*(nothing currently)*
 
 ## Pre-Phase-7 test debt — resolved
 The three tests guarding `agent/agent/interview/controller.py` (`test_phase3b.py::test_phase3b`, `test_phase3c.py::test_phase3c_llm_boundary`, `test_phase3e.py::test_phase3e_persistence_roundtrip`) that had been broken since the Phase 0 baseline are fixed. `agent/test_skip_scratch.py::test_skip`'s `GROQ_API_KEY` gap is also resolved. Full suite (as of the last run, post-9B): **95 passed, 0 failed**. No known or accepted failures remain.

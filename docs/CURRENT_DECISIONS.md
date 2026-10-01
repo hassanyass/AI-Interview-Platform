@@ -399,6 +399,38 @@ the `phone-s` entry already in the responsive matrix.
 R2-A/R2-B/R2-C already built; the alternative (review-only, editors behind
 a "best on a larger screen" note) would have meant revisiting shipped work.
 
+## Candidate ranking on the job results list (RESOLVED 2026-10-01)
+Phase 8's definition of done — "HR dashboard can list **and sort**
+candidates for a given Job by score" — was the one half never built. The
+`Evaluation`/`Score` tables and both result views shipped; the list ordered
+by `created_at` and nothing sorted.
+
+**Rank by the weighted score, falling back to the holistic one.**
+`GET /admin/jobs/{job_id}/results` now orders by
+`coalesce(weighted_score, overall_score) DESC`, then `created_at DESC` as a
+tiebreak, and the row carries `weighted_score` so the number behind the
+order is visible.
+
+- **Why weighted and not holistic.** `weighted_score` is the code-computed
+  aggregate of the criteria and weights HR configured *for this job* (see
+  "Scoring mechanism upgrade" above); `overall_score` is the LLM's
+  independent judgment. A per-job ranking should reflect what that job said
+  matters. The fallback covers an evaluation where no criterion scored.
+- **Unscored candidates sort last, in both directions.** A null score is
+  absent, not zero — an IN_PROGRESS candidate is neither the best nor the
+  worst. This mirrors the evidence-sufficiency principle that an unscored
+  criterion is excluded rather than zeroed.
+- **The server defines the canonical order; the dashboard re-sorts in the
+  browser.** The endpoint returns the whole list in one response, so the
+  first paint is already ranked and any other consumer gets a ranked list,
+  while HR can still look at it by name or status. If this list ever
+  paginates, sorting has to move server-side — the client sort is correct
+  only because the client holds every row.
+- **Sorting only; filtering was deliberately not built.** The plan's scope
+  line says "sortable/filterable", but which filters, how they combine with
+  sort and whether they persist are their own design questions. `suggested`
+  and `flagged` are already visible columns HR can scan.
+
 ## Still unresolved (do not implement against these silently)
 - Invitation expiration policy
 - Whether public candidates need any email verification at all (currently: no, by design)

@@ -519,6 +519,16 @@
         "fullscreenRequired": "Fullscreen is required to start the interview. Please allow fullscreen and try again."
     },
     "jobResults": {
+        "sort":  {
+            "label":  "Sort",
+            "ranked":  "Ranked (best first)",
+            "score":  "Score",
+            "name":  "Name",
+            "status":  "Status",
+            "ascending":  "Ascending",
+            "descending":  "Descending",
+            "toggleDirection":  "Reverse the order"
+        },
         "title": "{{job}} — Results",
         "desc": "Aggregate dashboard and candidate tracking",
         "backToJob": "Back to Job",
@@ -549,6 +559,7 @@
         "deleteCandidate": "Delete candidate",
         "deleteCandidateNamed": "Delete {{name}}",
         "columns": {
+            "weighted":  "Weighted",
             "candidate": "Candidate",
             "status": "Status",
             "score": "Score",

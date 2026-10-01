@@ -196,6 +196,9 @@ export interface JobCandidateRow {
   status: string;
   completed_at?: string;
   overall_score?: number;
+  /** Code-computed aggregate of this job's own criteria and weights. The
+   *  list is RANKED by this, falling back to overall_score when null. */
+  weighted_score?: number;
   recommendation?: string;
   evidence_sufficiency?: number;
   suggested: boolean;

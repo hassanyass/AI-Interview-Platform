@@ -525,6 +525,16 @@
         "fullscreenRequired": "وضع ملء الشاشة مطلوب لبدء المقابلة. يرجى السماح بوضع ملء الشاشة والمحاولة مرة أخرى."
     },
     "jobResults": {
+        "sort":  {
+            "label":  "الترتيب",
+            "ranked":  "مرتّب (الأفضل أولًا)",
+            "score":  "الدرجة",
+            "name":  "الاسم",
+            "status":  "الحالة",
+            "ascending":  "تصاعدي",
+            "descending":  "تنازلي",
+            "toggleDirection":  "عكس الترتيب"
+        },
         "title": "{{job}} — النتائج",
         "desc": "لوحة إجمالية وتتبع المرشحين",
         "backToJob": "العودة إلى الوظيفة",
@@ -555,6 +565,7 @@
         "deleteCandidate": "حذف المرشح",
         "deleteCandidateNamed": "حذف {{name}}",
         "columns": {
+            "weighted":  "مرجّحة",
             "candidate": "المرشح",
             "status": "الحالة",
             "score": "الدرجة",

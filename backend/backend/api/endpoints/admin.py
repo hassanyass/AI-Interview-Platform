@@ -982,7 +982,24 @@ async def get_job_results(
         .outerjoin(CandidateProfile, InterviewSession.candidate_profile_id == CandidateProfile.id)
         .outerjoin(Evaluation, Evaluation.session_id == InterviewSession.id)
         .where(InterviewSession.job_id == job_id)
-        .order_by(InterviewSession.created_at.desc())
+        # Phase 8's definition of done is "list AND SORT candidates for a
+        # given Job by score". The server defines the canonical ranking so
+        # the first paint is already ranked and any other consumer gets a
+        # ranked list; the dashboard can then re-sort in the browser,
+        # because this endpoint returns the whole list in one response.
+        #
+        # Ranked by the WEIGHTED score -- the code-computed aggregate of the
+        # criteria and weights HR configured for THIS job -- falling back to
+        # the LLM's holistic overall_score when no criterion scored.
+        #
+        # Nulls last in both directions, never treated as zero: an
+        # IN_PROGRESS candidate has no score yet, and sorting them to the
+        # top would be a lie. This mirrors the evidence-sufficiency
+        # principle that an unscored criterion is excluded, not zeroed.
+        .order_by(
+            func.coalesce(Evaluation.weighted_score, Evaluation.overall_score).desc().nullslast(),
+            InterviewSession.created_at.desc(),
+        )
     )
     rows = result.all()
 
@@ -1041,6 +1058,7 @@ async def get_job_results(
             status=session.status,
             completed_at=session.completed_at,
             overall_score=evaluation.overall_score if evaluation else None,
+            weighted_score=evaluation.weighted_score if evaluation else None,
             recommendation=evaluation.recommendation if evaluation else None,
             evidence_sufficiency=evaluation.evidence_sufficiency if evaluation else None,
             suggested=suggested,

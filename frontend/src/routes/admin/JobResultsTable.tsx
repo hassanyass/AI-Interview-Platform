@@ -1,6 +1,7 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowDownUp, ShieldAlert, Trash2 } from "lucide-react";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { AiCoreIcon } from "../../components/ui/AiCoreIcon";
@@ -33,6 +34,16 @@ function recommendationTone(recommendation: string | undefined): { text: string;
   return { text: "text-muted-foreground", dot: "bg-muted-foreground" };
 }
 
+/** The score the ranking uses: the criteria-weighted aggregate, falling
+ *  back to the LLM's holistic judgment when no criterion scored. Mirrors
+ *  the server's ORDER BY so a client-side re-sort agrees with the order it
+ *  was handed. Null means unscored -- absent, not zero. */
+function effectiveScore(cand: JobCandidateRow): number | null {
+  return cand.weighted_score ?? cand.overall_score ?? null;
+}
+
+type SortKey = "ranked" | "score" | "name" | "status";
+
 /** A finished interview is the only kind with a result to open. CREATED and
  *  IN_PROGRESS rows show "Pending" instead of a dead link. */
 function isFinished(status: string): boolean {
@@ -48,6 +59,30 @@ export interface CandidatesTableProps {
 
 export function CandidatesTable({ jobId, candidates, onRequestDelete }: CandidatesTableProps) {
   const { t } = useTranslation();
+  // "ranked" keeps the server's order, which is already best-first -- the
+  // list arrives ranked, and this only lets HR look at it another way.
+  const [sortKey, setSortKey] = useState<SortKey>("ranked");
+  const [descending, setDescending] = useState(true);
+
+  const rows = useMemo(() => {
+    if (sortKey === "ranked") return candidates;
+    const direction = descending ? -1 : 1;
+    return [...candidates].sort((a, b) => {
+      if (sortKey === "score") {
+        const x = effectiveScore(a);
+        const y = effectiveScore(b);
+        // Unscored always last, whichever way the rest is pointing: a
+        // candidate who has not been scored is not the best OR the worst.
+        if (x === null && y === null) return 0;
+        if (x === null) return 1;
+        if (y === null) return -1;
+        return (x - y) * direction;
+      }
+      const x = sortKey === "name" ? (a.candidate_name || "") : a.status;
+      const y = sortKey === "name" ? (b.candidate_name || "") : b.status;
+      return x.localeCompare(y) * direction;
+    });
+  }, [candidates, sortKey, descending]);
 
   const columns: ResponsiveColumn<JobCandidateRow>[] = [
     {
@@ -100,6 +135,16 @@ export function CandidatesTable({ jobId, candidates, onRequestDelete }: Candidat
           </div>
         );
       },
+    },
+    {
+      key: "weighted",
+      header: t("jobResults.columns.weighted"),
+      cell: (cand) =>
+        cand.weighted_score !== undefined && cand.weighted_score !== null ? (
+          <span className="font-medium tabular-nums">{cand.weighted_score.toFixed(1)}/5</span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
     },
     {
       key: "evidence",
@@ -196,13 +241,48 @@ export function CandidatesTable({ jobId, candidates, onRequestDelete }: Candidat
   // drawer and takes 256px back), so the card rendering runs to `xl`.
   // Measured, not guessed: see the R3-A verify record.
   return (
+    <>
+      {/* One control, not clickable headers: below `xl` this list is a card
+          rendering with no header row to click, and teaching the shared
+          ResponsiveTable about sorting would change a primitive three other
+          screens rely on. A select works identically in both renderings. */}
+      {candidates.length > 0 && (
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+        <label htmlFor="results-sort" className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <ArrowDownUp className="h-3.5 w-3.5" />
+          {t("jobResults.sort.label")}
+        </label>
+        <select
+          id="results-sort"
+          value={sortKey}
+          onChange={(e) => setSortKey(e.target.value as SortKey)}
+          className="h-11 rounded-md border border-input bg-background px-2 text-base lg:h-10 sm:text-sm"
+        >
+          <option value="ranked">{t("jobResults.sort.ranked")}</option>
+          <option value="score">{t("jobResults.sort.score")}</option>
+          <option value="name">{t("jobResults.sort.name")}</option>
+          <option value="status">{t("jobResults.sort.status")}</option>
+        </select>
+        {sortKey !== "ranked" && (
+          <button
+            type="button"
+            onClick={() => setDescending((v) => !v)}
+            aria-label={t("jobResults.sort.toggleDirection")}
+            className="h-11 rounded-md border border-input px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted lg:h-10"
+          >
+            {descending ? t("jobResults.sort.descending") : t("jobResults.sort.ascending")}
+          </button>
+        )}
+      </div>
+      )}
     <ResponsiveTable
       columns={columns}
-      rows={candidates}
+      rows={rows}
       rowKey={(cand) => cand.session_id}
       caption={t("jobResults.tableCaption")}
       breakpoint="xl"
       empty={<div className="p-8 text-center text-muted-foreground">{t("jobResults.noCandidates")}</div>}
     />
+    </>
   );
 }

@@ -111,6 +111,22 @@ if not. Aggregate stats view per job (candidate counts, etc.). Real UX
 work per the rebrand's design system — this is a genuinely new, important
 surface, not a quick bolt-on.
 
+### 8F addendum — ranking (done 2026-10-01)
+The dashboard shipped without the "sort" half of the transition plan's
+definition of done: the list ordered by `created_at` and nothing sorted, so
+HR could open any one scorecard but never line candidates up. Closed by
+ranking on `coalesce(weighted_score, overall_score)` with unscored
+candidates last in both directions, plus a sort control that works in both
+of `ResponsiveTable`'s renderings. The full reasoning, including why
+weighted rather than holistic and why filtering was left out, is in
+`CURRENT_DECISIONS.md` § "Candidate ranking on the job results list".
+
+Note on rule 1 of this document: the ordering is covered by automated tests
+(`backend/tests/test_job_ranking.py`). That was raised as a conflict with
+`AGENTS.md` §4.4 and settled with the user before any code was written —
+rule 1 is read as aimed at end-to-end and browser-driving, which still
+belong to the manual pass.
+
 ### 8G — Integration verification (deferred)
 Full verification happens later, manually, by the user. This sub-phase is
 a placeholder for whenever that full pass happens — not to be started

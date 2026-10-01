@@ -512,6 +512,12 @@ class JobCandidateRow(BaseModel):
     status: str
     completed_at: Optional[datetime] = None
     overall_score: Optional[int] = None
+    # The code-computed weighted aggregate of this job's own criteria
+    # (CURRENT_DECISIONS, "Scoring mechanism upgrade"). Added to this row so
+    # the list can RANK by it -- showing an order without showing the number
+    # it is based on reads as arbitrary. Null when no criterion scored, in
+    # which case the ranking falls back to overall_score.
+    weighted_score: Optional[float] = None
     recommendation: Optional[str] = None
     evidence_sufficiency: Optional[float] = None
     # recommendation == "Hire" AND evidence_sufficiency >= settings.

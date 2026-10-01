@@ -31,6 +31,7 @@ const MOCK_CANDIDATES: JobCandidateRow[] = [
     candidate_email: "aisha.abdulrahman.almaktoum@averylongcorporatedomainname.example.com",
     status: "COMPLETED",
     overall_score: 4,
+    weighted_score: 4.6,
     recommendation: "Hire",
     evidence_sufficiency: 0.92,
     suggested: true,
@@ -42,6 +43,7 @@ const MOCK_CANDIDATES: JobCandidateRow[] = [
     candidate_email: "tom@example.com",
     status: "COMPLETED",
     overall_score: 2,
+    weighted_score: 1.4,
     recommendation: "No Hire",
     evidence_sufficiency: 0.44,
     suggested: false,
@@ -61,6 +63,7 @@ const MOCK_CANDIDATES: JobCandidateRow[] = [
     candidate_email: "li.wei@example.com",
     status: "TERMINATED",
     overall_score: 3,
+    // No weighted score: the ranking falls back to the holistic 3.
     recommendation: "Consider",
     // No evidence figure -- the cell must show "-" not "NaN%".
     suggested: false,
