@@ -22,7 +22,7 @@ Read by the API and the one-shot `migrate` container.
 
 | Setting | Type | Default | Notes |
 |---|---|---|---|
-| `ENVIRONMENT` | `Literal['local', 'test', 'staging', 'production']` | `'local'` |  |
+| `ENVIRONMENT` | `Literal['local', 'test', 'staging', 'production']` | `'local'` | Deployment environment. Anything but local/test enables the boot-time safety checks. |
 | `EXPOSE_API_DOCS` | `bool \| None` | `None` | Serve /docs, /redoc and /openapi.json. Unset follows ENVIRONMENT: on for local/test, off otherwise. Set true to open them on a staging box (see core/config.py's expose_api_docs). |
 | `APP_VERSION` | `str` | `'0.1.0'` | Reported by /health and /version. |
 | `LOG_FORMAT` | `Literal['json', 'text', 'auto']` | `'auto'` | auto = text when ENVIRONMENT is local/test, json otherwise. One line per event, request/session ids on every line (core/logging.py). |

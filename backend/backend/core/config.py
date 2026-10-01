@@ -38,9 +38,9 @@ _DEFAULT_GROQ_EXTRACTION_MODEL = "llama-3.1-8b-instant"
 class Settings(BaseSettings):
     # ── Application ────────────────────────────────────────────────────────
     ENVIRONMENT: Literal["local", "test", "staging", "production"] = "local"
+    """Deployment environment. Anything but local/test enables the boot-time safety checks."""
     EXPOSE_API_DOCS: bool | None = None
     """Serve /docs, /redoc and /openapi.json. Unset follows ENVIRONMENT: on for local/test, off otherwise. Set true to open them on a staging box (see core/config.py's expose_api_docs)."""
-    """Deployment environment. Anything but local/test enables the boot-time safety checks."""
     APP_VERSION: str = "0.1.0"
     """Reported by /health and /version."""
     LOG_FORMAT: Literal["json", "text", "auto"] = "auto"
