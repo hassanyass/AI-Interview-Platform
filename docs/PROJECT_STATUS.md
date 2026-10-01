@@ -16,8 +16,19 @@ Snapshot as of Sub-phase 6C kickoff. Update this after each sub-phase closes.
 | 9 (9A–9F, 9I) | Schema bridge for CODING/MCQ (`InterviewQuestion.config`/`eval_criteria` JSONB + validation at all 4 write paths) (9A); runtime generalization — ordered core-question walk honors admin-configured `InterviewSection.order_index` across all three types, per-type follow-up caps (VERBAL up to 2 time-tier-throttled, CODING/MCQ hard 0) (9B); candidate submission handling — `SUBMIT_CODE`/`SUBMIT_MCQ_ANSWER` data-channel commands, `REQUEST_HINT` ported to the ordered flow (9C); evaluation logic — `eval_criteria` now reaches the agent runtime and the final-evaluation evidence in each type's own native shape (VERBAL bands, CODING complexity/edge-case fields, MCQ explanation-only), not reshaped to match one another (9D); type-specific prompts (`CORE_CODING_QUESTION_PROMPT`/`CORE_MCQ_QUESTION_PROMPT`) plus a deterministic guard preventing CODING/MCQ from completing via a bare LLM `TRANSITION` (9E); backend publish-readiness confirmed live — real Groq generation + real API calls against the running server for both types, `publish_job`'s stopgap intentionally still in place pending 9G/9H (9F); full integration verification mirroring 7F, both types end-to-end including the mid-walk `TRANSITION`-guard (9I). **113/113 passing at last full run.** |
 | — | Job-level interview `language` (en/ar) wired end-to-end through to `InterviewSession` |
 
-## Next priority (pivot)
-Real-time TTS/STT/LLM interaction hardening is next, ahead of the remaining Phase 9 frontend work and Phases 8/10 — all of which are deliberately queued behind it, not abandoned or blocked on anything.
+## Next priority
+
+**Run one live spoken interview.** See "What is left" below for why it is
+first: it is the only outstanding item that can invalidate work already
+marked done, and Phase 10 is gated behind it by its own plan.
+
+*(Superseded, kept for history: this section previously read "Real-time
+TTS/STT/LLM interaction hardening is next, ahead of the remaining Phase 9
+frontend work and Phases 8/10." That pivot happened — RT-A/RT-B0/RT-B1/
+RT-B2 are below — and Phase 9 shipped, so the sentence had outlived itself.
+Its live-verification caveat has not: the realtime work was explicitly
+never confirmed by ear, which is part of why the live interview is still
+the first item.)*
 
 ## In progress
 - **Real-time voice pipeline hardening (RT-A / RT-B0 / RT-B1 / RT-B2)** — see `docs/realtime-voice-hardening.md`. RT-A: diagnosis-first exploration, confirmed real code-level root causes for all three reported symptoms (clashing, premature cutoff, intermittent delay), not just hypotheses. RT-B0 (instrumentation, additive, no behavior change): fixed `logging.basicConfig`'s missing timestamp format; added duration/token logging around the Groq LLM call (no SDK metrics event exists for a raw client call, so this is hand-added); wired up the LiveKit SDK's existing `metrics_collected` event for STT/TTS (previously zero listeners anywhere in the codebase). RT-B1 (clashing fix): `_handle_interruption()` now calls `AudioSource.clear_queue()` — RT-A found this was never called, so audio frames already buffered by LiveKit kept playing out past an interruption regardless of the existing generation-invalidation logic. RT-B2 (premature-cutoff fix, one specific contributor): a response that finished generating while the agent was NOT yet speaking is no longer silently discarded outright — it's provisionally preserved and re-validated immediately before it would actually be spoken, discarded only if something genuinely changed again in that window. A response invalidated while the agent WAS already speaking is still discarded outright, unchanged. (The other known premature-cutoff contributor — the VAD/endpoint-delay coalescing race — is a separate, deliberately untouched fixed-delay-floor question, not part of this fix.)
@@ -91,9 +102,83 @@ errors: 0, smallTargets: 0, hiddenControls: 0`.
 previews render the real components against mock state, and the two gates'
 *rules* are unit-tested, but the live loop is a manual check.
 
+
+## What is left (maintained inventory, 2026-10-01)
+
+Kept here so it does not have to be reconstructed each time. Both planned
+tracks are finished — production hardening H0–H6 and responsive/RTL R0–R7 —
+and CI is green on all three jobs. Nothing below is blocked on engineering
+capacity; it is blocked on a decision, a browser, or a microphone.
+
+### Owner-only (cannot be done from the repository)
+
+- [ ] **Run one live spoken interview.** Owed since H2-C. The voice loop,
+      the agent, fullscreen enforcement and the recording have never been
+      exercised by a human on this code. **It is first** because it is the
+      only item that can invalidate work already marked done, and because
+      Phase 10 is gated behind it.
+- [ ] **Decide P1 — the email provider.** The `null` adapter logs
+      invitations to the console; nothing is sent. The personalized invite
+      path does not reach a candidate today.
+- [ ] One admin AI generation through the task queue, in a browser (202 +
+      poll).
+- [ ] The admin retry screen and the test-drive flow.
+- [ ] The D1 phone gate and the D2 coding gate on real hardware. Both
+      *rules* are unit-tested (`lib/deviceSupport.test.ts`); the hardware
+      meeting them is not.
+- [ ] A pull request that deliberately breaks a rule, to prove the CI gate
+      bites (the unfinished half of H4's verify step).
+- [ ] If anything is wired to deploy from `main`: confirm it, and confirm
+      `VITE_API_BASE_URL`, `VITE_SUPABASE_URL` and
+      `VITE_SUPABASE_PUBLISHABLE_KEY` exist there. CI proves nothing about
+      this — it supplies its own placeholders.
+
+### Decisions that unblock work
+
+- [ ] **U1 — retention.** Keeps the purge job switched off, so recordings
+      and transcripts are never deleted. (`handover/security.md` §4.)
+- [ ] **U4 — concurrency acceptance.** Interviews per agent worker is
+      unmeasured and cannot be measured from this repository
+      (`handover/capacity.md`).
+- [ ] **U5 — CV-extraction failure status.**
+- [ ] The seven in `CURRENT_DECISIONS.md` § "Still unresolved".
+
+### Build work
+
+- [ ] **Phase 10 — cutover.** See "Not started" above.
+- [ ] **Phase 8's ranking view.** See "Partly done" above — the tables and
+      the per-candidate view exist; sorting and comparison do not.
+
+### Known and accepted, not defects to fix today
+
+- Registration creates a session per call, rate-limited but with no CAPTCHA
+  or device signal (`handover/security.md` §7 item 2).
+- A permitted rate-limit burst (20) can still exceed the Supabase pooler's
+  15-client ceiling. Since 2026-09-30 that answers **503 + `Retry-After`**
+  rather than a 500, so it reads as backpressure; the two numbers still
+  belong together per deployment.
+- The capacity figures measure the laptop they were taken on, not the
+  application (`handover/capacity.md` says so explicitly).
+- The dependency upgrade deferred in `production-hardening-plan.md` §29
+  (SQLAlchemy 2.0.52 → 2.1.0, livekit-agents 1.7.1 → 1.8.3). Worth noting:
+  `pip-audit` consults a live advisory database, so CI can go red with no
+  repository change — it did three times in the week of 2026-09-29. That
+  is an argument for doing the upgrade, not against the gate.
+- 16 pre-existing frontend lint warnings (exhaustive-deps and
+  fast-refresh), unchanged across the whole responsive track.
+
+### Portability, for anyone planning a move
+
+Cloud-portable: yes. Vendor-portable: partly — six concerns sit behind
+provider ports, **authentication does not**. The position and its
+consequences are written up in `README.md` and `handover/deploy.md`
+§ "What is and is not swappable"; do not rediscover it mid-migration.
+
 ## Not started
-- **Phase 8** — results normalization (replace `final_result` JSONB with real `Evaluation`/`Score` tables, HR comparison/ranking views)
-- **Phase 10** — cutover (mandatory `definition_id`, drop `InterviewConfiguration` and candidate self-serve, retire legacy adapter)
+- **Phase 10** — cutover (mandatory `definition_id`, drop `InterviewConfiguration` and candidate self-serve, retire legacy adapter). Verified outstanding 2026-10-01: `InterviewSession.definition_id` is still `nullable=True` (`models/interview.py:137`) and `InterviewConfiguration` still exists (`:187`). Touches `/internal/*`, so it needs explicit sign-off (`AGENTS.md` §2), and its own plan says not to run it until Phases 2–9 are verified in production for a full cycle — which the live interview below gates.
+
+## Partly done
+- **Phase 8 — results normalization.** Previously filed here as "not started", which was wrong in both directions. The `Evaluation` and `Score` tables are real (`models/interview.py:369`, `:424`), `GET /admin/jobs/{job_id}/results` serves the per-job aggregate and candidate list, and `JobResultsPage` / `CandidateResultPage` show scores, the weighted breakdown, integrity events and transcripts. **What is missing is the half the phase was for: ranking.** There is no `order_by` on score in the endpoint and no sort control in the UI, so its definition of done — "HR dashboard can list *and sort* candidates for a given Job by score" — is not met. Verified 2026-10-01.
 
 ## Pre-Phase-7 test debt — resolved
 The three tests guarding `agent/agent/interview/controller.py` (`test_phase3b.py::test_phase3b`, `test_phase3c.py::test_phase3c_llm_boundary`, `test_phase3e.py::test_phase3e_persistence_roundtrip`) that had been broken since the Phase 0 baseline are fixed. `agent/test_skip_scratch.py::test_skip`'s `GROQ_API_KEY` gap is also resolved. Full suite (as of the last run, post-9B): **95 passed, 0 failed**. No known or accepted failures remain.
